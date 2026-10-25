@@ -52,27 +52,37 @@ Before starting, ensure you have the following installed:
 
 ---
 
-## 3. Git Workflow & Branch Strategy
+## 3. Git Workflow & Independent Service Versioning Strategy
 
-We adhere strictly to a 3-tier branch hierarchy:
+We adhere strictly to a 3-tier branch hierarchy with **independent SemVer versioning per service**:
 
 ```
-main  (Production releases — vX.Y.Z)
+main  (Production releases — <service>-vX.Y.Z)
   ↑ (PR only after QA staging)
-test  (Release candidates / Staging — vX.Y.Z-rc.N)
+test  (Release candidates / Staging — <service>-vX.Y.Z-rc.N)
   ↑ (PR only from dev)
-dev   (Active development — vX.Y.Z-dev.N)
+dev   (Active development — <service>-vX.Y.Z-dev.N)
 ```
+
+### Independent Per-Service Versioning
+
+Each service (`server`, `agent`, `www`, `site`, `admin`) maintains its own independent release lifecycle and version number:
+- **`dev` branch**: `<service>-vX.Y.Z-dev.N` (e.g. `server-v0.1.0-dev.1`, `www-v0.1.0-dev.1`)
+- **`test` branch**: `<service>-vX.Y.Z-rc.N` (e.g. `server-v0.1.0-rc.1`, `www-v0.1.0-rc.1`)
+- **`main` branch**: `<service>-vX.Y.Z` (e.g. `server-v1.0.0`, `www-v1.0.0`) + GitHub Release
+
+When code is pushed, GitHub Actions detects which services have changes (`paths-filter`). **Only the services that were modified** are version-bumped, tagged in Git, and published to `ghcr.io`. Unchanged services remain at their current version.
 
 ### Git Rules
 
 1. **Always work on `dev`** or a feature branch branched off `dev`.
 2. **Conventional Commits**: Every commit or pull request must follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
-   - `feat(scope): ...` triggers **Minor** version bump (e.g. `1.1.0` -> `1.2.0`)
-   - `fix(scope): ...` triggers **Patch** version bump (e.g. `1.2.0` -> `1.2.1`)
-   - `feat(scope)!: ...` triggers **Major** version bump (e.g. `1.2.1` -> `2.0.0`)
+   - `feat(scope): ...` triggers **Minor** version bump for the scoped service (e.g. `1.1.0` -> `1.2.0`)
+   - `fix(scope): ...` triggers **Patch** version bump for the scoped service (e.g. `1.2.0` -> `1.2.1`)
+   - `feat(scope)!: ...` triggers **Major** version bump for the scoped service (e.g. `1.2.1` -> `2.0.0`)
    - `chore:`, `docs:`, `test:`, `refactor:`, `ci:` produce **no version bump**
-3. Pull requests to `dev`, `test`, and `main` have an automated GitHub Action check that enforces valid commit message formatting.
+3. Scopes should target the affected service, e.g. `feat(server): ...`, `fix(www): ...`, `feat(site): ...`, `chore(agent): ...`.
+4. Pull requests to `dev`, `test`, and `main` have an automated GitHub Action check (`commit-lint.yml`) that validates the last commit message before merge.
 
 ---
 
