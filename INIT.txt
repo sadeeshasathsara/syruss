@@ -1,0 +1,12 @@
+Syruss — Adaptive AI Document Intelligence Platform
+===================================================
+
+Repository initialized.
+
+Branches:
+- main : Production (stable releases, tagged vX.Y.Z)
+- test : Staging / Testing (release candidates, tagged vX.Y.Z-rc.N)
+- dev  : Active Development (preview builds, tagged vX.Y.Z-dev.N)
+
+Refer to docs/BRANCHING_AND_RELEASES.md for branching rules, commit conventions,
+and release workflows.
