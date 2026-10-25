@@ -6,6 +6,7 @@ const API_ORIGIN = process.env.API_ORIGIN ?? "http://localhost:8000";
 const api = new URL(API_ORIGIN);
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   poweredByHeader: false,
   async headers() {
     return [

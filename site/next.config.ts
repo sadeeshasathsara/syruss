@@ -21,6 +21,7 @@ function policy(): string {
 }
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   poweredByHeader: false,
   async headers() {
     return [
