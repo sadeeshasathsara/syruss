@@ -1,0 +1,127 @@
+# ==============================================================================
+# Syruss Monorepo .gitignore
+# Covers: Python (Server, Agentic Framework), Next.js (www, site), Docker (bridge)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Environment variables & secrets (NEVER commit secrets; only .env.example)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+*.crt
+
+# ------------------------------------------------------------------------------
+# Python & Virtual Environments
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+*/.venv/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Python testing & linting
+.pytest_cache/
+*/.pytest_cache/
+.coverage
+.coverage.*
+coverage/
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+
+# ------------------------------------------------------------------------------
+# Node.js, Next.js & Frontend (www & site)
+# ------------------------------------------------------------------------------
+node_modules/
+*/node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Next.js build output & caches
+.next/
+*/.next/
+.next-*/
+*/.next-*/
+out/
+*/out/
+build/
+*/build/
+
+# TypeScript build info
+*.tsbuildinfo
+next-env.d.ts
+
+# Vercel
+.vercel/
+
+# Package manager logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ------------------------------------------------------------------------------
+# Databases, Local Storage & Infrastructure Volumes
+# ------------------------------------------------------------------------------
+*.sqlite3
+*.db
+minio_data/
+postgres_data/
+
+# ------------------------------------------------------------------------------
+# OS & Editor files
+# ------------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Editors & IDEs
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.sublime-project
+*.sublime-workspace
+
+# Claude / Gemini working files & logs
+.claude/plans/*.tmp
+.gemini/
