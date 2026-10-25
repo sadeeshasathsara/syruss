@@ -1,0 +1,14 @@
+{#- An invitation to a workspace (when `workspace` is given) or to a whole organization.
+    Variables: inviter, organization, role, url, expires_on; optional: workspace, role_description, note -#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+{% block preheader %}Join {{ workspace or organization }} as {{ role }}.{% endblock %}
+{% block heading %}Join {{ workspace or organization }}{% endblock %}
+{% block content %}
+{{ ui.paragraph(inviter ~ " invited you to join " ~ ("the workspace " ~ workspace ~ " in " ~ organization if workspace else "the organization " ~ organization) ~ " on Syruss.") }}
+{% if role_description %}{{ ui.paragraph("Your role is " ~ role ~ ": " ~ role_description) }}{% endif %}
+{{ ui.facts([("Workspace", workspace), ("Organization", organization), ("Your role", role), ("Invited address", to), ("Valid until", expires_on)]) }}
+{% if note %}{{ ui.quote(note) }}{% endif %}
+{{ ui.button("Accept the invitation", url) }}
+{% endblock %}
+{% block footer %}You were invited by someone who has this address. If you weren't expecting this, you can ignore the email: nothing happens until you accept.{% endblock %}

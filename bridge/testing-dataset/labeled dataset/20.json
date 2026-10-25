@@ -1,0 +1,50 @@
+{
+  "image_id": 20,
+  "image_file": "20.jpeg",
+  "original_filename": "94774017396_20260722_171906_705271_1df770c5.jpeg",
+  "document_type": "Handwritten Shift Sheet",
+  "confidence": 0.96,
+  "date": "2026-07-21",
+  "location_number": "6629",
+  "location_name": "Hemas Hostel",
+  "shift_summary": [],
+  "attendance_records": [
+    {
+      "row_id": 1,
+      "employee_id": "64774",
+      "name": "K.K.T. Niranjali",
+      "rank": "LSSO 2",
+      "working_rank": "LSO",
+      "shift_type": "Day",
+      "in_time": "07:00",
+      "out_time": "19:00",
+      "signature_present": true,
+      "confidence": 0.96,
+      "other": []
+    },
+    {
+      "row_id": 2,
+      "employee_id": "64774",
+      "name": "K.K.T. Niranjali",
+      "rank": "LSSO 2",
+      "working_rank": "LSO",
+      "shift_type": "Night",
+      "in_time": "19:00",
+      "out_time": "07:00",
+      "signature_present": true,
+      "confidence": 0.96,
+      "other": []
+    }
+  ],
+  "supervisors": [
+    {
+      "designation": "LSO",
+      "name": "K.K.T. Niranjali",
+      "employee_id": "64774",
+      "signature_present": true,
+      "date": null,
+      "confidence": 0.95
+    }
+  ],
+  "other": []
+}

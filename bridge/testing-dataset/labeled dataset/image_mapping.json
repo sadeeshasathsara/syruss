@@ -1,0 +1,102 @@
+[
+  {
+    "id": 1,
+    "labeled_image_file": "1.jpeg",
+    "original_filename": "94776219512_20260722_182305_454115_91679266.jpeg"
+  },
+  {
+    "id": 2,
+    "labeled_image_file": "2.jpeg",
+    "original_filename": "94740835902_20260722_114200_113177_14fcfbcd.jpeg"
+  },
+  {
+    "id": 3,
+    "labeled_image_file": "3.jpeg",
+    "original_filename": "94704599305_20260722_154029_096572_72d78ce8.jpeg"
+  },
+  {
+    "id": 4,
+    "labeled_image_file": "4.jpeg",
+    "original_filename": "94743518058_20260722_115445_396087_ecf278b2.jpeg"
+  },
+  {
+    "id": 5,
+    "labeled_image_file": "5.jpeg",
+    "original_filename": "94743518058_20260722_115428_094513_677b6acd.jpeg"
+  },
+  {
+    "id": 6,
+    "labeled_image_file": "6.jpeg",
+    "original_filename": "94743518058_20260722_115416_902161_c1e94bb2.jpeg"
+  },
+  {
+    "id": 7,
+    "labeled_image_file": "7.jpeg",
+    "original_filename": "94740835902_20260722_163112_032860_cdc88543.jpeg"
+  },
+  {
+    "id": 8,
+    "labeled_image_file": "8.jpeg",
+    "original_filename": "94740835902_20260722_095453_843779_f05954c3.jpeg"
+  },
+  {
+    "id": 9,
+    "labeled_image_file": "9.jpeg",
+    "original_filename": "94774017396_20260722_171858_210099_642f928d.jpeg"
+  },
+  {
+    "id": 10,
+    "labeled_image_file": "10.jpeg",
+    "original_filename": "94740835902_20260722_070016_886976_d285cb76.jpeg"
+  },
+  {
+    "id": 11,
+    "labeled_image_file": "11.jpeg",
+    "original_filename": "94775795006_20260722_121300_862832_d26675ae.jpeg"
+  },
+  {
+    "id": 12,
+    "labeled_image_file": "12.jpeg",
+    "original_filename": "94771079086_20260722_223853_805226_fd4e41b2.jpeg"
+  },
+  {
+    "id": 13,
+    "labeled_image_file": "13.jpeg",
+    "original_filename": "94704599305_20260722_154033_135129_f5b10d03.jpeg"
+  },
+  {
+    "id": 14,
+    "labeled_image_file": "14.jpeg",
+    "original_filename": "94704599305_20260722_154030_883528_9f00a738.jpeg"
+  },
+  {
+    "id": 15,
+    "labeled_image_file": "15.jpeg",
+    "original_filename": "94740835902_20260722_070220_689462_3ec1134e.jpeg"
+  },
+  {
+    "id": 16,
+    "labeled_image_file": "16.jpeg",
+    "original_filename": "94743518058_20260722_115412_505797_8dc3c808.jpeg"
+  },
+  {
+    "id": 17,
+    "labeled_image_file": "17.jpeg",
+    "original_filename": "94743518058_20260722_115421_011497_30ddc157.jpeg"
+  },
+  {
+    "id": 18,
+    "labeled_image_file": "18.jpeg",
+    "original_filename": "94773926781_20260722_121145_862095_04837aa9.jpeg"
+  },
+  {
+    "id": 19,
+    "labeled_image_file": "19.jpeg",
+    "original_filename": "94776219512_20260722_182245_518575_09af94c5.jpeg"
+  },
+  {
+    "id": 20,
+    "labeled_image_file": "20.jpeg",
+    "original_filename": "94774017396_20260722_171906_705271_1df770c5.jpeg"
+  }
+]

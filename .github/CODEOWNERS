@@ -1,0 +1,16 @@
+# Global fallback owners
+* @tech-lead
+
+# Core API & Connections
+/server/ @backend-lead
+/bridge/ @devops-lead
+
+# AI Agent Framework
+/agentic_framework/ @ai-lead
+
+# Frontend applications
+/www/ @frontend-lead
+/site/ @frontend-lead
+
+# CI/CD Workflows
+/.github/ @devops-lead
