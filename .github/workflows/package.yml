@@ -9,10 +9,10 @@ on:
 
 concurrency:
   group: package-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -24,6 +24,7 @@ jobs:
       agent: ${{ steps.filter.outputs.agent }}
       www: ${{ steps.filter.outputs.www }}
       site: ${{ steps.filter.outputs.site }}
+      admin: ${{ steps.filter.outputs.admin }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -32,60 +33,62 @@ jobs:
           filters: |
             server:
               - 'server/**'
-              - '.github/workflows/package.yml'
             agent:
               - 'agentic_framework/**'
-              - '.github/workflows/package.yml'
             www:
               - 'www/**'
-              - '.github/workflows/package.yml'
             site:
               - 'site/**'
-              - '.github/workflows/package.yml'
+            admin:
+              - 'admin/**'
 
-  resolve-version:
-    name: Resolve Target Version
+  # ----------------------------------------------------------------------------
+  # API Server (FastAPI Core)
+  # ----------------------------------------------------------------------------
+  release-server:
+    name: Release & Package API Server
+    needs: detect-changes
+    if: needs.detect-changes.outputs.server == 'true'
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.calc.outputs.version }}
-      env_tag: ${{ steps.calc.outputs.env_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Calculate Base SemVer
+      - name: Calculate SemVer for server
         id: semver
         uses: paulhatch/semantic-version@v5.4.0
         with:
-          tag_prefix: "v"
-          version_format: "${major}.${minor}.${patch}"
+          tag_prefix: "server-v"
+          major_pattern: "(BREAKING CHANGE|feat!)"
+          minor_pattern: "feat"
+          version_format: ${{ github.ref_name == 'main' && '${major}.${minor}.${patch}' || (github.ref_name == 'test' && '${major}.${minor}.${patch}-rc.${increment}' || '${major}.${minor}.${patch}-dev.${increment}') }}
 
-      - name: Calculate Branch Specific Tag
-        id: calc
+      - name: Create Git Tag
         run: |
-          BASE="v${{ steps.semver.outputs.version }}"
-          BRANCH="${{ github.ref_name }}"
-          INC="${{ steps.semver.outputs.increment }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TAG="server-v${{ steps.semver.outputs.version }}"
+          echo "GIT_TAG=$TAG" >> $GITHUB_ENV
+          echo "VERSION=${{ steps.semver.outputs.version }}" >> $GITHUB_ENV
+          echo "ENV_TAG=${{ github.ref_name == 'main' && 'latest' || github.ref_name }}" >> $GITHUB_ENV
           
-          if [ "$BRANCH" = "dev" ]; then
-            echo "version=${BASE}-dev.${INC}" >> $GITHUB_OUTPUT
-            echo "env_tag=dev" >> $GITHUB_OUTPUT
-          elif [ "$BRANCH" = "test" ]; then
-            echo "version=${BASE}-rc.${INC}" >> $GITHUB_OUTPUT
-            echo "env_tag=test" >> $GITHUB_OUTPUT
-          elif [ "$BRANCH" = "main" ]; then
-            echo "version=${BASE}" >> $GITHUB_OUTPUT
-            echo "env_tag=latest" >> $GITHUB_OUTPUT
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists."
+          else
+            echo "Creating tag $TAG"
+            git tag -a "$TAG" -m "Automated release $TAG"
+            git push origin "$TAG"
           fi
 
-  package-server:
-    name: Package API Server
-    needs: [detect-changes, resolve-version]
-    if: needs.detect-changes.outputs.server == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      - name: Create GitHub Release (Production)
+        if: github.ref_name == 'main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.GIT_TAG }}
+          name: "Server ${{ env.GIT_TAG }}"
+          generate_release_notes: true
+
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -98,20 +101,60 @@ jobs:
           context: ./server
           push: true
           build-args: |
-            APP_VERSION=${{ needs.resolve-version.outputs.version }}
+            APP_VERSION=${{ env.VERSION }}
           tags: |
-            ghcr.io/${{ github.repository }}/server:${{ needs.resolve-version.outputs.env_tag }}
-            ghcr.io/${{ github.repository }}/server:${{ needs.resolve-version.outputs.version }}
+            ghcr.io/${{ github.repository }}/server:${{ env.ENV_TAG }}
+            ghcr.io/${{ github.repository }}/server:v${{ env.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  package-agent:
-    name: Package AI Agent Worker
-    needs: [detect-changes, resolve-version]
+  # ----------------------------------------------------------------------------
+  # AI Agent Worker (agentic_framework)
+  # ----------------------------------------------------------------------------
+  release-agent:
+    name: Release & Package AI Agent Worker
+    needs: detect-changes
     if: needs.detect-changes.outputs.agent == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate SemVer for agent
+        id: semver
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          tag_prefix: "agent-v"
+          major_pattern: "(BREAKING CHANGE|feat!)"
+          minor_pattern: "feat"
+          version_format: ${{ github.ref_name == 'main' && '${major}.${minor}.${patch}' || (github.ref_name == 'test' && '${major}.${minor}.${patch}-rc.${increment}' || '${major}.${minor}.${patch}-dev.${increment}') }}
+
+      - name: Create Git Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TAG="agent-v${{ steps.semver.outputs.version }}"
+          echo "GIT_TAG=$TAG" >> $GITHUB_ENV
+          echo "VERSION=${{ steps.semver.outputs.version }}" >> $GITHUB_ENV
+          echo "ENV_TAG=${{ github.ref_name == 'main' && 'latest' || github.ref_name }}" >> $GITHUB_ENV
+          
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists."
+          else
+            echo "Creating tag $TAG"
+            git tag -a "$TAG" -m "Automated release $TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Create GitHub Release (Production)
+        if: github.ref_name == 'main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.GIT_TAG }}
+          name: "Agent ${{ env.GIT_TAG }}"
+          generate_release_notes: true
+
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -124,20 +167,60 @@ jobs:
           context: ./agentic_framework
           push: true
           build-args: |
-            APP_VERSION=${{ needs.resolve-version.outputs.version }}
+            APP_VERSION=${{ env.VERSION }}
           tags: |
-            ghcr.io/${{ github.repository }}/agent:${{ needs.resolve-version.outputs.env_tag }}
-            ghcr.io/${{ github.repository }}/agent:${{ needs.resolve-version.outputs.version }}
+            ghcr.io/${{ github.repository }}/agent:${{ env.ENV_TAG }}
+            ghcr.io/${{ github.repository }}/agent:v${{ env.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  package-www:
-    name: Package Web App (www)
-    needs: [detect-changes, resolve-version]
+  # ----------------------------------------------------------------------------
+  # Web Application (www)
+  # ----------------------------------------------------------------------------
+  release-www:
+    name: Release & Package Web App (www)
+    needs: detect-changes
     if: needs.detect-changes.outputs.www == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate SemVer for www
+        id: semver
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          tag_prefix: "www-v"
+          major_pattern: "(BREAKING CHANGE|feat!)"
+          minor_pattern: "feat"
+          version_format: ${{ github.ref_name == 'main' && '${major}.${minor}.${patch}' || (github.ref_name == 'test' && '${major}.${minor}.${patch}-rc.${increment}' || '${major}.${minor}.${patch}-dev.${increment}') }}
+
+      - name: Create Git Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TAG="www-v${{ steps.semver.outputs.version }}"
+          echo "GIT_TAG=$TAG" >> $GITHUB_ENV
+          echo "VERSION=${{ steps.semver.outputs.version }}" >> $GITHUB_ENV
+          echo "ENV_TAG=${{ github.ref_name == 'main' && 'latest' || github.ref_name }}" >> $GITHUB_ENV
+          
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists."
+          else
+            echo "Creating tag $TAG"
+            git tag -a "$TAG" -m "Automated release $TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Create GitHub Release (Production)
+        if: github.ref_name == 'main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.GIT_TAG }}
+          name: "Web App ${{ env.GIT_TAG }}"
+          generate_release_notes: true
+
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -150,20 +233,60 @@ jobs:
           context: ./www
           push: true
           build-args: |
-            NEXT_PUBLIC_APP_VERSION=${{ needs.resolve-version.outputs.version }}
+            NEXT_PUBLIC_APP_VERSION=${{ env.VERSION }}
           tags: |
-            ghcr.io/${{ github.repository }}/www:${{ needs.resolve-version.outputs.env_tag }}
-            ghcr.io/${{ github.repository }}/www:${{ needs.resolve-version.outputs.version }}
+            ghcr.io/${{ github.repository }}/www:${{ env.ENV_TAG }}
+            ghcr.io/${{ github.repository }}/www:v${{ env.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  package-site:
-    name: Package Landing Site (site)
-    needs: [detect-changes, resolve-version]
+  # ----------------------------------------------------------------------------
+  # Landing & Onboarding Site (site)
+  # ----------------------------------------------------------------------------
+  release-site:
+    name: Release & Package Landing Site (site)
+    needs: detect-changes
     if: needs.detect-changes.outputs.site == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate SemVer for site
+        id: semver
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          tag_prefix: "site-v"
+          major_pattern: "(BREAKING CHANGE|feat!)"
+          minor_pattern: "feat"
+          version_format: ${{ github.ref_name == 'main' && '${major}.${minor}.${patch}' || (github.ref_name == 'test' && '${major}.${minor}.${patch}-rc.${increment}' || '${major}.${minor}.${patch}-dev.${increment}') }}
+
+      - name: Create Git Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TAG="site-v${{ steps.semver.outputs.version }}"
+          echo "GIT_TAG=$TAG" >> $GITHUB_ENV
+          echo "VERSION=${{ steps.semver.outputs.version }}" >> $GITHUB_ENV
+          echo "ENV_TAG=${{ github.ref_name == 'main' && 'latest' || github.ref_name }}" >> $GITHUB_ENV
+          
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists."
+          else
+            echo "Creating tag $TAG"
+            git tag -a "$TAG" -m "Automated release $TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Create GitHub Release (Production)
+        if: github.ref_name == 'main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.GIT_TAG }}
+          name: "Site ${{ env.GIT_TAG }}"
+          generate_release_notes: true
+
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -176,9 +299,75 @@ jobs:
           context: ./site
           push: true
           build-args: |
-            NEXT_PUBLIC_APP_VERSION=${{ needs.resolve-version.outputs.version }}
+            NEXT_PUBLIC_APP_VERSION=${{ env.VERSION }}
           tags: |
-            ghcr.io/${{ github.repository }}/site:${{ needs.resolve-version.outputs.env_tag }}
-            ghcr.io/${{ github.repository }}/site:${{ needs.resolve-version.outputs.version }}
+            ghcr.io/${{ github.repository }}/site:${{ env.ENV_TAG }}
+            ghcr.io/${{ github.repository }}/site:v${{ env.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ----------------------------------------------------------------------------
+  # System Admin Dashboard (admin)
+  # ----------------------------------------------------------------------------
+  release-admin:
+    name: Release & Package Admin Dashboard (admin)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.admin == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate SemVer for admin
+        id: semver
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          tag_prefix: "admin-v"
+          major_pattern: "(BREAKING CHANGE|feat!)"
+          minor_pattern: "feat"
+          version_format: ${{ github.ref_name == 'main' && '${major}.${minor}.${patch}' || (github.ref_name == 'test' && '${major}.${minor}.${patch}-rc.${increment}' || '${major}.${minor}.${patch}-dev.${increment}') }}
+
+      - name: Create Git Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TAG="admin-v${{ steps.semver.outputs.version }}"
+          echo "GIT_TAG=$TAG" >> $GITHUB_ENV
+          echo "VERSION=${{ steps.semver.outputs.version }}" >> $GITHUB_ENV
+          echo "ENV_TAG=${{ github.ref_name == 'main' && 'latest' || github.ref_name }}" >> $GITHUB_ENV
+          
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists."
+          else
+            echo "Creating tag $TAG"
+            git tag -a "$TAG" -m "Automated release $TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Create GitHub Release (Production)
+        if: github.ref_name == 'main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.GIT_TAG }}
+          name: "Admin ${{ env.GIT_TAG }}"
+          generate_release_notes: true
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./admin
+          push: true
+          build-args: |
+            NEXT_PUBLIC_ADMIN_VERSION=${{ env.VERSION }}
+          tags: |
+            ghcr.io/${{ github.repository }}/admin:${{ env.ENV_TAG }}
+            ghcr.io/${{ github.repository }}/admin:v${{ env.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
