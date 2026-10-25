@@ -29,7 +29,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          TAG="${{ steps.semver.outputs.version_tag }}"
+          TAG="v${{ steps.semver.outputs.version }}"
           echo "Tagging test branch with $TAG"
           git tag -a "$TAG" -m "Release Candidate $TAG for testing/staging"
           git push origin "$TAG"
