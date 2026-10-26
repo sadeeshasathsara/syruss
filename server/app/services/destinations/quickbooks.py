@@ -6,7 +6,7 @@ import hashlib
 from typing import Any, Dict, Optional
 from app.services.destinations import http
 from app.services.destinations.accounting import Bill, BillAdapter, create_vendors_field, done, failed_reply, fail, fmt
-from app.services.destinations.base import Field, SendContext, TestResult, make_context, register
+from app.services.destinations.base import Field, SendContext, SendResult, TestResult, make_context, register
 from app.services.destinations import oauth
 
 MINOR = "75"
