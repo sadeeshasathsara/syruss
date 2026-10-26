@@ -6,7 +6,7 @@ the half-made invoice is deleted so a retry starts clean. Written from Microsoft
 from typing import Any, Dict, Optional, Tuple
 from app.services.destinations import http
 from app.services.destinations.accounting import Bill, BillAdapter, create_vendors_field, done, fail, failed_reply, fmt
-from app.services.destinations.base import Field, SendContext, TestResult, register
+from app.services.destinations.base import Field, SendContext, SendResult, TestResult, register
 
 API = "https://api.businesscentral.dynamics.com/v2.0"
 
