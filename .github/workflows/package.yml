@@ -27,21 +27,23 @@ jobs:
       admin: ${{ steps.filter.outputs.admin }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
         with:
-          filters: |
-            server:
-              - 'server/**'
-            agent:
-              - 'agentic_framework/**'
-            www:
-              - 'www/**'
-            site:
-              - 'site/**'
-            admin:
-              - 'admin/**'
+          fetch-depth: 0
 
+      - name: Detect changed services
+        id: filter
+        run: |
+          BEFORE="${{ github.event.before }}"
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            BEFORE="HEAD~1"
+          fi
+          CHANGED=$(git diff --name-only "$BEFORE" HEAD)
+          echo "Changed files:"; echo "$CHANGED"
+          echo "server=$(echo "$CHANGED" | grep -q '^server/' && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "agent=$(echo "$CHANGED"  | grep -q '^agentic_framework/' && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "www=$(echo "$CHANGED"    | grep -q '^www/' && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "site=$(echo "$CHANGED"   | grep -q '^site/' && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "admin=$(echo "$CHANGED"  | grep -q '^admin/' && echo true || echo false)" >> $GITHUB_OUTPUT
   # ----------------------------------------------------------------------------
   # API Server (FastAPI Core)
   # ----------------------------------------------------------------------------
