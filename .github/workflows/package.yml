@@ -16,63 +16,75 @@ permissions:
   packages: write
 
 jobs:
-  detect-changes:
-    name: Detect Changed Services
+  # ----------------------------------------------------------------------------
+  # Changeset Application & Version Resolution
+  # ----------------------------------------------------------------------------
+  prepare-release:
+    name: Apply Changesets & Prepare Releases
     runs-on: ubuntu-latest
     outputs:
-      server: ${{ steps.filter.outputs.server }}
-      agent: ${{ steps.filter.outputs.agent }}
-      www: ${{ steps.filter.outputs.www }}
-      site: ${{ steps.filter.outputs.site }}
-      admin: ${{ steps.filter.outputs.admin }}
+      has_releases: ${{ steps.apply.outputs.has_releases }}
+      server_changed: ${{ steps.apply.outputs.server_changed }}
+      server_version: ${{ steps.apply.outputs.server_version }}
+      server_tag: ${{ steps.apply.outputs.server_tag }}
+      agent_changed: ${{ steps.apply.outputs.agent_changed }}
+      agent_version: ${{ steps.apply.outputs.agent_version }}
+      agent_tag: ${{ steps.apply.outputs.agent_tag }}
+      www_changed: ${{ steps.apply.outputs.www_changed }}
+      www_version: ${{ steps.apply.outputs.www_version }}
+      www_tag: ${{ steps.apply.outputs.www_tag }}
+      site_changed: ${{ steps.apply.outputs.site_changed }}
+      site_version: ${{ steps.apply.outputs.site_version }}
+      site_tag: ${{ steps.apply.outputs.site_tag }}
+      admin_changed: ${{ steps.apply.outputs.admin_changed }}
+      admin_version: ${{ steps.apply.outputs.admin_version }}
+      admin_tag: ${{ steps.apply.outputs.admin_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Detect changed services
-        id: filter
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Apply Changesets
+        id: apply
         run: |
-          BEFORE="${{ github.event.before }}"
-          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            BEFORE="HEAD~1"
-          fi
-          CHANGED=$(git diff --name-only "$BEFORE" HEAD)
-          echo "Changed files:"; echo "$CHANGED"
-          echo "server=$(echo "$CHANGED" | grep -q '^server/' && echo true || echo false)" >> $GITHUB_OUTPUT
-          echo "agent=$(echo "$CHANGED"  | grep -q '^agentic_framework/' && echo true || echo false)" >> $GITHUB_OUTPUT
-          echo "www=$(echo "$CHANGED"    | grep -q '^www/' && echo true || echo false)" >> $GITHUB_OUTPUT
-          echo "site=$(echo "$CHANGED"   | grep -q '^site/' && echo true || echo false)" >> $GITHUB_OUTPUT
-          echo "admin=$(echo "$CHANGED"  | grep -q '^admin/' && echo true || echo false)" >> $GITHUB_OUTPUT
+          python scripts/changeset.py apply --branch "${{ github.ref_name }}"
+
+      - name: Commit CHANGELOG and push
+        if: steps.apply.outputs.has_releases == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md .changeset/
+          git commit -m "chore(release): update CHANGELOG and apply changesets [skip ci]" || echo "No changes to commit"
+          git push origin "${{ github.ref_name }}"
+
   # ----------------------------------------------------------------------------
   # API Server (FastAPI Core)
   # ----------------------------------------------------------------------------
   release-server:
     name: Release & Package API Server
-    needs: detect-changes
-    if: needs.detect-changes.outputs.server == 'true'
+    needs: prepare-release
+    if: needs.prepare-release.outputs.server_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Calculate SemVer for server
-        id: semver
-        uses: paulhatch/semantic-version@v5.4.0
-        with:
-          tag_prefix: "server-v"
-          major_pattern: "(BREAKING CHANGE|feat!)"
-          minor_pattern: "feat"
-          version_format: ${{ github.ref_name == 'main' && '${major}.${minor}.${patch}' || (github.ref_name == 'test' && '${major}.${minor}.${patch}-rc.${increment}' || '${major}.${minor}.${patch}-dev.${increment}') }}
-
       - name: Create Git Tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          TAG="server-v${{ steps.semver.outputs.version }}"
+          TAG="${{ needs.prepare-release.outputs.server_tag }}"
+          VERSION="${{ needs.prepare-release.outputs.server_version }}"
           echo "GIT_TAG=$TAG" >> $GITHUB_ENV
-          echo "VERSION=${{ steps.semver.outputs.version }}" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "ENV_TAG=${{ github.ref_name == 'main' && 'latest' || github.ref_name }}" >> $GITHUB_ENV
           
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
@@ -115,30 +127,22 @@ jobs:
   # ----------------------------------------------------------------------------
   release-agent:
     name: Release & Package AI Agent Worker
-    needs: detect-changes
-    if: needs.detect-changes.outputs.agent == 'true'
+    needs: prepare-release
+    if: needs.prepare-release.outputs.agent_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Calculate SemVer for agent
-        id: semver
-        uses: paulhatch/semantic-version@v5.4.0
-        with:
-          tag_prefix: "agent-v"
-          major_pattern: "(BREAKING CHANGE|feat!)"
-          minor_pattern: "feat"
-          version_format: ${{ github.ref_name == 'main' && '${major}.${minor}.${patch}' || (github.ref_name == 'test' && '${major}.${minor}.${patch}-rc.${increment}' || '${major}.${minor}.${patch}-dev.${increment}') }}
-
       - name: Create Git Tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          TAG="agent-v${{ steps.semver.outputs.version }}"
+          TAG="${{ needs.prepare-release.outputs.agent_tag }}"
+          VERSION="${{ needs.prepare-release.outputs.agent_version }}"
           echo "GIT_TAG=$TAG" >> $GITHUB_ENV
-          echo "VERSION=${{ steps.semver.outputs.version }}" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "ENV_TAG=${{ github.ref_name == 'main' && 'latest' || github.ref_name }}" >> $GITHUB_ENV
           
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
@@ -181,30 +185,22 @@ jobs:
   # ----------------------------------------------------------------------------
   release-www:
     name: Release & Package Web App (www)
-    needs: detect-changes
-    if: needs.detect-changes.outputs.www == 'true'
+    needs: prepare-release
+    if: needs.prepare-release.outputs.www_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Calculate SemVer for www
-        id: semver
-        uses: paulhatch/semantic-version@v5.4.0
-        with:
-          tag_prefix: "www-v"
-          major_pattern: "(BREAKING CHANGE|feat!)"
-          minor_pattern: "feat"
-          version_format: ${{ github.ref_name == 'main' && '${major}.${minor}.${patch}' || (github.ref_name == 'test' && '${major}.${minor}.${patch}-rc.${increment}' || '${major}.${minor}.${patch}-dev.${increment}') }}
-
       - name: Create Git Tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          TAG="www-v${{ steps.semver.outputs.version }}"
+          TAG="${{ needs.prepare-release.outputs.www_tag }}"
+          VERSION="${{ needs.prepare-release.outputs.www_version }}"
           echo "GIT_TAG=$TAG" >> $GITHUB_ENV
-          echo "VERSION=${{ steps.semver.outputs.version }}" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "ENV_TAG=${{ github.ref_name == 'main' && 'latest' || github.ref_name }}" >> $GITHUB_ENV
           
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
@@ -247,30 +243,22 @@ jobs:
   # ----------------------------------------------------------------------------
   release-site:
     name: Release & Package Landing Site (site)
-    needs: detect-changes
-    if: needs.detect-changes.outputs.site == 'true'
+    needs: prepare-release
+    if: needs.prepare-release.outputs.site_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Calculate SemVer for site
-        id: semver
-        uses: paulhatch/semantic-version@v5.4.0
-        with:
-          tag_prefix: "site-v"
-          major_pattern: "(BREAKING CHANGE|feat!)"
-          minor_pattern: "feat"
-          version_format: ${{ github.ref_name == 'main' && '${major}.${minor}.${patch}' || (github.ref_name == 'test' && '${major}.${minor}.${patch}-rc.${increment}' || '${major}.${minor}.${patch}-dev.${increment}') }}
-
       - name: Create Git Tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          TAG="site-v${{ steps.semver.outputs.version }}"
+          TAG="${{ needs.prepare-release.outputs.site_tag }}"
+          VERSION="${{ needs.prepare-release.outputs.site_version }}"
           echo "GIT_TAG=$TAG" >> $GITHUB_ENV
-          echo "VERSION=${{ steps.semver.outputs.version }}" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "ENV_TAG=${{ github.ref_name == 'main' && 'latest' || github.ref_name }}" >> $GITHUB_ENV
           
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
@@ -313,30 +301,22 @@ jobs:
   # ----------------------------------------------------------------------------
   release-admin:
     name: Release & Package Admin Dashboard (admin)
-    needs: detect-changes
-    if: needs.detect-changes.outputs.admin == 'true'
+    needs: prepare-release
+    if: needs.prepare-release.outputs.admin_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Calculate SemVer for admin
-        id: semver
-        uses: paulhatch/semantic-version@v5.4.0
-        with:
-          tag_prefix: "admin-v"
-          major_pattern: "(BREAKING CHANGE|feat!)"
-          minor_pattern: "feat"
-          version_format: ${{ github.ref_name == 'main' && '${major}.${minor}.${patch}' || (github.ref_name == 'test' && '${major}.${minor}.${patch}-rc.${increment}' || '${major}.${minor}.${patch}-dev.${increment}') }}
-
       - name: Create Git Tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          TAG="admin-v${{ steps.semver.outputs.version }}"
+          TAG="${{ needs.prepare-release.outputs.admin_tag }}"
+          VERSION="${{ needs.prepare-release.outputs.admin_version }}"
           echo "GIT_TAG=$TAG" >> $GITHUB_ENV
-          echo "VERSION=${{ steps.semver.outputs.version }}" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "ENV_TAG=${{ github.ref_name == 'main' && 'latest' || github.ref_name }}" >> $GITHUB_ENV
           
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then

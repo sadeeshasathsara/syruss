@@ -333,3 +333,40 @@ Each service includes a production-ready multi-stage Dockerfile:
 - `www/Dockerfile` (Node 22 Next.js standalone)
 
 GitHub Actions workflows automatically build and publish versioned container images to the GitHub Container Registry (`ghcr.io/sadeeshasathsara/...`) whenever commits are pushed to `dev`, `test`, or `main`.
+
+
+---
+
+## 8. Changelogs & Versioning (`scripts/changeset.py`)
+
+When you submit a PR that modifies code in any service (`server`, `agent`, `www`, `site`, or `admin`), you **must** include a changeset fragment. PRs with code changes but without a changeset will be automatically blocked by CI.
+
+### Creating a Changeset
+
+Run the interactive CLI tool:
+```bash
+python scripts/changeset.py add
+```
+
+1. It automatically detects which services were modified in your working tree / branch.
+2. Prompts you to pick which services are affected.
+3. Asks for the bump type (`patch`, `minor`, or `major`).
+4. Asks for a plain-English explanation of your changes.
+
+This generates a file in `.changeset/<unique-slug>.md` (e.g. `.changeset/bright-fox-123.md`). Commit this file with your PR:
+
+```bash
+git add .changeset/
+git commit -m "chore: add changeset for PR"
+```
+
+### Viewing Pending Changesets
+```bash
+python scripts/changeset.py status
+```
+
+### What Happens on Merge
+When your PR merges into `dev`, `test`, or `main`, the release workflow automatically:
+1. Calculates the new independent version tag for each modified service.
+2. Updates `CHANGELOG.md` with your description.
+3. Automatically deletes the consumed changeset fragment.
