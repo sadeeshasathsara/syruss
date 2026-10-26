@@ -2,14 +2,24 @@
 
 This folder holds pending changelog fragments.
 
-## How to add a changeset
-When you create a Pull Request that changes code in `server/`, `agentic_framework/`, `www/`, `site/`, or `admin/`, run:
+## How to Add a Changeset
 
+When you create a Pull Request that changes code in `server/`, `agentic_framework/`, `www/`, `site/`, or `admin/`, you must provide a changeset.
+
+### Option 1: AI Agent & Single-Command (Recommended)
 ```bash
-python scripts/changeset.py add
+syruss changeset write --bump "www=minor" --bump "server=patch" -m "Add entity badge in SchemaEditor" -m "Fix destination adapter"
+```
+Or let it auto-detect modified services:
+```bash
+syruss changeset write -m "Summary of changes"
 ```
 
-Follow the prompts to select which services changed, whether it's a `patch`, `minor`, or `major` bump, and enter a plain-English summary.
+### Option 2: Interactive CLI
+```bash
+syruss changeset add
+```
+Follow the interactive prompts to pick affected services, bump levels (`patch`, `minor`, `major`), and enter your description.
 
 Commit the generated file (e.g. `.changeset/bold-fox-123.md`) along with your pull request.
 
