@@ -75,7 +75,7 @@ jobs:
   test-server:
     name: Backend Server Tests
     needs: detect-changes
-    if: needs.detect-changes.outputs.server == 'true'
+    if: needs.detect-changes.outputs.server == 'true' || needs.detect-changes.outputs.agent == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -108,12 +108,15 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: server/requirements.txt
+          cache-dependency-path: |
+            server/requirements.txt
+            agentic_framework/requirements.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r server/requirements.txt
+          pip install -r agentic_framework/requirements.txt
 
       - name: Run Pytest Suite
         env:
