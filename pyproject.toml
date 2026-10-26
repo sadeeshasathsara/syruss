@@ -15,4 +15,4 @@ syruss = "scripts.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["scripts*"]
+include = ["scripts*", "registry*"]
