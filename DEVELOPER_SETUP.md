@@ -337,36 +337,70 @@ GitHub Actions workflows automatically build and publish versioned container ima
 
 ---
 
-## 8. Changelogs & Versioning (`scripts/changeset.py`)
+## 8. Syruss Monorepo CLI (`syruss`)
+
+The repository includes a unified, zero-external-dependency command center (`syruss`) for orchestrating microservices and managing versioning.
+
+### Running Commands (No PATH Configuration Required)
+
+You do **not** need to manually add anything to your system `PATH`. The repository includes native wrappers for every operating system:
+- **Windows (CMD / PowerShell)**: Run `syruss ...` or `.\syruss ...` directly inside the repository.
+- **macOS / Linux**: Run `./syruss ...` or `python3 -m scripts ...`.
+- **Optional Global Install**: If you prefer global availability, run `pip install -e .` once.
+
+### Service Orchestration Commands
+
+```bash
+# Development Mode (with live hot reload on code changes)
+syruss run dev                  # Start all services concurrently in single terminal
+syruss run dev --console        # Start all services in independent console windows
+syruss run dev server           # Start only the FastAPI REST API
+syruss run dev www              # Start only the Next.js Web App
+
+# Production Mode
+syruss start                    # Start all services in production mode
+syruss start --console          # Start all services in production with separate log windows
+syruss start server             # Start only the API server in production
+```
+
+### Registered Services
+
+Service configurations (paths, ports, lifecycle commands) are centrally managed in `scripts/registry.py`:
+- `server`: FastAPI Core REST API (port `8000`)
+- `agent`: AI Agent Worker (LangGraph / LangChain)
+- `www`: Next.js Web Application (port `3000`)
+- `site`: Landing & Onboarding Portal (port `3001`)
+- `admin`: System Admin Dashboard (port `3200`)
+
+---
+
+## 9. Changelogs & Versioning (`syruss changeset`)
 
 When you submit a PR that modifies code in any service (`server`, `agent`, `www`, `site`, or `admin`), you **must** include a changeset fragment. PRs with code changes but without a changeset will be automatically blocked by CI.
 
 ### Creating a Changeset
 
-Run the interactive CLI tool:
+#### Option A: Single-Command (Recommended for AI Coding Agents & CI)
 ```bash
-python scripts/changeset.py add
+syruss changeset write --bump "www=minor" --bump "server=patch" -m "Add badges in SchemaEditor" -m "Fix destination adapter"
 ```
+- Fully non-interactive.
+- Auto-detects modified services from `git diff` if `--bump` is omitted.
+- Supports multiple `-m` / `--message` flags; each becomes a distinct bullet point.
 
-1. It automatically detects which services were modified in your working tree / branch.
-2. Prompts you to pick which services are affected.
-3. Asks for the bump type (`patch`, `minor`, or `major`).
-4. Asks for a plain-English explanation of your changes.
-
-This generates a file in `.changeset/<unique-slug>.md` (e.g. `.changeset/bright-fox-123.md`). Commit this file with your PR:
-
+#### Option B: Interactive CLI (For Human Developers)
 ```bash
-git add .changeset/
-git commit -m "chore: add changeset for PR"
+syruss changeset add
 ```
+Prompts for affected services, bump levels (`patch`, `minor`, `major`), and a summary.
 
-### Viewing Pending Changesets
+### Viewing Pending Changesets & Projected Versions
 ```bash
-python scripts/changeset.py status
+syruss changeset status
 ```
 
 ### What Happens on Merge
-When your PR merges into `dev`, `test`, or `main`, the release workflow automatically:
-1. Calculates the new independent version tag for each modified service.
-2. Updates `CHANGELOG.md` with your description.
-3. Automatically deletes the consumed changeset fragment.
+- **Merge to `dev`**: Changesets are consumed, `CHANGELOG.md` is updated, and dev prerelease tags (e.g. `www-v0.2.0-dev.1`) are published.
+- **Merge to `test`**: Dev entries are automatically promoted to release candidates (e.g. `www-v0.2.0-rc.1`).
+- **Merge to `main`**: Roll-up into official production releases (e.g. `www-v0.2.0`).
+- The top table in `CHANGELOG.md` automatically reflects live versions across all three environments.
