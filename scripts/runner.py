@@ -15,7 +15,7 @@ import threading
 import time
 from typing import Dict, List, Optional
 
-from registry import ServiceConfig, get_all_services, get_service
+from scripts.registry import ServiceConfig, get_all_services, get_service
 
 # Color formatting for terminal outputs (disabled if not supported)
 USE_COLORS = sys.stdout.isatty() and platform.system() != "Windows" or os.environ.get("ANSICON") or os.environ.get("WT_SESSION")
@@ -96,7 +96,7 @@ def _build_env(svc: ServiceConfig) -> dict:
     running from a subdirectory (e.g. agentic_framework/) can still import
     each other and themselves as absolute packages.
     """
-    from registry import REPO_ROOT
+    from scripts.registry import REPO_ROOT
     env = os.environ.copy()
     existing = env.get("PYTHONPATH", "")
     repo_str = str(REPO_ROOT)
