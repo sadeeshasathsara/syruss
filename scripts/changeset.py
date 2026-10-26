@@ -1,31 +1,30 @@
 #!/usr/bin/env python3
 """
-Syruss Monorepo Changeset Tool
-
-A unified, zero-dependency CLI for managing changelog fragments, version calculation,
-and CHANGELOG.md generation across all services (Python, Next.js, and Infrastructure).
+Syruss Monorepo Changeset & Versioning Tool
+Zero external dependencies (Python standard library only).
 
 Commands:
-  python scripts/changeset.py add       Create a new changelog fragment for your changes
-  python scripts/changeset.py check     Verify that PR code changes include a valid changeset
-  python scripts/changeset.py status    Display all pending changesets and projected versions
-  python scripts/changeset.py apply     Apply changesets, bump versions, and update CHANGELOG.md
+  add     - Interactively (or via CLI flags) create a new changeset fragment in .changeset/
+  check   - Verify that code changes in a PR branch include a valid changeset (used in CI)
+  status  - List pending changesets and projected SemVer bumps
+  apply   - Apply changesets / promote changelog, update environment table, and bump versions
+  table   - Regenerate the Environment Versions table in CHANGELOG.md based on git tags
 """
+
 import argparse
 import datetime
 import os
+from pathlib import Path
 import random
 import re
 import subprocess
 import sys
-from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-# Ensure UTF-8 output on Windows consoles
-if hasattr(sys.stdout, "reconfigure"):
+# Ensure stdout handles UTF-8 on Windows
+if sys.platform == "win32":
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
 
@@ -33,7 +32,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CHANGESET_DIR = REPO_ROOT / ".changeset"
 CHANGELOG_PATH = REPO_ROOT / "CHANGELOG.md"
 
-SERVICES = {
+# Supported services and their respective root directories
+SERVICES: Dict[str, str] = {
     "server": "server",
     "agent": "agentic_framework",
     "www": "www",
@@ -41,88 +41,299 @@ SERVICES = {
     "admin": "admin",
 }
 
-BUMP_PRIORITY = {"patch": 1, "minor": 2, "major": 3}
-ADJECTIVES = ["bold", "bright", "calm", "clever", "cool", "eager", "fresh", "gentle", "grand", "keen", "swift", "wise"]
-ANIMALS = ["badger", "falcon", "fox", "hawk", "lion", "otter", "owl", "panther", "seal", "tiger", "wolf"]
+BUMP_PRIORITY: Dict[str, int] = {
+    "patch": 1,
+    "minor": 2,
+    "major": 3,
+}
+
+ADJECTIVES = ["quick", "bright", "silent", "calm", "clever", "bold", "keen", "swift", "gentle", "brave", "cool", "warm"]
+NOUNS = ["falcon", "tiger", "fox", "owl", "wolf", "badger", "hawk", "bear", "otter", "lynx", "hare", "eagle"]
 
 
 def random_slug() -> str:
-    return f"{random.choice(ADJECTIVES)}-{random.choice(ANIMALS)}-{random.randint(100, 999)}"
+    """Generates human-readable random slug for changeset filename (e.g. swift-fox-482)."""
+    adj = random.choice(ADJECTIVES)
+    noun = random.choice(NOUNS)
+    num = random.randint(100, 999)
+    return f"{adj}-{noun}-{num}"
 
 
-def parse_frontmatter(content: str) -> Tuple[Dict[str, str], str]:
-    """Parses YAML-like frontmatter without external dependencies."""
-    pattern = r"^---\s*\r?\n(.*?)\r?\n---\s*\r?\n?(.*)$"
-    match = re.match(pattern, content, re.DOTALL)
-    if not match:
-        raise ValueError("Invalid changeset format. Expected '---\\nservice: type\\n---\\n\\nMessage'")
-    
-    fm_raw = match.group(1).strip()
-    body = match.group(2).strip()
-    
-    bumps: Dict[str, str] = {}
-    for line in fm_raw.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if ":" not in line:
-            raise ValueError(f"Invalid frontmatter line: '{line}'. Expected 'service: type'")
-        svc, btype = line.split(":", 1)
-        svc = svc.strip().strip("'\"")
-        btype = btype.strip().strip("'\"").lower()
-        if svc not in SERVICES:
-            raise ValueError(f"Unknown service '{svc}'. Valid services: {', '.join(SERVICES.keys())}")
-        if btype not in BUMP_PRIORITY:
-            raise ValueError(f"Invalid bump type '{btype}' for service '{svc}'. Must be 'patch', 'minor', or 'major'")
-        bumps[svc] = btype
-    
-    if not bumps:
-        raise ValueError("Changeset must declare at least one service bump in frontmatter.")
-    if not body:
-        raise ValueError("Changeset description body cannot be empty.")
-        
-    return bumps, body
-
-
-def get_git_diff_files(base_ref: Optional[str] = None, head_ref: Optional[str] = None) -> List[str]:
-    """Returns files changed between two refs or in the working directory."""
+def get_git_diff_files(base_ref: str = "HEAD~1", head_ref: Optional[str] = None) -> List[str]:
+    """Returns list of changed files between git refs."""
     try:
-        if base_ref and head_ref:
-            cmd = ["git", "diff", "--name-only", base_ref, head_ref]
-        elif base_ref:
-            cmd = ["git", "diff", "--name-only", f"{base_ref}...HEAD"]
-        else:
-            cmd = ["git", "diff", "--name-only", "HEAD"]
-        res = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, check=True)
-        return [f.strip() for f in res.stdout.splitlines() if f.strip()]
-    except Exception:
-        return []
+        cmd = ["git", "diff", "--name-only", base_ref]
+        if head_ref:
+            cmd.append(head_ref)
+        result = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, check=True)
+        return [f.strip() for f in result.stdout.splitlines() if f.strip()]
+    except subprocess.CalledProcessError:
+        try:
+            result = subprocess.run(["git", "status", "--porcelain"], cwd=REPO_ROOT, capture_output=True, text=True, check=True)
+            files = []
+            for line in result.stdout.splitlines():
+                if len(line) > 3:
+                    files.append(line[3:].strip())
+            return files
+        except Exception:
+            return []
 
 
 def read_pending_changesets() -> List[Tuple[Path, Dict[str, str], str]]:
-    """Returns list of (filepath, bumps_dict, description_body)."""
+    """
+    Reads all pending changeset markdown files in .changeset/ (ignoring README.md).
+    Returns list of tuples: (file_path, {service: bump_type}, description)
+    """
     if not CHANGESET_DIR.exists():
         return []
-    items = []
-    for p in sorted(CHANGESET_DIR.glob("*.md")):
-        if p.name.startswith(".") or p.name.lower() == "readme.md":
-            continue
-        try:
-            bumps, body = parse_frontmatter(p.read_text(encoding="utf-8"))
-            items.append((p, bumps, body))
-        except Exception as exc:
-            print(f"⚠️  Warning: skipping malformed changeset '{p.name}': {exc}", file=sys.stderr)
-    return items
 
+    changesets = []
+    for file_path in sorted(CHANGESET_DIR.glob("*.md")):
+        if file_path.name.lower() in ("readme.md", "template.md"):
+            continue
+
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+
+        match = re.match(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", content, re.DOTALL)
+        if not match:
+            continue
+
+        frontmatter_raw = match.group(1).strip()
+        body = match.group(2).strip()
+
+        bumps: Dict[str, str] = {}
+        for line in frontmatter_raw.splitlines():
+            line = line.strip()
+            if not line or ":" not in line:
+                continue
+            svc, btype = line.split(":", 1)
+            svc = svc.strip()
+            btype = btype.strip().lower()
+            if svc in SERVICES and btype in BUMP_PRIORITY:
+                bumps[svc] = btype
+
+        if bumps:
+            changesets.append((file_path, bumps, body))
+
+    return changesets
+
+
+def parse_ver_tuple(v_str: str) -> Tuple[int, int, int, int, int]:
+    """Parses SemVer string into sortable tuple: (major, minor, patch, stage_weight, increment)."""
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:-(dev|rc)\.(\d+))?$", v_str)
+    if not m:
+        return (0, 0, 0, 0, 0)
+    major, minor, patch = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    stage = 3 if not m.group(4) else (1 if m.group(4) == "dev" else 2)
+    inc = int(m.group(5)) if m.group(5) else 0
+    return (major, minor, patch, stage, inc)
+
+
+def get_current_env_versions() -> Dict[str, Dict[str, Optional[str]]]:
+    """Scans existing CHANGELOG.md table and git tags to find latest version per service across dev, test, and main."""
+    env_map: Dict[str, Dict[str, Optional[str]]] = {s: {"dev": None, "test": None, "main": None} for s in SERVICES}
+    
+    # 1. Parse existing table in CHANGELOG.md if present
+    if CHANGELOG_PATH.exists():
+        try:
+            for line in CHANGELOG_PATH.read_text(encoding="utf-8").splitlines():
+                m = re.match(r"\|\s*\*\*(\w+)\*\*\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|", line)
+                if m:
+                    svc = m.group(1).strip()
+                    d = m.group(2).strip().strip("`— ")
+                    t = m.group(3).strip().strip("`— ")
+                    m_val = m.group(4).strip().strip("`— ")
+                    if svc in env_map:
+                        env_map[svc]["dev"] = d or None
+                        env_map[svc]["test"] = t or None
+                        env_map[svc]["main"] = m_val or None
+        except Exception:
+            pass
+
+    # 2. Merge with git tags (keeping highest SemVer)
+    try:
+        res = subprocess.run(["git", "tag", "-l"], cwd=REPO_ROOT, capture_output=True, text=True, check=True)
+        tags = [t.strip() for t in res.stdout.splitlines() if t.strip()]
+        for s in SERVICES:
+            for t in tags:
+                m_dev = re.match(rf"^{s}-v(\d+\.\d+\.\d+-dev\.\d+)$", t)
+                if m_dev:
+                    v = m_dev.group(1)
+                    cur = env_map[s]["dev"]
+                    if not cur or parse_ver_tuple(v) > parse_ver_tuple(cur):
+                        env_map[s]["dev"] = v
+                m_rc = re.match(rf"^{s}-v(\d+\.\d+\.\d+-rc\.\d+)$", t)
+                if m_rc:
+                    v = m_rc.group(1)
+                    cur = env_map[s]["test"]
+                    if not cur or parse_ver_tuple(v) > parse_ver_tuple(cur):
+                        env_map[s]["test"] = v
+                m_main = re.match(rf"^{s}-v(\d+\.\d+\.\d+)$", t)
+                if m_main:
+                    v = m_main.group(1)
+                    cur = env_map[s]["main"]
+                    if not cur or parse_ver_tuple(v) > parse_ver_tuple(cur):
+                        env_map[s]["main"] = v
+    except Exception:
+        pass
+    return env_map
+
+
+def format_env_table(env_map: Dict[str, Dict[str, Optional[str]]]) -> str:
+    """Formats top Markdown table displaying current versions per service across environments."""
+    lines = [
+        "## Current Environment Versions",
+        "",
+        "| Service | Development (`dev`) | Staging (`test`) | Production (`main`) |",
+        "| :--- | :---: | :---: | :---: |",
+    ]
+    for s in sorted(SERVICES.keys()):
+        d = f"`{env_map[s]['dev']}`" if env_map[s]["dev"] else "—"
+        t = f"`{env_map[s]['test']}`" if env_map[s]["test"] else "—"
+        m = f"`{env_map[s]['main']}`" if env_map[s]["main"] else "—"
+        lines.append(f"| **{s}** | {d} | {t} | {m} |")
+    return "\n".join(lines)
+
+
+def get_latest_base_version(service: str) -> Tuple[int, int, int]:
+    """Finds highest base SemVer (major, minor, patch) for a service across all tags."""
+    try:
+        res = subprocess.run(["git", "tag", "-l", f"{service}-v*"], cwd=REPO_ROOT, capture_output=True, text=True, check=True)
+        tags = [t.strip() for t in res.stdout.splitlines() if t.strip()]
+        parsed = []
+        for t in tags:
+            m = re.match(rf"^{service}-v(\d+)\.(\d+)\.(\d+)", t)
+            if m:
+                parsed.append((int(m.group(1)), int(m.group(2)), int(m.group(3))))
+        return max(parsed) if parsed else (0, 1, 0)
+    except Exception:
+        return (0, 1, 0)
+
+
+def compute_next_version(service: str, bump_type: str, branch: str) -> str:
+    """Computes next version and increments prerelease numbers if on dev or test."""
+    major, minor, patch = get_latest_base_version(service)
+    if bump_type == "major":
+        major += 1; minor = 0; patch = 0
+    elif bump_type == "minor":
+        minor += 1; patch = 0
+    elif bump_type == "patch":
+        patch += 1
+
+    base = f"{major}.{minor}.{patch}"
+    return compute_version_from_base(service, base, branch)
+
+
+def compute_version_from_base(service: str, base: str, branch: str) -> str:
+    """Computes version string for a given base version according to the target branch."""
+    if branch == "main":
+        return base
+
+    suffix = "rc" if branch == "test" else "dev"
+    try:
+        pattern = f"{service}-v{base}-{suffix}.*"
+        res = subprocess.run(["git", "tag", "-l", pattern], cwd=REPO_ROOT, capture_output=True, text=True, check=True)
+        increments = []
+        for t in res.stdout.splitlines():
+            m = re.search(rf"-{suffix}\.(\d+)$", t.strip())
+            if m:
+                increments.append(int(m.group(1)))
+        next_inc = max(increments) + 1 if increments else 1
+    except Exception:
+        next_inc = 1
+
+    return f"{base}-{suffix}.{next_inc}"
+
+
+def parse_unpromoted_entries(changelog_text: str, target_branch: str) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
+    """
+    Parses unpromoted sections from CHANGELOG.md for promotion to test or main.
+    Returns (entries_by_service, base_versions_by_service).
+    """
+    blocks = re.split(r"(?=\n## \[)", "\n" + changelog_text)
+    entries: Dict[str, List[str]] = {}
+    base_versions: Dict[str, str] = {}
+
+    for block in blocks:
+        block = block.strip()
+        if not block.startswith("## ["):
+            continue
+        first_line = block.splitlines()[0]
+
+        # Stop criteria when scanning downward
+        if target_branch == "test":
+            if "Release Candidate (test)" in first_line or "Production Release (main)" in first_line:
+                break
+        elif target_branch == "main":
+            if "Production Release (main)" in first_line:
+                break
+
+        # Parse services and bullet lines in this block
+        cur_svc = None
+        for line in block.splitlines():
+            m_svc = re.match(r"^###\s+(\w+)\s+\((\d+\.\d+\.\d+).*?\)", line)
+            if m_svc:
+                cur_svc = m_svc.group(1)
+                base = m_svc.group(2)
+                if cur_svc in SERVICES:
+                    if cur_svc not in base_versions:
+                        base_versions[cur_svc] = base
+                    if cur_svc not in entries:
+                        entries[cur_svc] = []
+            elif cur_svc and (line.startswith("- ") or line.startswith("* ")):
+                bullet = line.strip()
+                if bullet not in entries[cur_svc]:
+                    entries[cur_svc].append(bullet)
+
+    return entries, base_versions
+
+
+def update_changelog_file(new_section_lines: Optional[List[str]], new_versions: Dict[str, str], branch: str) -> None:
+    """Updates CHANGELOG.md: refreshes the environment table and prepends new release notes."""
+    env_map = get_current_env_versions()
+    for svc, ver in new_versions.items():
+        if branch == "dev":
+            env_map[svc]["dev"] = ver
+        elif branch == "test":
+            env_map[svc]["test"] = ver
+        elif branch == "main":
+            env_map[svc]["main"] = ver
+
+    existing = CHANGELOG_PATH.read_text(encoding="utf-8") if CHANGELOG_PATH.exists() else "# Changelog\n\nAll notable changes to Syruss services.\n\n"
+
+    history_marker = "## Release History"
+    if history_marker in existing:
+        history = existing.split(history_marker, 1)[1].lstrip("\n")
+    else:
+        first_rel = existing.find("\n## [")
+        history = existing[first_rel + 1:] if first_rel != -1 else ""
+
+    if new_section_lines:
+        section_text = "\n".join(new_section_lines).strip()
+        if history.strip():
+            history = section_text + "\n\n" + history.strip() + "\n"
+        else:
+            history = section_text + "\n"
+
+    table_text = format_env_table(env_map)
+    full_text = f"# Changelog\n\nAll notable changes to Syruss services.\n\n{table_text}\n\n---\n\n## Release History\n\n{history}"
+    CHANGELOG_PATH.write_text(full_text.rstrip() + "\n", encoding="utf-8")
+    print(f"✔ Updated {CHANGELOG_PATH.name} (table & release notes)")
+
+
+# ------------------------------------------------------------------------------
+# CLI Commands
+# ------------------------------------------------------------------------------
 
 def cmd_add(args: argparse.Namespace) -> int:
-    """Interactively or via flags creates a new changeset fragment."""
+    """Interactively creates a new changeset fragment file in .changeset/."""
     CHANGESET_DIR.mkdir(parents=True, exist_ok=True)
-    
     bumps: Dict[str, str] = {}
     message: str = ""
 
-    # Non-interactive CLI mode
     if args.service and args.type:
         for s in args.service:
             if s not in SERVICES:
@@ -131,12 +342,10 @@ def cmd_add(args: argparse.Namespace) -> int:
             bumps[s] = args.type.lower()
         message = args.message or ""
     else:
-        # Interactive Mode
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         print("  Syruss Changeset Creator")
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
         
-        # Check git status for changed paths to offer smart defaults
         changed_files = get_git_diff_files("origin/dev") or get_git_diff_files("dev") or get_git_diff_files()
         detected_svcs = set()
         for f in changed_files:
@@ -188,11 +397,9 @@ def cmd_add(args: argparse.Namespace) -> int:
             print("Description cannot be empty. Please enter summary:")
             message = input("> ").strip()
 
-    # Generate filename
     slug = args.name or random_slug()
     target_file = CHANGESET_DIR / f"{slug}.md"
 
-    # Write changeset content
     fm_lines = [f"{s}: {bumps[s]}" for s in sorted(bumps.keys())]
     content = f"---\n" + "\n".join(fm_lines) + f"\n---\n\n{message}\n"
     target_file.write_text(content, encoding="utf-8")
@@ -210,10 +417,8 @@ def cmd_check(args: argparse.Namespace) -> int:
     base_ref = args.base or os.environ.get("GITHUB_BASE_REF", "origin/dev")
     head_ref = args.head or os.environ.get("GITHUB_HEAD_REF")
     
-    # Check what files changed
     changed_files = get_git_diff_files(base_ref, head_ref)
     
-    # Check if any service code was touched
     touched_services = set()
     for f in changed_files:
         for s, folder in SERVICES.items():
@@ -224,7 +429,6 @@ def cmd_check(args: argparse.Namespace) -> int:
         print("✔ No service code changed (docs or infrastructure only). Changeset not required.")
         return 0
 
-    # Read pending changesets
     changesets = read_pending_changesets()
     if not changesets:
         print("\n❌ PR VALIDATION FAILED: No changeset fragment found in .changeset/")
@@ -236,7 +440,6 @@ def cmd_check(args: argparse.Namespace) -> int:
         print("───────────────────────────────────────────────────────────────────\n")
         return 1
 
-    # Verify that touched services are covered by at least one changeset
     covered_services = set()
     print("\n🔍 Validating pending changesets:")
     for path, bumps, body in changesets:
@@ -285,107 +488,108 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def get_latest_base_version(service: str) -> Tuple[int, int, int]:
-    """Finds highest base SemVer (major, minor, patch) for a service across all tags."""
-    try:
-        res = subprocess.run(["git", "tag", "-l", f"{service}-v*"], cwd=REPO_ROOT, capture_output=True, text=True, check=True)
-        tags = [t.strip() for t in res.stdout.splitlines() if t.strip()]
-        parsed = []
-        for t in tags:
-            m = re.match(rf"^{service}-v(\d+)\.(\d+)\.(\d+)", t)
-            if m:
-                parsed.append((int(m.group(1)), int(m.group(2)), int(m.group(3))))
-        return max(parsed) if parsed else (0, 1, 0)
-    except Exception:
-        return (0, 1, 0)
-
-
-def compute_next_version(service: str, bump_type: str, branch: str) -> str:
-    """Computes next version and increments prerelease numbers if on dev or test."""
-    major, minor, patch = get_latest_base_version(service)
-    if bump_type == "major":
-        major += 1; minor = 0; patch = 0
-    elif bump_type == "minor":
-        minor += 1; patch = 0
-    elif bump_type == "patch":
-        patch += 1
-
-    base = f"{major}.{minor}.{patch}"
-    if branch == "main":
-        return base
-
-    suffix = "rc" if branch == "test" else "dev"
-    # Find existing prerelease tags for this exact base
-    try:
-        pattern = f"{service}-v{base}-{suffix}.*"
-        res = subprocess.run(["git", "tag", "-l", pattern], cwd=REPO_ROOT, capture_output=True, text=True, check=True)
-        increments = []
-        for t in res.stdout.splitlines():
-            m = re.search(rf"-{suffix}\.(\d+)$", t.strip())
-            if m:
-                increments.append(int(m.group(1)))
-        next_inc = max(increments) + 1 if increments else 1
-    except Exception:
-        next_inc = 1
-
-    return f"{base}-{suffix}.{next_inc}"
-
-
 def cmd_apply(args: argparse.Namespace) -> int:
-    """Applies pending changesets, updates CHANGELOG.md, and outputs new versions for CI."""
+    """
+    Applies changesets (on dev) or promotes changelog (on test/main),
+    updates CHANGELOG.md and its top Environment Versions table,
+    and outputs variables for GitHub Actions.
+    """
+    branch = args.branch or "dev"
+    today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
     changesets = read_pending_changesets()
-    if not changesets:
+
+    new_versions: Dict[str, str] = {}
+    changelog_section: List[str] = []
+
+    # Branch title formatting
+    title_map = {
+        "dev": "Release via dev",
+        "test": "Release Candidate (test)",
+        "main": "Production Release (main)",
+    }
+    rel_title = title_map.get(branch, f"Release via {branch}")
+
+    # Case 1: Pending changesets exist in .changeset/
+    if changesets:
+        highest_bumps: Dict[str, str] = {}
+        entries_by_service: Dict[str, List[str]] = {s: [] for s in SERVICES}
+
+        for path, bumps, body in changesets:
+            for svc, btype in bumps.items():
+                cur = highest_bumps.get(svc)
+                if not cur or BUMP_PRIORITY[btype] > BUMP_PRIORITY[cur]:
+                    highest_bumps[svc] = btype
+                entries_by_service[svc].append(body)
+
+        changelog_section.append(f"## [{today}] - {rel_title}\n")
+        for svc in sorted(highest_bumps.keys()):
+            btype = highest_bumps[svc]
+            final_ver = compute_next_version(svc, btype, branch)
+            new_versions[svc] = final_ver
+
+            changelog_section.append(f"### {svc} ({final_ver})")
+            for entry in entries_by_service[svc]:
+                for line in entry.splitlines():
+                    line = line.strip()
+                    if line:
+                        changelog_section.append(f"- {line}" if not (line.startswith("-") or line.startswith("*")) else line)
+            changelog_section.append("")
+
+        # Delete applied changeset files
+        for path, _, _ in changesets:
+            path.unlink()
+            print(f"✔ Removed applied changeset: {path.name}")
+
+    # Case 2: No changesets in .changeset/, promote entries from CHANGELOG.md for test/main
+    elif branch in ("test", "main"):
+        existing_text = CHANGELOG_PATH.read_text(encoding="utf-8") if CHANGELOG_PATH.exists() else ""
+        entries, base_versions = parse_unpromoted_entries(existing_text, branch)
+
+        if not entries:
+            print(f"No unpromoted entries found in {CHANGELOG_PATH.name} for {branch}.")
+            # Even if no release, ensure table is up to date
+            update_changelog_file(None, {}, branch)
+            _write_gh_output({})
+            return 0
+
+        changelog_section.append(f"## [{today}] - {rel_title}\n")
+        for svc in sorted(entries.keys()):
+            base = base_versions.get(svc, "0.1.0")
+            final_ver = compute_version_from_base(svc, base, branch)
+            new_versions[svc] = final_ver
+
+            changelog_section.append(f"### {svc} ({final_ver})")
+            for bullet in entries[svc]:
+                changelog_section.append(bullet)
+            changelog_section.append("")
+
+    else:
         print("No changesets to apply.")
+        update_changelog_file(None, {}, branch)
+        _write_gh_output({})
         return 0
 
-    branch = args.branch or "dev"
-    highest_bumps: Dict[str, str] = {}
-    entries_by_service: Dict[str, List[str]] = {s: [] for s in SERVICES}
+    # Update CHANGELOG.md with table & release notes
+    update_changelog_file(changelog_section, new_versions, branch)
 
-    for path, bumps, body in changesets:
-        for svc, btype in bumps.items():
-            cur = highest_bumps.get(svc)
-            if not cur or BUMP_PRIORITY[btype] > BUMP_PRIORITY[cur]:
-                highest_bumps[svc] = btype
-            entries_by_service[svc].append(body)
+    # Output to GitHub Actions
+    _write_gh_output(new_versions)
 
-    # Compute new versions per service
-    new_versions: Dict[str, str] = {}
-    today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-    
-    changelog_section = [f"## [{today}] - Release via {branch}\n"]
+    print("\n🎉 Applied Releases successfully:")
+    for s, v in new_versions.items():
+        print(f"  • {s:<8} → {s}-v{v}")
+    print()
+    return 0
 
-    for svc in sorted(highest_bumps.keys()):
-        btype = highest_bumps[svc]
-        final_ver = compute_next_version(svc, btype, branch)
-        new_versions[svc] = final_ver
-        tag = f"{svc}-v{final_ver}"
 
-        changelog_section.append(f"### {svc} ({final_ver})")
-        for entry in entries_by_service[svc]:
-            for line in entry.splitlines():
-                line = line.strip()
-                if line:
-                    changelog_section.append(f"- {line}" if not line.startswith("-") and not line.startswith("*") else line)
-        changelog_section.append("")
+def cmd_table(args: argparse.Namespace) -> int:
+    """Regenerates the Environment Versions table in CHANGELOG.md without creating a release."""
+    update_changelog_file(None, {}, "dev")
+    return 0
 
-    # Prepend to CHANGELOG.md
-    existing_changelog = CHANGELOG_PATH.read_text(encoding="utf-8") if CHANGELOG_PATH.exists() else "# Changelog\n\nAll notable changes to Syruss services.\n\n"
-    header_end = existing_changelog.find("\n## ")
-    if header_end != -1:
-        updated = existing_changelog[:header_end] + "\n" + "\n".join(changelog_section) + "\n" + existing_changelog[header_end+1:]
-    else:
-        updated = existing_changelog.rstrip() + "\n\n" + "\n".join(changelog_section) + "\n"
-    
-    CHANGELOG_PATH.write_text(updated, encoding="utf-8")
-    print(f"✔ Updated {CHANGELOG_PATH.name}")
 
-    # Remove applied changesets
-    for path, _, _ in changesets:
-        path.unlink()
-        print(f"✔ Removed applied changeset: {path.name}")
-
-    # Output for GitHub Actions
+def _write_gh_output(new_versions: Dict[str, str]) -> None:
+    """Writes release variables to $GITHUB_OUTPUT if running in GitHub Actions."""
     gh_output = os.environ.get("GITHUB_OUTPUT")
     if gh_output and Path(gh_output).exists():
         with open(gh_output, "a", encoding="utf-8") as f:
@@ -397,12 +601,6 @@ def cmd_apply(args: argparse.Namespace) -> int:
                     f.write(f"{s}_changed=true\n")
                 else:
                     f.write(f"{s}_changed=false\n")
-
-    print("\n🎉 Applied Changesets successfully:")
-    for s, v in new_versions.items():
-        print(f"  • {s:<8} → {s}-v{v}")
-    print()
-    return 0
 
 
 def main() -> int:
@@ -425,8 +623,11 @@ def main() -> int:
     subparsers.add_parser("status", help="Show pending changesets and projected versions")
 
     # apply
-    p_apply = subparsers.add_parser("apply", help="Apply changesets, bump versions, and update CHANGELOG.md")
+    p_apply = subparsers.add_parser("apply", help="Apply changesets / promote changelog, update table, and bump versions")
     p_apply.add_argument("--branch", choices=["dev", "test", "main"], default="dev", help="Target branch for version naming")
+
+    # table
+    subparsers.add_parser("table", help="Regenerate environment versions table in CHANGELOG.md")
 
     args = parser.parse_args()
 
@@ -438,6 +639,8 @@ def main() -> int:
         return cmd_status(args)
     elif args.command == "apply":
         return cmd_apply(args)
+    elif args.command == "table":
+        return cmd_table(args)
     return 0
 
 
