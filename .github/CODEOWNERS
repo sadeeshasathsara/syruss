@@ -1,16 +1,16 @@
-# Global fallback owners
-* @tech-lead
+# Lines starting with '#' are considered comments.
+# Each line is a file pattern followed by one or more owners.
 
-# Core API & Connections
-/server/ @backend-lead
-/bridge/ @devops-lead
+# Global default: owner for everything in the repository
+* @sadeeshasathsara
 
-# AI Agent Framework
-/agentic_framework/ @ai-lead
+# Services & Applications
+/server/             @sadeeshasathsara
+/agentic_framework/  @sadeeshasathsara
+/www/                @sadeeshasathsara
+/site/               @sadeeshasathsara
+/admin/              @sadeeshasathsara
 
-# Frontend applications
-/www/ @frontend-lead
-/site/ @frontend-lead
-
-# CI/CD Workflows
-/.github/ @devops-lead
+# Infrastructure & CI/CD
+/bridge/             @sadeeshasathsara
+/.github/            @sadeeshasathsara
