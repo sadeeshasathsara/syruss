@@ -10,7 +10,7 @@ import sys
 from typing import List, Optional
 
 from scripts.changeset import build_changeset_parser, cmd_add, cmd_apply, cmd_check, cmd_status, cmd_table, cmd_write
-from registry import get_all_services, get_service_names
+from scripts.registry import get_all_services, get_service_names
 from scripts.runner import run_services
 
 

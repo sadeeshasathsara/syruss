@@ -1,0 +1,18 @@
+# ============================================================
+# Syruss Monorepo - Root Requirements
+# ============================================================
+# Run this once after cloning to install all Python dependencies
+# and register the `syruss` CLI command:
+#
+#   pip install -r requirements.txt
+#
+# ============================================================
+
+# -- Syruss CLI (registers `syruss` command in your venv) ----
+-e .
+
+# -- API Server (FastAPI) ------------------------------------
+-r server/requirements.txt
+
+# -- AI Agent Worker (LangGraph / LangChain) -----------------
+-r agentic_framework/requirements.txt

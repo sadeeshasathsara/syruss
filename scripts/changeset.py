@@ -35,7 +35,7 @@ CHANGELOG_PATH = REPO_ROOT / "CHANGELOG.md"
 
 # Import from registry if available, else fallback
 try:
-    from registry import SERVICES as REG_SERVICES, detect_changed_services
+    from scripts.registry import SERVICES as REG_SERVICES, detect_changed_services
     SERVICES: Dict[str, str] = {name: cfg.path for name, cfg in REG_SERVICES.items()}
 except Exception:
     SERVICES: Dict[str, str] = {
