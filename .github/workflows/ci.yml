@@ -22,22 +22,20 @@ jobs:
       site: ${{ steps.filter.outputs.site }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
         with:
-          filters: |
-            server:
-              - 'server/**'
-              - '.github/workflows/ci.yml'
-            agent:
-              - 'agentic_framework/**'
-              - '.github/workflows/ci.yml'
-            www:
-              - 'www/**'
-              - '.github/workflows/ci.yml'
-            site:
-              - 'site/**'
-              - '.github/workflows/ci.yml'
+          fetch-depth: 0
+
+      - name: Detect changed components
+        id: filter
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD")
+          echo "Changed files:"; echo "$CHANGED"
+          echo "server=$(echo "$CHANGED" | grep -qE '^(server/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "agent=$(echo "$CHANGED"  | grep -qE '^(agentic_framework/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "www=$(echo "$CHANGED"    | grep -qE '^(www/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "site=$(echo "$CHANGED"   | grep -qE '^(site/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
 
   typecheck-frontend:
     name: Frontend Typecheck & Build
