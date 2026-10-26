@@ -4,7 +4,8 @@ Syruss Monorepo Changeset & Versioning Tool
 Zero external dependencies (Python standard library only).
 
 Commands:
-  add     - Interactively (or via CLI flags) create a new changeset fragment in .changeset/
+  add     - Interactively create a new changeset fragment in .changeset/
+  write   - Non-interactive 1-line creation of a changeset (agent & CI friendly)
   check   - Verify that code changes in a PR branch include a valid changeset (used in CI)
   status  - List pending changesets and projected SemVer bumps
   apply   - Apply changesets / promote changelog, update environment table, and bump versions
@@ -32,14 +33,25 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CHANGESET_DIR = REPO_ROOT / ".changeset"
 CHANGELOG_PATH = REPO_ROOT / "CHANGELOG.md"
 
-# Supported services and their respective root directories
-SERVICES: Dict[str, str] = {
-    "server": "server",
-    "agent": "agentic_framework",
-    "www": "www",
-    "site": "site",
-    "admin": "admin",
-}
+# Import from registry if available, else fallback
+try:
+    from scripts.registry import SERVICES as REG_SERVICES, detect_changed_services
+    SERVICES: Dict[str, str] = {name: cfg.path for name, cfg in REG_SERVICES.items()}
+except Exception:
+    SERVICES: Dict[str, str] = {
+        "server": "server",
+        "agent": "agentic_framework",
+        "www": "www",
+        "site": "site",
+        "admin": "admin",
+    }
+    def detect_changed_services(changed_files: List[str]) -> List[str]:
+        detected = set()
+        for f in changed_files:
+            for s, folder in SERVICES.items():
+                if f.startswith(f"{folder}/"):
+                    detected.add(s)
+        return sorted(detected)
 
 BUMP_PRIORITY: Dict[str, int] = {
     "patch": 1,
@@ -321,7 +333,7 @@ def update_changelog_file(new_section_lines: Optional[List[str]], new_versions: 
     table_text = format_env_table(env_map)
     full_text = f"# Changelog\n\nAll notable changes to Syruss services.\n\n{table_text}\n\n---\n\n## Release History\n\n{history}"
     CHANGELOG_PATH.write_text(full_text.rstrip() + "\n", encoding="utf-8")
-    print(f"✔ Updated {CHANGELOG_PATH.name} (table & release notes)")
+    print(f"[OK] Updated {CHANGELOG_PATH.name} (table & release notes)")
 
 
 # ------------------------------------------------------------------------------
@@ -334,68 +346,56 @@ def cmd_add(args: argparse.Namespace) -> int:
     bumps: Dict[str, str] = {}
     message: str = ""
 
-    if args.service and args.type:
-        for s in args.service:
-            if s not in SERVICES:
-                print(f"❌ Error: Unknown service '{s}'. Available: {', '.join(SERVICES.keys())}")
-                return 1
-            bumps[s] = args.type.lower()
-        message = args.message or ""
-    else:
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("  Syruss Changeset Creator")
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+    print("------------------------------------------------------------")
+    print("  Syruss Changeset Creator")
+    print("------------------------------------------------------------\n")
+    
+    changed_files = get_git_diff_files("origin/dev") or get_git_diff_files("dev") or get_git_diff_files()
+    detected_svcs = detect_changed_services(changed_files)
+
+    if detected_svcs:
+        print(f"[INFO] Detected changes in services: {', '.join(detected_svcs)}\n")
+
+    print("Select which services are affected by your changes:")
+    svc_keys = sorted(SERVICES.keys())
+    for idx, svc in enumerate(svc_keys, 1):
+        hint = " (detected changes)" if svc in detected_svcs else ""
+        print(f"  [{idx}] {svc:<8} ({SERVICES[svc]}){hint}")
+    
+    print("\nEnter service numbers separated by commas (e.g. 1, 3):")
+    chosen_input = input("> ").strip()
+    if not chosen_input:
+        print("[ERROR] No services selected.")
+        return 1
         
-        changed_files = get_git_diff_files("origin/dev") or get_git_diff_files("dev") or get_git_diff_files()
-        detected_svcs = set()
-        for f in changed_files:
-            for s, folder in SERVICES.items():
-                if f.startswith(f"{folder}/"):
-                    detected_svcs.add(s)
+    chosen_svcs = []
+    for part in chosen_input.split(","):
+        part = part.strip()
+        if part.isdigit() and 1 <= int(part) <= len(svc_keys):
+            chosen_svcs.append(svc_keys[int(part) - 1])
+        elif part in svc_keys:
+            chosen_svcs.append(part)
 
-        if detected_svcs:
-            print(f"🔍 Detected changes in services: {', '.join(sorted(detected_svcs))}\n")
+    if not chosen_svcs:
+        print("[ERROR] No valid services selected.")
+        return 1
 
-        print("Select which services are affected by your changes:")
-        svc_keys = list(SERVICES.keys())
-        for idx, svc in enumerate(svc_keys, 1):
-            hint = " (detected changes)" if svc in detected_svcs else ""
-            print(f"  [{idx}] {svc:<8} ({SERVICES[svc]}){hint}")
-        
-        print("\nEnter service numbers separated by commas (e.g. 1, 3):")
-        chosen_input = input("> ").strip()
-        if not chosen_input:
-            print("❌ Error: No services selected.")
-            return 1
-            
-        chosen_svcs = []
-        for part in chosen_input.split(","):
-            part = part.strip()
-            if part.isdigit() and 1 <= int(part) <= len(svc_keys):
-                chosen_svcs.append(svc_keys[int(part) - 1])
-            elif part in svc_keys:
-                chosen_svcs.append(part)
+    print("\nSelect version bump type for each service:")
+    print("  1) patch  - backwards-compatible bug fixes")
+    print("  2) minor  - backwards-compatible new features")
+    print("  3) major  - breaking changes\n")
 
-        if not chosen_svcs:
-            print("❌ Error: No valid services selected.")
-            return 1
+    for svc in chosen_svcs:
+        print(f"Bump level for '{svc}' [1=patch, 2=minor, 3=major] (default: 1):")
+        b_choice = input(f"[{svc}] > ").strip() or "1"
+        level_map = {"1": "patch", "2": "minor", "3": "major", "patch": "patch", "minor": "minor", "major": "major"}
+        bumps[svc] = level_map.get(b_choice.lower(), "patch")
 
-        print("\nSelect version bump type for each service:")
-        print("  1) patch  - backwards-compatible bug fixes")
-        print("  2) minor  - backwards-compatible new features")
-        print("  3) major  - breaking changes\n")
-
-        for svc in chosen_svcs:
-            print(f"Bump level for '{svc}' [1=patch, 2=minor, 3=major] (default: 1):")
-            b_choice = input(f"[{svc}] > ").strip() or "1"
-            level_map = {"1": "patch", "2": "minor", "3": "major", "patch": "patch", "minor": "minor", "major": "major"}
-            bumps[svc] = level_map.get(b_choice.lower(), "patch")
-
-        print("\nDescribe what changed in this PR (plain English summary):")
+    print("\nDescribe what changed in this PR (plain English summary):")
+    message = input("> ").strip()
+    while not message:
+        print("Description cannot be empty. Please enter summary:")
         message = input("> ").strip()
-        while not message:
-            print("Description cannot be empty. Please enter summary:")
-            message = input("> ").strip()
 
     slug = args.name or random_slug()
     target_file = CHANGESET_DIR / f"{slug}.md"
@@ -404,11 +404,82 @@ def cmd_add(args: argparse.Namespace) -> int:
     content = f"---\n" + "\n".join(fm_lines) + f"\n---\n\n{message}\n"
     target_file.write_text(content, encoding="utf-8")
 
-    print(f"\n✔ Created changeset file: .changeset/{target_file.name}")
-    print("──────────────────────────────────────────────────────────")
+    print(f"\n[OK] Created changeset file: .changeset/{target_file.name}")
+    print("------------------------------------------------------------")
     print(content.strip())
-    print("──────────────────────────────────────────────────────────")
-    print("👉 Remember to commit this file to your branch before opening/merging your PR!\n")
+    print("------------------------------------------------------------")
+    print("[NOTE] Remember to commit this file to your branch before opening/merging your PR!\n")
+    return 0
+
+
+def cmd_write(args: argparse.Namespace) -> int:
+    """
+    Non-interactive single-command creation of a changeset fragment.
+    Designed for AI coding agents and automated CI scripts.
+    Auto-detects modified services from git diff if not explicitly specified.
+    """
+    CHANGESET_DIR.mkdir(parents=True, exist_ok=True)
+    bumps: Dict[str, str] = {}
+
+    # 1. Parse explicit --bump flags (e.g. --bump www=minor --bump server=patch)
+    if args.bump:
+        for b in args.bump:
+            delim = "=" if "=" in b else (":" if ":" in b else None)
+            if not delim:
+                print(f"[ERROR] Invalid --bump format '{b}'. Expected 'service=type' (e.g. www=minor).")
+                return 1
+            s_name, b_type = b.split(delim, 1)
+            s_name = s_name.strip().lower()
+            b_type = b_type.strip().lower()
+            if s_name not in SERVICES:
+                print(f"[ERROR] Unknown service '{s_name}'. Registered services: {', '.join(sorted(SERVICES.keys()))}")
+                return 1
+            if b_type not in BUMP_PRIORITY:
+                print(f"[ERROR] Unknown bump level '{b_type}'. Allowed: patch, minor, major.")
+                return 1
+            bumps[s_name] = b_type
+
+    # 2. Auto-detect from git if requested or if no bumps provided
+    if args.auto_detect or not bumps:
+        changed_files = get_git_diff_files("origin/dev") or get_git_diff_files("dev") or get_git_diff_files()
+        detected = detect_changed_services(changed_files)
+        for s in detected:
+            if s not in bumps:
+                bumps[s] = "patch"  # Default unassigned detected services to patch
+
+    if not bumps:
+        print("[ERROR] No services specified or detected with changes.")
+        print("Please use --bump <service>=<type> or ensure git changes are present.")
+        return 1
+
+    # 3. Assemble message lines
+    messages = args.message or []
+    if not messages:
+        print("[ERROR] Changeset description cannot be empty. Provide --message \"Description\".")
+        return 1
+
+    formatted_body_lines = []
+    for m in messages:
+        for line in m.strip().splitlines():
+            line = line.strip()
+            if line:
+                if not (line.startswith("- ") or line.startswith("* ")):
+                    formatted_body_lines.append(f"- {line}")
+                else:
+                    formatted_body_lines.append(line)
+    body_text = "\n".join(formatted_body_lines)
+
+    slug = args.name or random_slug()
+    target_file = CHANGESET_DIR / f"{slug}.md"
+
+    fm_lines = [f"{s}: {bumps[s]}" for s in sorted(bumps.keys())]
+    content = f"---\n" + "\n".join(fm_lines) + f"\n---\n\n{body_text}\n"
+    target_file.write_text(content, encoding="utf-8")
+
+    print(f"[OK] Created changeset file: .changeset/{target_file.name}")
+    print("------------------------------------------------------------")
+    print(content.strip())
+    print("------------------------------------------------------------")
     return 0
 
 
@@ -418,41 +489,39 @@ def cmd_check(args: argparse.Namespace) -> int:
     head_ref = args.head or os.environ.get("GITHUB_HEAD_REF")
     
     changed_files = get_git_diff_files(base_ref, head_ref)
-    
-    touched_services = set()
-    for f in changed_files:
-        for s, folder in SERVICES.items():
-            if f.startswith(f"{folder}/"):
-                touched_services.add(s)
+    touched_services = set(detect_changed_services(changed_files))
 
     if not touched_services:
-        print("✔ No service code changed (docs or infrastructure only). Changeset not required.")
+        print("[OK] No service code changed (docs or infrastructure only). Changeset not required.")
         return 0
 
     changesets = read_pending_changesets()
     if not changesets:
-        print("\n❌ PR VALIDATION FAILED: No changeset fragment found in .changeset/")
-        print("───────────────────────────────────────────────────────────────────")
+        print("\n[ERROR] PR VALIDATION FAILED: No changeset fragment found in .changeset/")
+        print("------------------------------------------------------------")
         print(f"This PR modifies code in services: {', '.join(sorted(touched_services))}")
         print("To fix this, please run:")
-        print("    python scripts/changeset.py add")
+        print("    syruss changeset write --bump <service>=<type> -m \"Description\"")
+        print("or:")
+        print("    syruss changeset add")
         print("and commit the generated .changeset/<name>.md file.")
-        print("───────────────────────────────────────────────────────────────────\n")
+        print("------------------------------------------------------------\n")
         return 1
 
     covered_services = set()
-    print("\n🔍 Validating pending changesets:")
+    print("\n[INFO] Validating pending changesets:")
     for path, bumps, body in changesets:
-        print(f"  • {path.name}: {bumps} - {body[:60]}...")
+        first_line = body.splitlines()[0] if body else ""
+        print(f"  * {path.name}: {bumps} - {first_line[:60]}...")
         covered_services.update(bumps.keys())
 
     missing = touched_services - covered_services
     if missing:
-        print(f"\n⚠️  Warning: Changes were detected in [{', '.join(sorted(missing))}] but no changeset declared them.")
+        print(f"\n[WARN] Changes were detected in [{', '.join(sorted(missing))}] but no changeset declared them.")
         print("Please ensure your changeset frontmatter includes all modified services.\n")
         return 1
 
-    print("\n✔ All modified services are covered by valid changesets. Checks passed!\n")
+    print("\n[OK] All modified services are covered by valid changesets. Checks passed!\n")
     return 0
 
 
@@ -460,7 +529,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     """Shows pending changesets and projected version bumps."""
     changesets = read_pending_changesets()
     if not changesets:
-        print("No pending changesets found in .changeset/.")
+        print("[INFO] No pending changesets found in .changeset/.")
         return 0
 
     highest_bumps: Dict[str, str] = {}
@@ -470,20 +539,20 @@ def cmd_status(args: argparse.Namespace) -> int:
             if not cur or BUMP_PRIORITY[btype] > BUMP_PRIORITY[cur]:
                 highest_bumps[svc] = btype
 
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    print("------------------------------------------------------------")
     print(f"  Pending Changesets ({len(changesets)} file(s))")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    print("------------------------------------------------------------")
     for path, bumps, body in changesets:
-        print(f"\n📄 {path.name}")
+        print(f"\n* File: {path.name}")
         for s, t in bumps.items():
-            print(f"   • {s}: {t}")
-        print(f"   Message: {body}")
+            print(f"  - {s}: {t}")
+        print(f"  Description:\n    {body}")
 
-    print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    print("\n------------------------------------------------------------")
     print("  Projected Next Bumps on Release:")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    print("------------------------------------------------------------")
     for s in sorted(highest_bumps.keys()):
-        print(f"  • {s:<8} → {highest_bumps[s].upper()} bump")
+        print(f"  * {s:<8} -> {highest_bumps[s].upper()} bump")
     print()
     return 0
 
@@ -501,7 +570,6 @@ def cmd_apply(args: argparse.Namespace) -> int:
     new_versions: Dict[str, str] = {}
     changelog_section: List[str] = []
 
-    # Branch title formatting
     title_map = {
         "dev": "Release via dev",
         "test": "Release Candidate (test)",
@@ -535,10 +603,9 @@ def cmd_apply(args: argparse.Namespace) -> int:
                         changelog_section.append(f"- {line}" if not (line.startswith("-") or line.startswith("*")) else line)
             changelog_section.append("")
 
-        # Delete applied changeset files
         for path, _, _ in changesets:
             path.unlink()
-            print(f"✔ Removed applied changeset: {path.name}")
+            print(f"[OK] Removed applied changeset: {path.name}")
 
     # Case 2: No changesets in .changeset/, promote entries from CHANGELOG.md for test/main
     elif branch in ("test", "main"):
@@ -546,8 +613,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
         entries, base_versions = parse_unpromoted_entries(existing_text, branch)
 
         if not entries:
-            print(f"No unpromoted entries found in {CHANGELOG_PATH.name} for {branch}.")
-            # Even if no release, ensure table is up to date
+            print(f"[INFO] No unpromoted entries found in {CHANGELOG_PATH.name} for {branch}.")
             update_changelog_file(None, {}, branch)
             _write_gh_output({})
             return 0
@@ -564,20 +630,17 @@ def cmd_apply(args: argparse.Namespace) -> int:
             changelog_section.append("")
 
     else:
-        print("No changesets to apply.")
+        print("[INFO] No changesets to apply.")
         update_changelog_file(None, {}, branch)
         _write_gh_output({})
         return 0
 
-    # Update CHANGELOG.md with table & release notes
     update_changelog_file(changelog_section, new_versions, branch)
-
-    # Output to GitHub Actions
     _write_gh_output(new_versions)
 
-    print("\n🎉 Applied Releases successfully:")
+    print("\n[SUCCESS] Applied Releases successfully:")
     for s, v in new_versions.items():
-        print(f"  • {s:<8} → {s}-v{v}")
+        print(f"  * {s:<8} -> {s}-v{v}")
     print()
     return 0
 
@@ -603,36 +666,54 @@ def _write_gh_output(new_versions: Dict[str, str]) -> None:
                     f.write(f"{s}_changed=false\n")
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Syruss Monorepo Changeset Tool")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+def build_changeset_parser(subparsers=None):
+    """Constructs parser for changeset commands."""
+    if subparsers is None:
+        parser = argparse.ArgumentParser(description="Syruss Changeset Tool")
+        sub = parser.add_subparsers(dest="command", required=True)
+    else:
+        sub = subparsers
 
     # add
-    p_add = subparsers.add_parser("add", help="Create a new changeset file")
-    p_add.add_argument("-s", "--service", action="append", help="Service(s) to bump (server, agent, www, site, admin)")
-    p_add.add_argument("-t", "--type", choices=["patch", "minor", "major"], help="Bump type")
-    p_add.add_argument("-m", "--message", help="Changelog description")
-    p_add.add_argument("--name", help="Custom filename for the changeset")
+    p_add = sub.add_parser("add", help="Interactively create a changeset file")
+    p_add.add_argument("--name", help="Custom filename for changeset")
+
+    # write (Agent & CI 1-liner)
+    p_write = sub.add_parser("write", help="Non-interactive single-command changeset writer for agents & CI")
+    p_write.add_argument("-b", "--bump", action="append", help="Service bump level in format <service>=<type> (e.g. www=minor)")
+    p_write.add_argument("-m", "--message", action="append", required=True, help="Changelog bullet point (can be repeated)")
+    p_write.add_argument("--auto-detect", action="store_true", default=True, help="Auto-detect modified services via git diff (default: True)")
+    p_write.add_argument("--name", help="Custom filename for changeset")
 
     # check
-    p_check = subparsers.add_parser("check", help="Verify PR code changes include a valid changeset")
+    p_check = sub.add_parser("check", help="Verify PR code changes include a valid changeset")
     p_check.add_argument("--base", help="Git base ref (e.g. origin/dev)")
     p_check.add_argument("--head", help="Git head ref")
 
     # status
-    subparsers.add_parser("status", help="Show pending changesets and projected versions")
+    sub.add_parser("status", help="Show pending changesets and projected versions")
 
     # apply
-    p_apply = subparsers.add_parser("apply", help="Apply changesets / promote changelog, update table, and bump versions")
+    p_apply = sub.add_parser("apply", help="Apply changesets / promote changelog, update table, and bump versions")
     p_apply.add_argument("--branch", choices=["dev", "test", "main"], default="dev", help="Target branch for version naming")
 
     # table
-    subparsers.add_parser("table", help="Regenerate environment versions table in CHANGELOG.md")
+    sub.add_parser("table", help="Regenerate environment versions table in CHANGELOG.md")
 
-    args = parser.parse_args()
+    return sub
+
+
+def main(custom_args=None) -> int:
+    parser = argparse.ArgumentParser(description="Syruss Monorepo Changeset Tool")
+    sub = parser.add_subparsers(dest="command", required=True)
+    build_changeset_parser(sub)
+
+    args = parser.parse_args(custom_args)
 
     if args.command == "add":
         return cmd_add(args)
+    elif args.command == "write":
+        return cmd_write(args)
     elif args.command == "check":
         return cmd_check(args)
     elif args.command == "status":
