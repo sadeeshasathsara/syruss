@@ -5,7 +5,7 @@ is OAuth2. Xero matches a contact by name or creates it. Written from Xero's pub
 from typing import Any, Dict, Optional
 from app.services.destinations import http, oauth
 from app.services.destinations.accounting import Bill, BillAdapter, done, fail, failed_reply, fmt
-from app.services.destinations.base import Field, SendContext, TestResult, make_context, register
+from app.services.destinations.base import Field, SendContext, SendResult, TestResult, make_context, register
 
 API = "https://api.xero.com"
 
