@@ -13,6 +13,9 @@ dependencies = []
 [project.scripts]
 syruss = "scripts.cli:main"
 
+[tool.setuptools]
+py-modules = ["registry"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["scripts*"]
