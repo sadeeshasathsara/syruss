@@ -91,11 +91,23 @@ Browser ─► www  (the Syruss app)                    ─┴► the tokens on 
 ## Run locally
 
 ```bash
+# 1. Start backing infrastructure (Postgres, MinIO, Kafka, Mailpit, Keycloak)
 docker compose -f bridge/docker-compose.yml up -d
-python -m uvicorn app.main:app --port 8000 --app-dir server   # core
-python -m agentic_framework                                  # agent (needs a model API key in agentic_framework/.env)
-cd site && npm run dev                                       # landing, onboarding, invitations (port 3100)
-cd www && npm run dev                                        # the app (port 3000)
+
+# 2. Install monorepo dependencies & register the syruss CLI (one-time setup)
+pip install -r requirements.txt
+
+# 3. Start all services in development mode (with live reload)
+syruss run dev
+
+# Or launch each service in its own console window to view isolated logs:
+syruss run dev --console
+
+# Or run individual services:
+syruss run dev server    # FastAPI REST API (port 8000)
+syruss run dev agent     # Autonomous AI agent worker
+syruss run dev www       # Main workspace web application (port 3000)
+syruss run dev site      # Landing, onboarding, and invitations portal (port 3100)
 ```
 
 ## Tests

@@ -141,11 +141,12 @@ All backing services (Postgres, MinIO, Kafka, Mailpit, and Keycloak) are orchest
    source .venv/bin/activate
    ```
 
-2. Upgrade pip and install server dependencies:
+2. Upgrade pip and install all monorepo Python dependencies and the `syruss` CLI in one command:
    ```bash
    pip install --upgrade pip
-   pip install -r server/requirements.txt
+   pip install -r requirements.txt
    ```
+   *(This automatically links `server/requirements.txt`, `agentic_framework/requirements.txt`, and installs the `syruss` command center in editable mode).*
 
 3. Setup environment variables for the server:
    ```bash
@@ -165,8 +166,7 @@ All backing services (Postgres, MinIO, Kafka, Mailpit, and Keycloak) are orchest
 
 5. Run the FastAPI development server:
    ```bash
-   cd server
-   uvicorn app.main:app --reload --port 8000
+   syruss run dev server
    ```
    - OpenAPI Swagger Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
    - Health Check: [http://localhost:8000/health](http://localhost:8000/health)
@@ -177,10 +177,7 @@ All backing services (Postgres, MinIO, Kafka, Mailpit, and Keycloak) are orchest
 
 The agent worker listens to Kafka events from the core server and executes agentic document processing and extraction tools.
 
-1. Install agent dependencies (in the same or separate virtualenv):
-   ```bash
-   pip install -r agentic_framework/requirements.txt
-   ```
+1. Dependencies are already installed via `pip install -r requirements.txt` in Step 3!
 
 2. Setup agent environment variables:
    ```bash
@@ -200,7 +197,7 @@ The agent worker listens to Kafka events from the core server and executes agent
 
 4. Run the agent worker process:
    ```bash
-   python -m agentic_framework
+   syruss run dev agent
    ```
 
 ---
