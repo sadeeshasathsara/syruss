@@ -7,7 +7,7 @@ import itertools
 from typing import Any, Dict, List, Optional, Tuple
 from app.services.destinations import http
 from app.services.destinations.accounting import Bill, BillAdapter, create_vendors_field, done, fail, failed_reply, fmt
-from app.services.destinations.base import Field, SendContext, TestResult, register
+from app.services.destinations.base import Field, SendContext, SendResult, TestResult, register
 
 _ids = itertools.count(1)
 

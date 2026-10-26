@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Any, Dict, Optional, Tuple
 from app.services.destinations import http
 from app.services.destinations.accounting import Bill, BillAdapter, done, fail, failed_reply, fmt
-from app.services.destinations.base import Field, SendContext, TestResult, register
+from app.services.destinations.base import Field, SendContext, SendResult, TestResult, register
 
 INVOICE = "/sap/opu/odata/sap/API_SUPPLIERINVOICE_PROCESS_SRV"
 PARTNER = "/sap/opu/odata/sap/API_BUSINESS_PARTNER"

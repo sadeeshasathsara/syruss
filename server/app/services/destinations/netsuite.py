@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 from urllib.parse import parse_qsl, quote, urlsplit
 from app.services.destinations import http
 from app.services.destinations.accounting import Bill, BillAdapter, create_vendors_field, done, fail, failed_reply, fmt
-from app.services.destinations.base import Field, SendContext, TestResult, register
+from app.services.destinations.base import Field, SendContext, SendResult, TestResult, register
 
 
 def _enc(value: str) -> str:
