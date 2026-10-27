@@ -53,9 +53,24 @@ export interface TemplateObject {
 
 export interface ValidationRule {
   id?: string;
-  rule_type: string;
+  rule_type: 'expression' | 'sum_match' | 'count_equals' | 'allowed_values' | 'regex' | 'unique' | 'time_diff' | string;
   object: string;
   description?: string;
+  expression?: string;
+  field?: string;
+  total_object?: string;
+  total_field?: string;
+  tolerance?: number;
+  expected_count?: number;
+  count_object?: string;
+  count_field?: string;
+  values?: string[];
+  pattern?: string;
+  start_field?: string;
+  end_field?: string;
+  hours_field?: string;
+  expected_hours?: number;
+  tolerance_hours?: number;
   [key: string]: unknown;
 }
 

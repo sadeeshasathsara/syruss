@@ -1,5 +1,7 @@
 "use client";
 
+import { formatRuleCode, formatRuleDescription, RULE_TYPES } from "@/components/workspace/ValidationRulesEditor";
+
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -69,12 +71,26 @@ function TemplateVersions() {
       )}
 
       {!showHistory && (schema?.validation_rules?.length ?? 0) > 0 && (
-        <Panel title="Checks">
-          <ul className="flex flex-col gap-1">
-            {schema!.validation_rules!.map((r, i) => (
-              <li key={r.id ?? i} className="text-body text-ink">{r.description ?? `${humanize(r.rule_type)} on ${r.object}`}</li>
-            ))}
-          </ul>
+        <Panel title="Checks & Validation Rules" aside={`${schema!.validation_rules!.length} active`}>
+          <div className="flex flex-col gap-2">
+            {schema!.validation_rules!.map((r, i) => {
+              const meta = RULE_TYPES.find((t) => t.value === r.rule_type);
+              return (
+                <div key={r.id ?? i} className="flex flex-col gap-1.5 border-b border-rule py-2.5 last:border-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Pill tone={meta?.tone ?? "neutral"}>{meta?.label ?? humanize(r.rule_type)}</Pill>
+                    <span className="inline-flex items-center rounded-control bg-well px-2 py-0.5 font-mono text-meta font-medium text-ink">
+                      {r.object}
+                    </span>
+                  </div>
+                  <p className="text-body text-ink">{formatRuleDescription(r)}</p>
+                  <code className="self-start rounded bg-well px-2 py-0.5 font-mono text-meta text-muted">
+                    {formatRuleCode(r)}
+                  </code>
+                </div>
+              );
+            })}
+          </div>
         </Panel>
       )}
 
