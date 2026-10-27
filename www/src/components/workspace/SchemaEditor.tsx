@@ -5,6 +5,7 @@ import { Button, IconButton } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { humanize } from "@/lib/format";
+import { ValidationRulesEditor } from "./ValidationRulesEditor";
 import type { TemplateField, TemplateObject, TemplateSchema } from "@/lib/types";
 
 const TYPES = ["string", "number", "integer", "date", "time", "boolean"] as const;
@@ -245,16 +246,12 @@ export function SchemaEditor({ schema, onChange }: { schema: TemplateSchema; onC
         })}
       </div>
 
-      {(schema.validation_rules?.length ?? 0) > 0 && (
-        <section>
-          <h3 className="text-section font-semibold text-ink">Checks the agent will run</h3>
-          <ul className="mt-2 flex flex-col gap-1">
-            {schema.validation_rules!.map((r, i) => (
-              <li key={r.id ?? i} className="text-body text-muted">{ruleText(r)}</li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <section className="mt-4 border-t border-border pt-4">
+        <ValidationRulesEditor
+          schema={schema}
+          onChange={(validation_rules) => onChange({ ...schema, validation_rules })}
+        />
+      </section>
     </div>
   );
 }
