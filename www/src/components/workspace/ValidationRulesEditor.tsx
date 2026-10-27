@@ -182,30 +182,65 @@ export function parseNaturalLanguageRule(
     };
   }
 
-  // 5. Allowed values whitelist (e.g. USD, EUR, GBP)
-  if (query.includes("only allow") || query.includes("must be one of") || query.includes("allowed") || query.includes("currency") || query.includes("status")) {
-    const allFields = [...getAllFields(multiObj), ...getAllFields(singleObj)];
-    const targetField = allFields.find((f) => f.includes("currency") || f.includes("unit") || f.includes("status") || f.includes("type")) ?? allFields[0] ?? "code";
-    const targetObj = getAllFields(multiObj).includes(targetField) ? multiObj : singleObj;
+  // 5. Allowed values whitelist
+  // Catches: "only allow X, Y", "must be one of X, Y", "only X and Y in field",
+  //          "only X's and Y's in field", "only [values]", currency/status keywords
+  {
+    const isAllowedValues =
+      query.includes("only allow") ||
+      query.includes("must be one of") ||
+      query.includes("allowed") ||
+      query.includes("currency") ||
+      query.includes("status") ||
+      // "only X and Y" pattern — broad match for restricted value lists
+      /\bonly\b.+\band\b/.test(query) ||
+      /\bonly\b.+,/.test(query);
 
-    let vals = ["USD", "EUR", "GBP"];
-    if (query.includes("usd") || query.includes("eur") || query.includes("gbp")) {
-      vals = ["USD", "EUR", "GBP"];
-    } else if (query.includes("kg") || query.includes("pcs") || query.includes("box")) {
-      vals = ["kg", "pcs", "box"];
+    if (isAllowedValues) {
+      const allFields = [...getAllFields(multiObj), ...getAllFields(singleObj)];
+
+      // Try to detect which field the constraint is about from the text itself.
+      const fieldFromText = allFields.find((f) => query.includes(f.replace(/_/g, " ")) || query.includes(f));
+      const targetField =
+        fieldFromText ??
+        allFields.find((f) => f.includes("currency") || f.includes("unit") || f.includes("status") || f.includes("type") || f.includes("rank") || f.includes("code")) ??
+        allFields[0] ??
+        "value";
+      const targetObj = getAllFields(multiObj).includes(targetField) ? multiObj : singleObj;
+
+      // Extract the values listed in the text.
+      // Strategy: grab ALL_CAPS tokens or words following "only"/"are" that look like labels.
+      const capsMatches = text.match(/\b[A-Z]{2,}(?:'s|s)?\b/g) ?? [];
+      const cleanedCaps = capsMatches.map((v) => v.replace(/'?s$/i, "").trim()).filter(Boolean);
+
+      // Also try comma/and-separated words after "only" keyword.
+      let vals: string[] = [];
+      if (cleanedCaps.length >= 2) {
+        // Use the extracted uppercase abbreviations (OIC, SSO, USD, EUR, etc.)
+        vals = [...new Set(cleanedCaps)];
+      } else {
+        // Fallback: check known sets
+        if (query.includes("usd") || query.includes("eur") || query.includes("gbp")) {
+          vals = ["USD", "EUR", "GBP"];
+        } else if (query.includes("kg") || query.includes("pcs") || query.includes("box")) {
+          vals = ["kg", "pcs", "box"];
+        } else {
+          vals = ["USD", "EUR", "GBP"];
+        }
+      }
+
+      return {
+        rule: {
+          id: `rule_${Date.now().toString(36)}`,
+          rule_type: "allowed_values",
+          object: targetObj.type,
+          field: targetField,
+          values: vals,
+          description: `${targetField} must be one of: ${vals.join(", ")}`,
+        },
+        plainExplanation: `Only accepts "${targetField}" if it matches one of: ${vals.join(", ")}.`,
+      };
     }
-
-    return {
-      rule: {
-        id: `rule_${Date.now().toString(36)}`,
-        rule_type: "allowed_values",
-        object: targetObj.type,
-        field: targetField,
-        values: vals,
-        description: `${targetField} must be one of: ${vals.join(", ")}`,
-      },
-      plainExplanation: `Only accepts "${targetField}" if it matches one of: ${vals.join(", ")}.`,
-    };
   }
 
   // 6. Regex format (e.g. 9 digits)
@@ -246,7 +281,18 @@ export function parseNaturalLanguageRule(
     };
   }
 
-  return null;
+  // Fallback: create a pending rule using the raw description so it always appears in the list.
+  // The user or agent can then refine it in Manual Form mode.
+  return {
+    rule: {
+      id: `rule_${Date.now().toString(36)}`,
+      rule_type: "expression",
+      object: multiObj.type,
+      expression: "true",
+      description: text.trim(),
+    },
+    plainExplanation: `Recorded your rule as written. Open Manual Form to configure the exact check, or let the agent refine it in chat.`,
+  };
 }
 
 interface ValidationRulesEditorProps {
@@ -387,18 +433,17 @@ export function ValidationRulesEditor({ schema, onChange }: ValidationRulesEdito
   };
 
   /**
-   * Sends the plain-English rule description to the agent chat.
-   * If the local parser already understood the rule, it is also applied immediately.
-   * If not, the agent will interpret it and propose a structured rule in its reply.
+   * Sends the plain-English rule description to the agent chat and always adds the
+   * rule to the list immediately. The local parser now always returns a result (with
+   * a fallback description-only rule), so the user sees it right away and can edit
+   * it in Manual Form if needed. The agent will also refine it in the chat panel.
    */
   const handleSendToChat = async () => {
     const text = nlPrompt.trim();
     if (!text) return;
 
-    // Apply locally if the client-side parser already resolved it.
-    if (nlResult) {
-      applyNaturalLanguageRule();
-    }
+    // Always apply locally — the parser always returns a result now.
+    applyNaturalLanguageRule();
 
     await send(`New validation rule: ${text}`, {
       current_page: "template_setup",
