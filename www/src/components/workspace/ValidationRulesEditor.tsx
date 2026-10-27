@@ -1,22 +1,24 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Code, Edit3, HelpCircle, Plus, Sliders, Trash2, X } from "lucide-react";
+import { Check, Edit3, Plus, SendHorizonal, Trash2, X } from "lucide-react";
+import { useAgentChat } from "@/components/chat/ChatProvider";
+import { useShell } from "@/components/shell/ShellContext";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
 import { Select } from "@/components/ui/Select";
-import { cn, fieldName, humanize } from "@/lib/format";
-import type { TemplateField, TemplateSchema, ValidationRule } from "@/lib/types";
+import { fieldName, humanize } from "@/lib/format";
+import type { TemplateSchema, ValidationRule } from "@/lib/types";
 
 export const RULE_TYPES = [
-  { value: "expression", label: "Formula / Math Expression", tone: "accent" as const, desc: "Safe math/logic formula evaluated on each record" },
-  { value: "sum_match", label: "Sum of Rows Matches Total", tone: "positive" as const, desc: "Sum of line items must equal a header total" },
-  { value: "count_equals", label: "Row Count Check", tone: "neutral" as const, desc: "Number of rows must equal an expected count" },
-  { value: "allowed_values", label: "Allowed Values (Whitelist)", tone: "accent" as const, desc: "Restricts a field to specific valid values" },
-  { value: "regex", label: "Pattern Match (Regex)", tone: "neutral" as const, desc: "Field format must match a regular expression" },
-  { value: "unique", label: "Unique Field", tone: "positive" as const, desc: "Ensures no duplicate values appear across records" },
-  { value: "time_diff", label: "Time Duration Check", tone: "neutral" as const, desc: "Verifies duration between start and end time" },
+  { value: "expression", label: "Calculation / Formula", tone: "accent" as const, desc: "Check calculations or number limits per row" },
+  { value: "sum_match", label: "Line Items Sum to Total", tone: "positive" as const, desc: "All rows add up to match the header total" },
+  { value: "count_equals", label: "Row Count Check", tone: "neutral" as const, desc: "Rows count must match an expected count" },
+  { value: "allowed_values", label: "Allowed Values List", tone: "accent" as const, desc: "Only specific allowed values (e.g. USD, EUR)" },
+  { value: "regex", label: "Text Format / Pattern", tone: "neutral" as const, desc: "Must match a specific format or number of digits" },
+  { value: "unique", label: "No Duplicate Values", tone: "positive" as const, desc: "Each item must have a unique value in the document" },
+  { value: "time_diff", label: "Time Duration", tone: "neutral" as const, desc: "Difference between start and end time matches hours" },
 ] as const;
 
 export function formatRuleCode(rule: ValidationRule): string {
@@ -73,6 +75,180 @@ export function formatRuleDescription(rule: ValidationRule): string {
   }
 }
 
+/**
+ * Intelligent helper that converts plain English into a valid system validation rule.
+ */
+export function parseNaturalLanguageRule(
+  text: string,
+  schema: TemplateSchema
+): { rule: ValidationRule; plainExplanation: string } | null {
+  const query = text.toLowerCase().trim();
+  if (!query) return null;
+
+  const objects = schema.objects || [];
+  if (objects.length === 0) return null;
+
+  const multiObj = objects.find((o) => o.multiple !== false) ?? objects[0];
+  const singleObj = objects.find((o) => o.multiple === false) ?? objects[0];
+
+  const getNumericFields = (obj: (typeof objects)[0]) =>
+    obj.fields.filter((f) => (typeof f === "object" && (f.type === "number" || f.type === "integer")) || false).map((f) => fieldName(f));
+
+  const getAllFields = (obj: (typeof objects)[0]) => obj.fields.map((f) => fieldName(f));
+
+  // 1. Line items sum equals header total
+  if (
+    query.includes("sum") ||
+    query.includes("add up") ||
+    query.includes("total of lines") ||
+    query.includes("lines equal") ||
+    query.includes("total lines")
+  ) {
+    const multiNumerics = getNumericFields(multiObj);
+    const singleNumerics = getNumericFields(singleObj);
+    const sumField = multiNumerics.find((f) => f.includes("amount") || f.includes("total") || f.includes("price")) ?? multiNumerics[0] ?? "amount";
+    const totalField = singleNumerics.find((f) => f.includes("total") || f.includes("amount")) ?? singleNumerics[0] ?? "total";
+
+    return {
+      rule: {
+        id: `rule_${Date.now().toString(36)}`,
+        rule_type: "sum_match",
+        object: multiObj.type,
+        field: sumField,
+        total_object: singleObj.type,
+        total_field: totalField,
+        tolerance: 0.01,
+        description: `Sum of all ${multiObj.type} ${sumField} values must equal ${singleObj.type} ${totalField}`,
+      },
+      plainExplanation: `Adds up the "${sumField}" from every row in ${multiObj.type} and checks that it matches the "${totalField}" on ${singleObj.type}.`,
+    };
+  }
+
+  // 2. Line amount = quantity * price
+  if (query.includes("quantity") || query.includes("qty") || query.includes("unit price") || query.includes("times") || query.includes("multiplied")) {
+    const multiNumerics = getNumericFields(multiObj);
+    const amt = multiNumerics.find((f) => f.includes("amount") || f.includes("total")) ?? "amount";
+    const qty = multiNumerics.find((f) => f.includes("quantity") || f.includes("qty")) ?? "quantity";
+    const price = multiNumerics.find((f) => f.includes("unit_price") || f.includes("price") || f.includes("rate")) ?? "unit_price";
+
+    return {
+      rule: {
+        id: `rule_${Date.now().toString(36)}`,
+        rule_type: "expression",
+        object: multiObj.type,
+        expression: `abs(${amt} - ${qty} * ${price}) < 0.01`,
+        description: `${amt} must equal ${qty} multiplied by ${price}`,
+      },
+      plainExplanation: `Checks that in every ${multiObj.type} row, "${amt}" equals "${qty}" multiplied by "${price}".`,
+    };
+  }
+
+  // 3. Shift hours or upper limit
+  if (query.includes("cannot exceed") || query.includes("cannot be more than") || query.includes("at most") || query.includes("max")) {
+    const matchNumber = query.match(/\d+(\.\d+)?/);
+    const limit = matchNumber ? matchNumber[0] : "16";
+    const multiFields = getAllFields(multiObj);
+    const targetField =
+      multiFields.find((f) => f.includes("hour") || f.includes("time") || f.includes("amount") || f.includes("count") || f.includes("qty")) ??
+      multiFields[0] ??
+      "value";
+
+    return {
+      rule: {
+        id: `rule_${Date.now().toString(36)}`,
+        rule_type: "expression",
+        object: multiObj.type,
+        expression: `${targetField} <= ${limit}`,
+        description: `${targetField} cannot exceed ${limit}`,
+      },
+      plainExplanation: `Ensures that "${targetField}" on ${multiObj.type} does not exceed ${limit}.`,
+    };
+  }
+
+  // 4. Non-negative / Positive check
+  if (query.includes("not negative") || query.includes("cannot be negative") || query.includes("positive") || query.includes("at least 0")) {
+    const multiNumerics = getNumericFields(multiObj);
+    const targetField = multiNumerics.find((f) => f.includes("amount") || f.includes("price") || f.includes("total")) ?? multiNumerics[0] ?? "amount";
+
+    return {
+      rule: {
+        id: `rule_${Date.now().toString(36)}`,
+        rule_type: "expression",
+        object: multiObj.type,
+        expression: `${targetField} >= 0`,
+        description: `${targetField} cannot be negative`,
+      },
+      plainExplanation: `Ensures that "${targetField}" on ${multiObj.type} is zero or positive.`,
+    };
+  }
+
+  // 5. Allowed values whitelist (e.g. USD, EUR, GBP)
+  if (query.includes("only allow") || query.includes("must be one of") || query.includes("allowed") || query.includes("currency") || query.includes("status")) {
+    const allFields = [...getAllFields(multiObj), ...getAllFields(singleObj)];
+    const targetField = allFields.find((f) => f.includes("currency") || f.includes("unit") || f.includes("status") || f.includes("type")) ?? allFields[0] ?? "code";
+    const targetObj = getAllFields(multiObj).includes(targetField) ? multiObj : singleObj;
+
+    let vals = ["USD", "EUR", "GBP"];
+    if (query.includes("usd") || query.includes("eur") || query.includes("gbp")) {
+      vals = ["USD", "EUR", "GBP"];
+    } else if (query.includes("kg") || query.includes("pcs") || query.includes("box")) {
+      vals = ["kg", "pcs", "box"];
+    }
+
+    return {
+      rule: {
+        id: `rule_${Date.now().toString(36)}`,
+        rule_type: "allowed_values",
+        object: targetObj.type,
+        field: targetField,
+        values: vals,
+        description: `${targetField} must be one of: ${vals.join(", ")}`,
+      },
+      plainExplanation: `Only accepts "${targetField}" if it matches one of: ${vals.join(", ")}.`,
+    };
+  }
+
+  // 6. Regex format (e.g. 9 digits)
+  if (query.includes("digit") || query.includes("pattern") || query.includes("format")) {
+    const matchDigits = query.match(/(\d+)\s*digit/);
+    const count = matchDigits ? matchDigits[1] : "9";
+    const allObjs = [singleObj, multiObj];
+    const targetObj = allObjs.find((o) => getAllFields(o).some((f) => f.includes("id") || f.includes("tax") || f.includes("num"))) ?? allObjs[0];
+    const targetField = getAllFields(targetObj).find((f) => f.includes("tax") || f.includes("id") || f.includes("number")) ?? getAllFields(targetObj)[0] ?? "tax_id";
+
+    return {
+      rule: {
+        id: `rule_${Date.now().toString(36)}`,
+        rule_type: "regex",
+        object: targetObj.type,
+        field: targetField,
+        pattern: `^\\d{${count}}$`,
+        description: `${targetField} must be exactly ${count} digits`,
+      },
+      plainExplanation: `Verifies that "${targetField}" on ${targetObj.type} contains exactly ${count} numbers.`,
+    };
+  }
+
+  // 7. Unique
+  if (query.includes("unique") || query.includes("duplicate") || query.includes("distinct")) {
+    const multiFields = getAllFields(multiObj);
+    const targetField = multiFields.find((f) => f.includes("sku") || f.includes("code") || f.includes("item") || f.includes("number")) ?? multiFields[0] ?? "sku";
+
+    return {
+      rule: {
+        id: `rule_${Date.now().toString(36)}`,
+        rule_type: "unique",
+        object: multiObj.type,
+        field: targetField,
+        description: `Each ${targetField} must be unique within the document`,
+      },
+      plainExplanation: `Makes sure no two rows have the same "${targetField}".`,
+    };
+  }
+
+  return null;
+}
+
 interface ValidationRulesEditorProps {
   schema: TemplateSchema;
   onChange: (rules: ValidationRule[]) => void;
@@ -82,12 +258,22 @@ export function ValidationRulesEditor({ schema, onChange }: ValidationRulesEdito
   const rules = schema.validation_rules ?? [];
   const [editingIndex, setEditingIndex] = useState<number | "new" | null>(null);
 
-  // Form state
+  // Tab mode in creator: "natural" (default) or "advanced"
+  const [builderMode, setBuilderMode] = useState<"natural" | "advanced">("natural");
+
+  // Natural language prompt state
+  const [nlPrompt, setNlPrompt] = useState("");
+  const [chatSent, setChatSent] = useState(false);
+  const nlResult = useMemo(() => parseNaturalLanguageRule(nlPrompt, schema), [nlPrompt, schema]);
+
+  const { send } = useAgentChat();
+  const { setChatOpen } = useShell();
+
+  // Form state for Advanced/Manual mode
   const [targetObject, setTargetObject] = useState<string>("");
   const [ruleType, setRuleType] = useState<string>("expression");
   const [description, setDescription] = useState<string>("");
 
-  // Type-specific form fields
   const [expression, setExpression] = useState<string>("");
   const [field, setField] = useState<string>("");
   const [totalObject, setTotalObject] = useState<string>("");
@@ -111,7 +297,6 @@ export function ValidationRulesEditor({ schema, onChange }: ValidationRulesEdito
 
   const objectNames = useMemo(() => schema.objects.map((o) => o.type), [schema.objects]);
 
-  // Object fields helper
   const getFieldsFor = (objType: string): string[] => {
     const obj = schema.objects.find((o) => o.type === objType);
     if (!obj) return [];
@@ -125,8 +310,10 @@ export function ValidationRulesEditor({ schema, onChange }: ValidationRulesEdito
   const startNewRule = () => {
     const defaultObj = objectNames[0] ?? "";
     const defaultFields = getFieldsFor(defaultObj);
+    setBuilderMode("natural");
+    setNlPrompt("");
     setTargetObject(defaultObj);
-    setRuleType("expression");
+    setRuleType("sum_match");
     setDescription("");
     setExpression("");
     setField(defaultFields[0] ?? "");
@@ -151,6 +338,7 @@ export function ValidationRulesEditor({ schema, onChange }: ValidationRulesEdito
   const startEditRule = (idx: number) => {
     const r = rules[idx];
     if (!r) return;
+    setBuilderMode("advanced");
     setTargetObject(r.object ?? objectNames[0] ?? "");
     setRuleType(r.rule_type ?? "expression");
     setDescription(r.description ?? "");
@@ -190,7 +378,44 @@ export function ValidationRulesEditor({ schema, onChange }: ValidationRulesEdito
     setEditingIndex(idx);
   };
 
-  const saveRule = () => {
+  const applyNaturalLanguageRule = () => {
+    if (!nlResult) return;
+    const nextRules = [...rules, nlResult.rule];
+    onChange(nextRules);
+    setEditingIndex(null);
+    setNlPrompt("");
+  };
+
+  /**
+   * Sends the plain-English rule description to the agent chat.
+   * If the local parser already understood the rule, it is also applied immediately.
+   * If not, the agent will interpret it and propose a structured rule in its reply.
+   */
+  const handleSendToChat = async () => {
+    const text = nlPrompt.trim();
+    if (!text) return;
+
+    // Apply locally if the client-side parser already resolved it.
+    if (nlResult) {
+      applyNaturalLanguageRule();
+    }
+
+    await send(`New validation rule: ${text}`, {
+      current_page: "template_setup",
+      rule_action: "add_validation_rule",
+      rule_intent: text,
+    });
+
+    // Open the chat panel so the user sees the agent reply.
+    setChatOpen(true, "chat");
+    setChatSent(true);
+    setNlPrompt("");
+    // Brief flash, then reset so the user can add another rule.
+    setTimeout(() => setChatSent(false), 3000);
+    setEditingIndex(null);
+  };
+
+  const saveAdvancedRule = () => {
     if (!targetObject) return;
 
     const base: ValidationRule = {
@@ -269,7 +494,7 @@ export function ValidationRulesEditor({ schema, onChange }: ValidationRulesEdito
         <div>
           <h3 className="text-section font-semibold text-ink">Validation Rules & Checks</h3>
           <p className="text-body text-muted">
-            Deterministic rules checked by the server before any record is committed.
+            Tell the agent what to check. The system enforces these rules before saving any document.
           </p>
         </div>
         {editingIndex === null && (
@@ -278,7 +503,7 @@ export function ValidationRulesEditor({ schema, onChange }: ValidationRulesEdito
             variant="secondary"
             onClick={startNewRule}
             disabled={objectNames.length === 0}
-            className="flex-none"
+            className="flex-none gap-1.5"
           >
             <Plus className="size-4" /> Add validation rule
           </Button>
@@ -288,11 +513,11 @@ export function ValidationRulesEditor({ schema, onChange }: ValidationRulesEdito
       {/* Rules list */}
       {rules.length === 0 && editingIndex === null ? (
         <div className="rounded-card border border-dashed border-border p-6 text-center">
-          <p className="text-body text-muted">No validation rules defined yet.</p>
+          <p className="text-body text-muted">No custom validation rules yet.</p>
           <p className="mt-1 text-meta text-muted">
-            Add rules to enforce mathematical totals, line item balances, allowed values, or regex patterns.
+            You can tell the agent what to check in plain English, like &quot;Total of line items must match invoice total&quot;.
           </p>
-          <Button size="sm" variant="ghost" onClick={startNewRule} disabled={objectNames.length === 0} className="mt-3">
+          <Button size="sm" variant="ghost" onClick={startNewRule} disabled={objectNames.length === 0} className="mt-3 gap-1.5">
             <Plus className="size-4" /> Add your first rule
           </Button>
         </div>
@@ -305,7 +530,7 @@ export function ValidationRulesEditor({ schema, onChange }: ValidationRulesEdito
             };
             const isEditingThis = editingIndex === idx;
 
-            if (isEditingThis) return null; // rendered in the builder form below
+            if (isEditingThis) return null;
 
             return (
               <div
@@ -315,8 +540,8 @@ export function ValidationRulesEditor({ schema, onChange }: ValidationRulesEdito
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <Pill tone={ruleMeta.tone}>{ruleMeta.label}</Pill>
-                    <span className="inline-flex items-center rounded-control bg-well px-2 py-0.5 font-mono text-meta font-medium text-ink">
-                      {rule.object}
+                    <span className="inline-flex items-center rounded-control bg-well px-2 py-0.5 text-meta font-medium text-ink">
+                      Applies to: {rule.object}
                     </span>
                   </div>
                   <div className="flex items-center gap-1">
@@ -332,8 +557,8 @@ export function ValidationRulesEditor({ schema, onChange }: ValidationRulesEdito
                 <p className="text-body font-medium text-ink">{formatRuleDescription(rule)}</p>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-meta text-muted">Expression:</span>
-                  <code className="rounded bg-well px-2 py-0.5 font-mono text-meta text-ink">
+                  <span className="text-meta text-muted">System check:</span>
+                  <code className="rounded bg-well px-2 py-0.5 font-mono text-meta text-muted">
                     {formatRuleCode(rule)}
                   </code>
                 </div>
@@ -343,402 +568,420 @@ export function ValidationRulesEditor({ schema, onChange }: ValidationRulesEdito
         </div>
       )}
 
-      {/* Inline Rule Builder / Editor Form */}
+      {/* Rule Creator */}
       {editingIndex !== null && (
         <section className="rounded-card border-2 border-accent/40 bg-card p-4 shadow-sm sm:p-5">
-          <header className="mb-4 flex items-center justify-between border-b border-border pb-3">
+          <header className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
             <div>
               <h4 className="text-section font-semibold text-ink">
                 {editingIndex === "new" ? "Add Validation Rule" : "Edit Validation Rule"}
               </h4>
-              <p className="text-meta text-muted">Configure the constraint logic and error description.</p>
+              <p className="text-meta text-muted">
+                Describe the rule in plain words, or configure fields directly.
+              </p>
             </div>
-            <IconButton aria-label="Cancel" onClick={() => setEditingIndex(null)}>
-              <X className="size-4" />
-            </IconButton>
+            <div className="flex items-center gap-2">
+              <div className="flex rounded-control border border-border bg-well p-0.5 text-meta">
+                <button
+                  type="button"
+                  onClick={() => setBuilderMode("natural")}
+                  className={`flex items-center gap-1 rounded-sm px-2.5 py-1 transition-colors ${
+                    builderMode === "natural" ? "bg-sheet font-medium text-ink shadow-sm" : "text-muted hover:text-ink"
+                  }`}
+                >
+                  Plain English
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBuilderMode("advanced")}
+                  className={`rounded-sm px-2.5 py-1 transition-colors ${
+                    builderMode === "advanced" ? "bg-sheet font-medium text-ink shadow-sm" : "text-muted hover:text-ink"
+                  }`}
+                >
+                  Manual Form
+                </button>
+              </div>
+              <IconButton aria-label="Cancel" onClick={() => setEditingIndex(null)}>
+                <X className="size-4" />
+              </IconButton>
+            </div>
           </header>
 
-          <div className="flex flex-col gap-4">
-            {/* Top selectors: Target Object & Rule Type */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Target Object">
+          {/* Natural Language Mode */}
+          {builderMode === "natural" && (
+            <div className="flex flex-col gap-4">
+              <Field
+                label="Rule description"
+                help="Type what you want to verify across your documents. The agent will translate it into a system check."
+              >
                 {() => (
-                  <Select
-                    value={targetObject}
-                    onChange={(val) => {
-                      setTargetObject(val);
-                      const flds = getFieldsFor(val);
-                      setField(flds[0] ?? "");
-                    }}
-                    options={objectNames.map((o) => ({ value: o, label: o }))}
-                    label="Target Object"
-                  />
-                )}
-              </Field>
-
-              <Field label="Rule Type">
-                {() => (
-                  <Select
-                    value={ruleType}
-                    onChange={(val) => setRuleType(val)}
-                    options={RULE_TYPES.map((t) => ({ value: t.value, label: t.label }))}
-                    label="Rule Type"
-                  />
-                )}
-              </Field>
-            </div>
-
-            {/* Rule Specific Form Controls */}
-            {ruleType === "expression" && (
-              <div className="flex flex-col gap-2 rounded-sheet bg-well p-3">
-                <Field
-                  label="Python/AST Expression"
-                  help="Safe expression evaluated for each row. Standard math operators and abs(), min(), max(), round() are supported."
-                >
-                  {() => (
+                  <div className="flex gap-2">
                     <Input
-                      value={expression}
-                      onChange={(e) => setExpression(e.target.value)}
-                      placeholder="e.g. abs(amount - quantity * unit_price) < 0.01"
-                      className="font-mono text-meta"
+                      value={nlPrompt}
+                      onChange={(e) => setNlPrompt(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleSendToChat();
+                        }
+                      }}
+                      placeholder="e.g. Total of all line items must equal the invoice total"
+                      className="flex-1 text-body"
+                      autoFocus
                     />
-                  )}
-                </Field>
-
-                {currentObjFields.length > 0 && (
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                    <span className="text-meta text-muted">Insert field:</span>
-                    {currentObjFields.map((fName) => (
-                      <button
-                        type="button"
-                        key={fName}
-                        onClick={() => setExpression((prev) => (prev ? `${prev} ${fName}` : fName))}
-                        className="rounded bg-sheet px-2 py-0.5 font-mono text-meta text-ink border border-border transition-colors hover:border-accent hover:text-accent"
-                      >
-                        +{fName}
-                      </button>
-                    ))}
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={handleSendToChat}
+                      disabled={!nlPrompt.trim()}
+                      className="flex-none gap-1.5"
+                    >
+                      <SendHorizonal className="size-4" />
+                      Send
+                    </Button>
                   </div>
                 )}
+              </Field>
 
-                <div className="mt-2 flex flex-wrap gap-2 text-meta text-muted">
-                  <span className="font-medium">Quick examples:</span>
-                  <button
-                    type="button"
-                    className="underline hover:text-ink"
-                    onClick={() => setExpression("abs(amount - quantity * unit_price) < 0.01")}
-                  >
-                    amount == qty * price
-                  </button>
-                  <span>•</span>
-                  <button
-                    type="button"
-                    className="underline hover:text-ink"
-                    onClick={() => setExpression("hours <= 16")}
-                  >
-                    hours &lt;= 16
-                  </button>
-                  <span>•</span>
-                  <button
-                    type="button"
-                    className="underline hover:text-ink"
-                    onClick={() => setExpression("amount >= 0")}
-                  >
-                    positive amount
-                  </button>
+              {chatSent && (
+                <div className="rounded-card border border-accent/30 bg-accent/5 px-3 py-2 text-meta text-muted">
+                  Sent to agent — check the chat panel for the response.
                 </div>
-              </div>
-            )}
+              )}
 
-            {ruleType === "sum_match" && (
-              <div className="grid grid-cols-1 gap-4 rounded-sheet bg-well p-3 sm:grid-cols-2">
-                <Field label={`Sum of field in ${targetObject}`}>
+
+
+              {/* Translation card */}
+              {nlResult ? (
+                <div className="flex flex-col gap-3 rounded-card border border-positive/40 bg-positive/5 p-4">
+                  <div className="flex items-center gap-2">
+                    <Check className="size-4 text-positive" />
+                    <span className="text-meta font-semibold uppercase tracking-wider text-positive">
+                      Agent understood your rule
+                    </span>
+                  </div>
+
+                  <p className="text-body font-medium text-ink">{nlResult.rule.description}</p>
+                  <p className="text-meta text-muted">{nlResult.plainExplanation}</p>
+
+                  <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-2 text-meta text-muted">
+                    <span>Target table:</span>
+                    <Pill tone="neutral">{nlResult.rule.object}</Pill>
+                    <span>Formula:</span>
+                    <code className="rounded bg-sheet px-2 py-0.5 font-mono text-ink">
+                      {formatRuleCode(nlResult.rule)}
+                    </code>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-end gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => setEditingIndex(null)}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" variant="primary" onClick={handleSendToChat}>
+                      <Check className="size-4" /> Add this rule
+                    </Button>
+                  </div>
+                </div>
+              ) : nlPrompt.trim().length > 0 ? (
+                <div className="rounded-card border border-border bg-well p-3 text-meta text-muted">
+                  <p>
+                    Keep typing or describe your rule like: &quot;Total of lines must equal total&quot; or &quot;Amount must be positive&quot;.
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {/* Manual Form Mode */}
+          {builderMode === "advanced" && (
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Table / Object to Check">
                   {() => (
                     <Select
-                      value={field}
-                      onChange={(val) => setField(val)}
-                      options={currentObjFields.map((f) => ({ value: f, label: f }))}
-                      label="Field to Sum"
-                    />
-                  )}
-                </Field>
-
-                <Field label="Total Object (Header)">
-                  {() => (
-                    <Select
-                      value={totalObject}
+                      value={targetObject}
                       onChange={(val) => {
-                        setTotalObject(val);
+                        setTargetObject(val);
                         const flds = getFieldsFor(val);
-                        setTotalField(flds[0] ?? "");
+                        setField(flds[0] ?? "");
                       }}
                       options={objectNames.map((o) => ({ value: o, label: o }))}
-                      label="Total Object"
+                      label="Target Object"
                     />
                   )}
                 </Field>
 
-                <Field label={`Total field in ${totalObject}`}>
+                <Field label="Check Type">
                   {() => (
                     <Select
-                      value={totalField}
-                      onChange={(val) => setTotalField(val)}
-                      options={totalObjFields.map((f) => ({ value: f, label: f }))}
-                      label="Total Field"
-                    />
-                  )}
-                </Field>
-
-                <Field label="Tolerance (default 0.01)">
-                  {() => (
-                    <Input
-                      type="number"
-                      step="0.001"
-                      value={tolerance}
-                      onChange={(e) => setTolerance(e.target.value)}
-                      placeholder="0.01"
+                      value={ruleType}
+                      onChange={(val) => setRuleType(val)}
+                      options={RULE_TYPES.map((t) => ({ value: t.value, label: t.label }))}
+                      label="Rule Type"
                     />
                   )}
                 </Field>
               </div>
-            )}
 
-            {ruleType === "count_equals" && (
-              <div className="flex flex-col gap-3 rounded-sheet bg-well p-3">
-                <div className="flex items-center gap-4 text-body">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      checked={countMode === "fixed"}
-                      onChange={() => setCountMode("fixed")}
-                      className="accent-[var(--ink)]"
-                    />
-                    <span>Fixed count</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      checked={countMode === "field"}
-                      onChange={() => setCountMode("field")}
-                      className="accent-[var(--ink)]"
-                    />
-                    <span>Match count field in header object</span>
-                  </label>
-                </div>
-
-                {countMode === "fixed" ? (
-                  <Field label="Expected row count">
-                    {() => (
-                      <Input
-                        type="number"
-                        min="0"
-                        value={expectedCount}
-                        onChange={(e) => setExpectedCount(e.target.value)}
-                        placeholder="e.g. 5"
-                        className="max-w-xs"
-                      />
-                    )}
-                  </Field>
-                ) : (
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <Field label="Header Object">
-                      {() => (
-                        <Select
-                          value={countObject}
-                          onChange={(val) => {
-                            setCountObject(val);
-                            const flds = getFieldsFor(val);
-                            setCountField(flds[0] ?? "");
-                          }}
-                          options={objectNames.map((o) => ({ value: o, label: o }))}
-                          label="Header Object"
-                        />
-                      )}
-                    </Field>
-
-                    <Field label={`Count field in ${countObject}`}>
-                      {() => (
-                        <Select
-                          value={countField}
-                          onChange={(val) => setCountField(val)}
-                          options={countObjFields.map((f) => ({ value: f, label: f }))}
-                          label="Count Field"
-                        />
-                      )}
-                    </Field>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {ruleType === "allowed_values" && (
-              <div className="grid grid-cols-1 gap-4 rounded-sheet bg-well p-3 sm:grid-cols-2">
-                <Field label={`Field in ${targetObject}`}>
-                  {() => (
-                    <Select
-                      value={field}
-                      onChange={(val) => setField(val)}
-                      options={currentObjFields.map((f) => ({ value: f, label: f }))}
-                      label="Field"
-                    />
-                  )}
-                </Field>
-
-                <Field label="Allowed Values (comma separated)" help="e.g. USD, EUR, GBP or kg, pcs, box">
-                  {() => (
-                    <Input
-                      value={allowedValuesText}
-                      onChange={(e) => setAllowedValuesText(e.target.value)}
-                      placeholder="USD, EUR, GBP"
-                    />
-                  )}
-                </Field>
-              </div>
-            )}
-
-            {ruleType === "regex" && (
-              <div className="grid grid-cols-1 gap-4 rounded-sheet bg-well p-3 sm:grid-cols-2">
-                <Field label={`Field in ${targetObject}`}>
-                  {() => (
-                    <Select
-                      value={field}
-                      onChange={(val) => setField(val)}
-                      options={currentObjFields.map((f) => ({ value: f, label: f }))}
-                      label="Field"
-                    />
-                  )}
-                </Field>
-
-                <Field label="Regular Expression Pattern" help="e.g. ^\\d{9}$ or ^[A-Z]{2}-[0-9]+$">
-                  {() => (
-                    <Input
-                      value={regexPattern}
-                      onChange={(e) => setRegexPattern(e.target.value)}
-                      placeholder="^\\d{9}$"
-                      className="font-mono text-meta"
-                    />
-                  )}
-                </Field>
-              </div>
-            )}
-
-            {ruleType === "unique" && (
-              <div className="rounded-sheet bg-well p-3">
-                <Field label={`Field in ${targetObject} that must be unique`}>
-                  {() => (
-                    <Select
-                      value={field}
-                      onChange={(val) => setField(val)}
-                      options={currentObjFields.map((f) => ({ value: f, label: f }))}
-                      label="Field"
-                      className="max-w-md"
-                    />
-                  )}
-                </Field>
-              </div>
-            )}
-
-            {ruleType === "time_diff" && (
-              <div className="grid grid-cols-1 gap-4 rounded-sheet bg-well p-3 sm:grid-cols-2">
-                <Field label="Start Time Field">
-                  {() => (
-                    <Select
-                      value={startField}
-                      onChange={(val) => setStartField(val)}
-                      options={currentObjFields.map((f) => ({ value: f, label: f }))}
-                      label="Start Field"
-                    />
-                  )}
-                </Field>
-
-                <Field label="End Time Field">
-                  {() => (
-                    <Select
-                      value={endField}
-                      onChange={(val) => setEndField(val)}
-                      options={currentObjFields.map((f) => ({ value: f, label: f }))}
-                      label="End Field"
-                    />
-                  )}
-                </Field>
-
-                <Field label="Expected Hours Source">
-                  {() => (
-                    <Select
-                      value={hoursMode}
-                      onChange={(val) => setHoursMode(val as "field" | "fixed")}
-                      options={[
-                        { value: "field", label: "Hours Field in Record" },
-                        { value: "fixed", label: "Fixed Hours Value" },
-                      ]}
-                      label="Hours Source"
-                    />
-                  )}
-                </Field>
-
-                {hoursMode === "field" ? (
-                  <Field label="Hours Field in Record">
+              {ruleType === "sum_match" && (
+                <div className="grid grid-cols-1 gap-4 rounded-sheet bg-well p-3 sm:grid-cols-2">
+                  <Field label={`Field to sum in ${targetObject}`}>
                     {() => (
                       <Select
-                        value={hoursField}
-                        onChange={(val) => setHoursField(val)}
+                        value={field}
+                        onChange={(val) => setField(val)}
                         options={currentObjFields.map((f) => ({ value: f, label: f }))}
-                        label="Hours Field"
+                        label="Field to Sum"
                       />
                     )}
                   </Field>
-                ) : (
-                  <Field label="Expected Hours">
+
+                  <Field label="Header / Summary Table">
+                    {() => (
+                      <Select
+                        value={totalObject}
+                        onChange={(val) => {
+                          setTotalObject(val);
+                          const flds = getFieldsFor(val);
+                          setTotalField(flds[0] ?? "");
+                        }}
+                        options={objectNames.map((o) => ({ value: o, label: o }))}
+                        label="Total Object"
+                      />
+                    )}
+                  </Field>
+
+                  <Field label={`Total field in ${totalObject}`}>
+                    {() => (
+                      <Select
+                        value={totalField}
+                        onChange={(val) => setTotalField(val)}
+                        options={totalObjFields.map((f) => ({ value: f, label: f }))}
+                        label="Total Field"
+                      />
+                    )}
+                  </Field>
+
+                  <Field label="Allowed Rounding Margin (default 0.01)">
                     {() => (
                       <Input
                         type="number"
-                        step="0.25"
-                        value={expectedHours}
-                        onChange={(e) => setExpectedHours(e.target.value)}
-                        placeholder="8.0"
+                        step="0.001"
+                        value={tolerance}
+                        onChange={(e) => setTolerance(e.target.value)}
+                        placeholder="0.01"
                       />
                     )}
                   </Field>
-                )}
-
-                <Field label="Tolerance in Hours (default 0.25h / 15m)">
-                  {() => (
-                    <Input
-                      type="number"
-                      step="0.05"
-                      value={toleranceHours}
-                      onChange={(e) => setToleranceHours(e.target.value)}
-                      placeholder="0.25"
-                    />
-                  )}
-                </Field>
-              </div>
-            )}
-
-            {/* Common Description / Error Message */}
-            <Field
-              label="Plain-English Description (shown in UI on violation)"
-              help="If left empty, a descriptive message is automatically generated."
-            >
-              {() => (
-                <Input
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="e.g. Line item amount must equal quantity multiplied by unit price"
-                />
+                </div>
               )}
-            </Field>
 
-            {/* Actions */}
-            <div className="mt-2 flex items-center justify-end gap-2 border-t border-border pt-3">
-              <Button size="sm" variant="ghost" onClick={() => setEditingIndex(null)}>
-                Cancel
-              </Button>
-              <Button size="sm" variant="primary" onClick={saveRule}>
-                <Check className="size-4" /> Save Rule
-              </Button>
+              {ruleType === "expression" && (
+                <div className="flex flex-col gap-2 rounded-sheet bg-well p-3">
+                  <Field label="Calculation or Limit Condition">
+                    {() => (
+                      <Input
+                        value={expression}
+                        onChange={(e) => setExpression(e.target.value)}
+                        placeholder="e.g. abs(amount - quantity * unit_price) < 0.01"
+                        className="font-mono text-meta"
+                      />
+                    )}
+                  </Field>
+                  {currentObjFields.length > 0 && (
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <span className="text-meta text-muted">Click field to insert:</span>
+                      {currentObjFields.map((fName) => (
+                        <button
+                          type="button"
+                          key={fName}
+                          onClick={() => setExpression((prev) => (prev ? `${prev} ${fName}` : fName))}
+                          className="rounded bg-sheet px-2 py-0.5 font-mono text-meta text-ink border border-border hover:border-accent"
+                        >
+                          +{fName}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {ruleType === "allowed_values" && (
+                <div className="grid grid-cols-1 gap-4 rounded-sheet bg-well p-3 sm:grid-cols-2">
+                  <Field label={`Field in ${targetObject}`}>
+                    {() => (
+                      <Select
+                        value={field}
+                        onChange={(val) => setField(val)}
+                        options={currentObjFields.map((f) => ({ value: f, label: f }))}
+                        label="Field"
+                      />
+                    )}
+                  </Field>
+                  <Field label="Allowed Values (separated by commas)" help="e.g. USD, EUR, GBP">
+                    {() => (
+                      <Input
+                        value={allowedValuesText}
+                        onChange={(e) => setAllowedValuesText(e.target.value)}
+                        placeholder="USD, EUR, GBP"
+                      />
+                    )}
+                  </Field>
+                </div>
+              )}
+
+              {ruleType === "regex" && (
+                <div className="grid grid-cols-1 gap-4 rounded-sheet bg-well p-3 sm:grid-cols-2">
+                  <Field label={`Field in ${targetObject}`}>
+                    {() => (
+                      <Select
+                        value={field}
+                        onChange={(val) => setField(val)}
+                        options={currentObjFields.map((f) => ({ value: f, label: f }))}
+                        label="Field"
+                      />
+                    )}
+                  </Field>
+                  <Field label="Format / Digits Pattern" help="e.g. ^\\d{9}$ for 9 digits">
+                    {() => (
+                      <Input
+                        value={regexPattern}
+                        onChange={(e) => setRegexPattern(e.target.value)}
+                        placeholder="^\\d{9}$"
+                        className="font-mono text-meta"
+                      />
+                    )}
+                  </Field>
+                </div>
+              )}
+
+              {ruleType === "unique" && (
+                <div className="rounded-sheet bg-well p-3">
+                  <Field label={`Field that must have no duplicates`}>
+                    {() => (
+                      <Select
+                        value={field}
+                        onChange={(val) => setField(val)}
+                        options={currentObjFields.map((f) => ({ value: f, label: f }))}
+                        label="Field"
+                        className="max-w-md"
+                      />
+                    )}
+                  </Field>
+                </div>
+              )}
+
+              {ruleType === "count_equals" && (
+                <div className="flex flex-col gap-3 rounded-sheet bg-well p-3">
+                  <div className="flex items-center gap-4 text-body">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        checked={countMode === "fixed"}
+                        onChange={() => setCountMode("fixed")}
+                        className="accent-[var(--ink)]"
+                      />
+                      <span>Fixed row count</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        checked={countMode === "field"}
+                        onChange={() => setCountMode("field")}
+                        className="accent-[var(--ink)]"
+                      />
+                      <span>Match count field in header table</span>
+                    </label>
+                  </div>
+                  {countMode === "fixed" ? (
+                    <Field label="Expected row count">
+                      {() => (
+                        <Input
+                          type="number"
+                          min="0"
+                          value={expectedCount}
+                          onChange={(e) => setExpectedCount(e.target.value)}
+                          placeholder="e.g. 5"
+                          className="max-w-xs"
+                        />
+                      )}
+                    </Field>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <Field label="Header Table">
+                        {() => (
+                          <Select
+                            value={countObject}
+                            onChange={(val) => {
+                              setCountObject(val);
+                              const flds = getFieldsFor(val);
+                              setCountField(flds[0] ?? "");
+                            }}
+                            options={objectNames.map((o) => ({ value: o, label: o }))}
+                            label="Header Table"
+                          />
+                        )}
+                      </Field>
+                      <Field label={`Count field in ${countObject}`}>
+                        {() => (
+                          <Select
+                            value={countField}
+                            onChange={(val) => setCountField(val)}
+                            options={countObjFields.map((f) => ({ value: f, label: f }))}
+                            label="Count Field"
+                          />
+                        )}
+                      </Field>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {ruleType === "time_diff" && (
+                <div className="grid grid-cols-1 gap-4 rounded-sheet bg-well p-3 sm:grid-cols-2">
+                  <Field label="Start Time Field">
+                    {() => (
+                      <Select
+                        value={startField}
+                        onChange={(val) => setStartField(val)}
+                        options={currentObjFields.map((f) => ({ value: f, label: f }))}
+                        label="Start Field"
+                      />
+                    )}
+                  </Field>
+                  <Field label="End Time Field">
+                    {() => (
+                      <Select
+                        value={endField}
+                        onChange={(val) => setEndField(val)}
+                        options={currentObjFields.map((f) => ({ value: f, label: f }))}
+                        label="End Field"
+                      />
+                    )}
+                  </Field>
+                </div>
+              )}
+
+              <Field label="Explanation (shown to users if violated)">
+                {() => (
+                  <Input
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="e.g. Line item amount must equal quantity multiplied by unit price"
+                  />
+                )}
+              </Field>
+
+              <div className="mt-2 flex items-center justify-end gap-2 border-t border-border pt-3">
+                <Button size="sm" variant="ghost" onClick={() => setEditingIndex(null)}>
+                  Cancel
+                </Button>
+                <Button size="sm" variant="primary" onClick={saveAdvancedRule}>
+                  <Check className="size-4" /> Save Rule
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
         </section>
       )}
     </div>
