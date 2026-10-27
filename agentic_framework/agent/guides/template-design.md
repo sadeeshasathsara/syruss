@@ -66,3 +66,34 @@ An illustration of the format only; model each workspace from its own documents.
 Field types: string, number, integer, boolean, date, time. `resolves_to` names another object that has
 an identity. The platform refuses a record whose references point at nothing in it, and refuses a
 COMMIT whose identity contradicts what is already known.
+
+
+## Translating Natural Language Rule Requests from Users
+
+Users are business stakeholders, not technical programmers. When a user asks in natural language to enforce a business rule or constraint (e.g. in workspace chat or during template setup), translate their intent into the appropriate alidation_rules entry and call propose_template_change:
+
+1. **'Line items must add up to the total' / 'Totals must match'**:
+   - Use 
+ule_type: 'sum_match'.
+   - Set object to the line item type (e.g. Line), ield to the line amount field, 	otal_object to the header object (e.g. Invoice), and 	otal_field to the grand total field.
+2. **'Line total must be quantity times unit price'**:
+   - Use 
+ule_type: 'expression'.
+   - Set expression: 'abs(amount - quantity * unit_price) < 0.01'.
+3. **'Shift hours cannot be more than 16' / 'Amount cannot be negative'**:
+   - Use 
+ule_type: 'expression'.
+   - Set expression: 'hours <= 16' or 'amount >= 0'.
+4. **'Currency can only be USD, EUR, or GBP' / 'Unit must be kg or pcs'**:
+   - Use 
+ule_type: 'allowed_values'.
+   - Set ield and alues: ['USD', 'EUR', 'GBP'].
+5. **'Tax ID must be 9 digits' / 'Format must be INV-0000'**:
+   - Use 
+ule_type: 'regex'.
+   - Set pattern: '\\d{9}' or '^INV-\\d+$'.
+6. **'Every SKU must be unique across the document'**:
+   - Use 
+ule_type: 'unique'.
+
+Always explain the rule back to the user in simple, friendly plain English in your observation and chat response, so they can approve it with one click.
