@@ -1,0 +1,1480 @@
+{
+ "url": "http://localhost:3000/default/workspaces",
+ "at": "2026-10-23T06:23:21.395Z",
+ "allow": [],
+ "viewports": [
+  {
+   "width": 1440,
+   "height": 900,
+   "load": "load",
+   "screens": 1,
+   "filled": [
+    1
+   ],
+   "motion": {
+    "elements": 6,
+    "css": 5,
+    "transitions": 0,
+    "scripted": 1,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "page": {
+     "height": 900,
+     "screens": 1,
+     "words": 170,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 24,
+     "sections": 0,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Default Enterprise Organization",
+     "words": 3,
+     "chars": 31,
+     "lines": 1,
+     "size": 30,
+     "vw": 2.1,
+     "font": "Avenir Next",
+     "weight": 700,
+     "tracking": -0.02,
+     "leading": 1.2,
+     "top": 160,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "Default Enterprise Organization",
+     "words": 3,
+     "lines": 1,
+     "size": 30,
+     "font": "Avenir Next"
+    },
+    "headings": [
+     {
+      "text": "Default Enterprise Organization",
+      "words": 3,
+      "chars": 31,
+      "lines": 1,
+      "size": 30,
+      "vw": 2.1,
+      "font": "Avenir Next",
+      "weight": 700,
+      "tracking": -0.025,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.47,
+      "top": 160,
+      "tag": "h1",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 1,
+     "maxLines": 1,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": null,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Avenir Next",
+       "share": 0.99,
+       "mono": false
+      },
+      {
+       "family": "ui-monospace",
+       "share": 0.01,
+       "mono": false
+      }
+     ],
+     "familyCount": 2,
+     "sizes": [
+      9,
+      10,
+      11,
+      12,
+      14,
+      24,
+      30
+     ],
+     "sizeCount": 7,
+     "notLoaded": [
+      "Avenir Next"
+     ],
+     "body": {
+      "font": "Avenir Next",
+      "size": 12,
+      "leading": 1.63,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 7
+     },
+     "measureChars": 108,
+     "max": {
+      "size": 30,
+      "vw": 2.1,
+      "font": "Avenir Next",
+      "text": "Default Enterprise Organization"
+     },
+     "monoShare": 0.01,
+     "monoProseShare": 0.01,
+     "monoFamilies": [
+      "ui-monospace"
+     ],
+     "monoSamples": [
+      "Shared Master"
+     ],
+     "microLabels": 3,
+     "microLabelShare": 0.03,
+     "microSamples": [
+      "Workspaces (0)",
+      "Online",
+      "Suggested Inquiries"
+     ],
+     "upperShare": 0.04,
+     "centerShare": 0.13,
+     "smallText": 26
+    },
+    "eyebrows": [
+     {
+      "text": "Organization Portal",
+      "above": "Default Enterprise Organization",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": true,
+      "size": 11,
+      "top": 129
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#0e1016",
+     "bodyBgHsl": {
+      "h": 225,
+      "s": 0.22,
+      "l": 0.07
+     },
+     "dark": true,
+     "sectionBgs": [
+      {
+       "color": "#0e1016",
+       "top": 0,
+       "hsl": {
+        "h": 225,
+        "s": 0.22,
+        "l": 0.07
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#9f9fa9",
+       "share": 0.47
+      },
+      {
+       "color": "#d4d4d8",
+       "share": 0.16
+      },
+      {
+       "color": "#71717b",
+       "share": 0.15
+      },
+      {
+       "color": "#f4f4f5",
+       "share": 0.13
+      },
+      {
+       "color": "#00d3f2",
+       "share": 0.03
+      }
+     ],
+     "button": {
+      "bg": "#00b8db",
+      "hsl": {
+       "h": 190,
+       "s": 1,
+       "l": 0.43
+      },
+      "fg": "#09090b"
+     },
+     "lowContrast": [
+      {
+       "text": "Search workspace",
+       "ratio": 3.9,
+       "need": 4.5,
+       "size": 12,
+       "fg": "#71717b",
+       "bg": "#0e1016"
+      },
+      {
+       "text": "Enter to send · Shift+Enter newline",
+       "ratio": 3.9,
+       "need": 4.5,
+       "size": 10,
+       "fg": "#71717b",
+       "bg": "#101319"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 7,
+     "inHero": 7,
+     "radius": 12,
+     "height": 38,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Default Enterprise Organization ORG",
+      "Create Workspace",
+      "Inspect Master Entities",
+      "List all verified guards and their prima",
+      "Which documents are currently in the hum"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 4,
+     "shadowOverlay": 0,
+     "shadowSamples": [
+      "a.flex.items-center → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0",
+      "div.relative.overflow-hidden → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0",
+      "a.inline-flex.items-center → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0",
+      "aside.w-[420px].min-w-[340px] → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0"
+     ],
+     "gradients": 3,
+     "scrims": 0,
+     "gradientSamples": [
+      "main.flex-1.overflow-y-auto → radial-gradient(circle at 100% 0px, rgba(34, 211, 238, 0.06), rgba(0, 0, 0, 0) 35%)",
+      "div.relative.overflow-hidden → linear-gradient(to right bottom in oklab, rgb(22, 25, 35) 0%, rgb(18, 21, 28) 50%, rgb(16, 19, 25) 100%)",
+      "div.flex-1.overflow-y-auto → radial-gradient(circle at 50% 0%, rgba(34, 211, 238, 0.04), rgba(0, 0, 0, 0) 50%)"
+     ],
+     "gradientText": 0,
+     "hairlines": 4,
+     "hairlineSamples": [
+      "header.h-16.border-b 1020px",
+      "aside.w-[420px].min-w-[340px] 420px",
+      "div.h-16.px-4 419px",
+      "div.p-3.border-t 419px"
+     ],
+     "outlinedBoxes": 6,
+     "dashed": 0,
+     "blurred": 4,
+     "roundedBoxes": 7,
+     "boxRadius": 12,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 4,
+       "iconTopped": true,
+       "rounded": true,
+       "top": 314
+      }
+     ]
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 2,
+     "fixed": false,
+     "height": 64,
+     "floatingPill": false,
+     "blur": true
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "pageH": 900,
+    "margins": {
+     "left": 32,
+     "right": 16
+    },
+    "sections": [],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Default Enterprise Organization",
+      "size": 30,
+      "top": 160,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 65,
+      "n": 2
+     },
+     {
+      "x": 32,
+      "n": 1
+     },
+     {
+      "x": 113,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 4,
+    "bodySize": 12,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0.19,
+    "voidBox": {
+     "x": 0,
+     "y": 660,
+     "w": 1380,
+     "h": 180
+    }
+   },
+   "app": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "dark": true,
+    "ground": "#0e1016",
+    "sidebar": null,
+    "topbar": {
+     "h": 64
+    },
+    "canvas": {
+     "left": 32,
+     "right": 16
+    },
+    "hero": {
+     "text": "Default Enterprise Organization",
+     "words": 3,
+     "chars": 31,
+     "lines": 1,
+     "size": 30,
+     "vw": 2.1,
+     "font": "Avenir Next",
+     "weight": 700,
+     "tracking": -0.02,
+     "leading": 1.2,
+     "top": 160,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 7,
+     "firstScreen": 7,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 8,
+     "radii": [
+      [
+       12,
+       4
+      ],
+      [
+       16,
+       2
+      ],
+      [
+       0,
+       2
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 2,
+     "shadowSamples": [],
+     "glass": 2
+    },
+    "chips": {
+     "count": 2,
+     "hues": 2,
+     "samples": [
+      {
+       "hue": 158,
+       "size": 40,
+       "radius": "12px"
+      },
+      {
+       "hue": 192,
+       "size": 28,
+       "radius": "8px"
+      }
+     ]
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 0,
+     "tabularShare": null,
+     "kpiMax": null
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.77,
+     "tiny": 6,
+     "tinySamples": [
+      "Org 9px",
+      "Shared Master 10px",
+      "Online 9px",
+      "Suggested Inquiries 10px"
+     ],
+     "sizes": [
+      9,
+      10,
+      11,
+      12,
+      14,
+      30
+     ]
+    },
+    "title": {
+     "text": "Default Enterprise Organization",
+     "size": 30,
+     "top": 160
+    },
+    "colourShare": 0.011
+   },
+   "consoleErrors": []
+  },
+  {
+   "width": 768,
+   "height": 1024,
+   "load": "load",
+   "screens": 1,
+   "filled": [
+    1
+   ],
+   "motion": {
+    "elements": 7,
+    "css": 6,
+    "transitions": 0,
+    "scripted": 1,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "page": {
+     "height": 1024,
+     "screens": 1,
+     "words": 170,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 24,
+     "sections": 0,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 1,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Default Enterprise Organization",
+     "words": 3,
+     "chars": 31,
+     "lines": 3,
+     "size": 30,
+     "vw": 3.9,
+     "font": "Avenir Next",
+     "weight": 700,
+     "tracking": -0.02,
+     "leading": 1.2,
+     "top": 152,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "Default Enterprise Organization",
+     "words": 3,
+     "lines": 3,
+     "size": 30,
+     "font": "Avenir Next"
+    },
+    "headings": [
+     {
+      "text": "Default Enterprise Organization",
+      "words": 3,
+      "chars": 31,
+      "lines": 3,
+      "size": 30,
+      "vw": 3.9,
+      "font": "Avenir Next",
+      "weight": 700,
+      "tracking": -0.025,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.23,
+      "top": 152,
+      "tag": "h1",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 1,
+     "maxLines": 3,
+     "over2Lines": 1,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": null,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Avenir Next",
+       "share": 0.99,
+       "mono": false
+      },
+      {
+       "family": "ui-monospace",
+       "share": 0.01,
+       "mono": false
+      }
+     ],
+     "familyCount": 2,
+     "sizes": [
+      9,
+      10,
+      11,
+      12,
+      14,
+      24,
+      30
+     ],
+     "sizeCount": 7,
+     "notLoaded": [
+      "Avenir Next"
+     ],
+     "body": {
+      "font": "Avenir Next",
+      "size": 12,
+      "leading": 1.63,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 7
+     },
+     "measureChars": 24,
+     "max": {
+      "size": 30,
+      "vw": 3.9,
+      "font": "Avenir Next",
+      "text": "Default Enterprise Organization"
+     },
+     "monoShare": 0.01,
+     "monoProseShare": 0.01,
+     "monoFamilies": [
+      "ui-monospace"
+     ],
+     "monoSamples": [
+      "Shared Master"
+     ],
+     "microLabels": 3,
+     "microLabelShare": 0.031,
+     "microSamples": [
+      "Workspaces (0)",
+      "Online",
+      "Suggested Inquiries"
+     ],
+     "upperShare": 0.04,
+     "centerShare": 0.13,
+     "smallText": 25
+    },
+    "eyebrows": [
+     {
+      "text": "Organization Portal",
+      "above": "Default Enterprise Organization",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": true,
+      "size": 11,
+      "top": 121
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#0e1016",
+     "bodyBgHsl": {
+      "h": 225,
+      "s": 0.22,
+      "l": 0.07
+     },
+     "dark": true,
+     "sectionBgs": [
+      {
+       "color": "#0e1016",
+       "top": 0,
+       "hsl": {
+        "h": 225,
+        "s": 0.22,
+        "l": 0.07
+       }
+      },
+      {
+       "color": "#101319",
+       "top": 0,
+       "hsl": {
+        "h": 220,
+        "s": 0.22,
+        "l": 0.08
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#9f9fa9",
+       "share": 0.47
+      },
+      {
+       "color": "#d4d4d8",
+       "share": 0.16
+      },
+      {
+       "color": "#71717b",
+       "share": 0.16
+      },
+      {
+       "color": "#f4f4f5",
+       "share": 0.12
+      },
+      {
+       "color": "#00d3f2",
+       "share": 0.03
+      }
+     ],
+     "button": {
+      "bg": "#00b8db",
+      "hsl": {
+       "h": 190,
+       "s": 1,
+       "l": 0.43
+      },
+      "fg": "#09090b"
+     },
+     "lowContrast": [
+      {
+       "text": "Search workspace",
+       "ratio": 3.9,
+       "need": 4.5,
+       "size": 12,
+       "fg": "#71717b",
+       "bg": "#0e1016"
+      },
+      {
+       "text": "Enter to send · Shift+Enter newline",
+       "ratio": 3.9,
+       "need": 4.5,
+       "size": 10,
+       "fg": "#71717b",
+       "bg": "#101319"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 7,
+     "inHero": 6,
+     "radius": 12,
+     "height": 38,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Default Enterprise Organization ORG",
+      "Create Workspace",
+      "List all verified guards and their prima",
+      "Which documents are currently in the hum",
+      "What extraction templates are configured"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 4,
+     "shadowOverlay": 0,
+     "shadowSamples": [
+      "a.flex.items-center → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0",
+      "div.relative.overflow-hidden → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0",
+      "a.inline-flex.items-center → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0",
+      "aside.w-[420px].min-w-[340px] → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0"
+     ],
+     "gradients": 3,
+     "scrims": 0,
+     "gradientSamples": [
+      "main.flex-1.overflow-y-auto → radial-gradient(circle at 100% 0px, rgba(34, 211, 238, 0.06), rgba(0, 0, 0, 0) 35%)",
+      "div.relative.overflow-hidden → linear-gradient(to right bottom in oklab, rgb(22, 25, 35) 0%, rgb(18, 21, 28) 50%, rgb(16, 19, 25) 100%)",
+      "div.flex-1.overflow-y-auto → radial-gradient(circle at 50% 0%, rgba(34, 211, 238, 0.04), rgba(0, 0, 0, 0) 50%)"
+     ],
+     "gradientText": 0,
+     "hairlines": 4,
+     "hairlineSamples": [
+      "header.h-16.border-b 348px",
+      "aside.w-[420px].min-w-[340px] 420px",
+      "div.h-16.px-4 419px",
+      "div.p-3.border-t 419px"
+     ],
+     "outlinedBoxes": 2,
+     "dashed": 0,
+     "blurred": 4,
+     "roundedBoxes": 3,
+     "boxRadius": 16,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 2,
+     "fixed": false,
+     "height": 64,
+     "floatingPill": false,
+     "blur": true
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "pageH": 1024,
+    "margins": {
+     "left": 24,
+     "right": 16
+    },
+    "sections": [],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Default Enterprise Organization",
+      "size": 30,
+      "top": 152,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 57,
+      "n": 2
+     },
+     {
+      "x": 24,
+      "n": 1
+     },
+     {
+      "x": 105,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 4,
+    "bodySize": 12,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "dark": true,
+    "ground": "#0e1016",
+    "sidebar": null,
+    "topbar": null,
+    "canvas": {
+     "left": 24,
+     "right": 16
+    },
+    "hero": {
+     "text": "Default Enterprise Organization",
+     "words": 3,
+     "chars": 31,
+     "lines": 3,
+     "size": 30,
+     "vw": 3.9,
+     "font": "Avenir Next",
+     "weight": 700,
+     "tracking": -0.02,
+     "leading": 1.2,
+     "top": 152,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 7,
+     "firstScreen": 7,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 8,
+     "radii": [
+      [
+       12,
+       4
+      ],
+      [
+       16,
+       2
+      ],
+      [
+       0,
+       2
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 2,
+     "shadowSamples": [],
+     "glass": 2
+    },
+    "chips": {
+     "count": 2,
+     "hues": 2,
+     "samples": [
+      {
+       "hue": 158,
+       "size": 40,
+       "radius": "12px"
+      },
+      {
+       "hue": 192,
+       "size": 28,
+       "radius": "8px"
+      }
+     ]
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 0,
+     "tabularShare": null,
+     "kpiMax": null
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.77,
+     "tiny": 6,
+     "tinySamples": [
+      "Org 9px",
+      "Shared Master 10px",
+      "Online 9px",
+      "Suggested Inquiries 10px"
+     ],
+     "sizes": [
+      9,
+      10,
+      11,
+      12,
+      14,
+      30
+     ]
+    },
+    "title": {
+     "text": "Default Enterprise Organization",
+     "size": 30,
+     "top": 152
+    },
+    "colourShare": 0.011
+   },
+   "consoleErrors": []
+  },
+  {
+   "width": 390,
+   "height": 844,
+   "load": "load",
+   "screens": 1,
+   "filled": [
+    1
+   ],
+   "motion": {
+    "elements": 7,
+    "css": 6,
+    "transitions": 0,
+    "scripted": 1,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "page": {
+     "height": 844,
+     "screens": 1,
+     "words": 166,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 24,
+     "sections": 0,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 1,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "SYRUSS",
+     "words": 1,
+     "chars": 6,
+     "lines": 1,
+     "size": 12,
+     "vw": 3.1,
+     "font": "Avenir Next",
+     "weight": 700,
+     "tracking": -0.02,
+     "leading": 1.33,
+     "top": 24,
+     "tag": "span",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": null,
+    "headings": [],
+    "headingSummary": {
+     "count": 0,
+     "maxLines": 0,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": null,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Avenir Next",
+       "share": 0.99,
+       "mono": false
+      },
+      {
+       "family": "ui-monospace",
+       "share": 0.01,
+       "mono": false
+      }
+     ],
+     "familyCount": 2,
+     "sizes": [
+      9,
+      10,
+      11,
+      12,
+      14
+     ],
+     "sizeCount": 5,
+     "notLoaded": [
+      "Avenir Next"
+     ],
+     "body": {
+      "font": "Avenir Next",
+      "size": 12,
+      "leading": 1.63,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 7
+     },
+     "measureChars": 24,
+     "max": {
+      "size": 14,
+      "vw": 3.6,
+      "font": "Avenir Next",
+      "text": "Workspaces (0)"
+     },
+     "monoShare": 0.01,
+     "monoProseShare": 0.01,
+     "monoFamilies": [
+      "ui-monospace"
+     ],
+     "monoSamples": [
+      "Shared Master"
+     ],
+     "microLabels": 3,
+     "microLabelShare": 0.042,
+     "microSamples": [
+      "Workspaces (0)",
+      "Online",
+      "Suggested Inquiries"
+     ],
+     "upperShare": 0.05,
+     "centerShare": 0.17,
+     "smallText": 20
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#0e1016",
+     "bodyBgHsl": {
+      "h": 225,
+      "s": 0.22,
+      "l": 0.07
+     },
+     "dark": true,
+     "sectionBgs": [
+      {
+       "color": "#0e1016",
+       "top": 0,
+       "hsl": {
+        "h": 225,
+        "s": 0.22,
+        "l": 0.07
+       }
+      },
+      {
+       "color": "#101319",
+       "top": 0,
+       "hsl": {
+        "h": 220,
+        "s": 0.22,
+        "l": 0.08
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#9f9fa9",
+       "share": 0.43
+      },
+      {
+       "color": "#d4d4d8",
+       "share": 0.22
+      },
+      {
+       "color": "#f4f4f5",
+       "share": 0.13
+      },
+      {
+       "color": "#71717b",
+       "share": 0.1
+      },
+      {
+       "color": "#00d3f2",
+       "share": 0.04
+      }
+     ],
+     "button": null,
+     "lowContrast": [
+      {
+       "text": "Enter to send · Shift+Enter newline",
+       "ratio": 3.9,
+       "need": 4.5,
+       "size": 10,
+       "fg": "#71717b",
+       "bg": "#101319"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 5,
+     "inHero": 5,
+     "radius": 12,
+     "height": 38,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Default Enterprise Organization ORG",
+      "List all verified guards and their prima",
+      "Which documents are currently in the hum",
+      "What extraction templates are configured",
+      "Summarize latest document activity and d"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 3,
+     "shadowOverlay": 0,
+     "shadowSamples": [
+      "a.flex.items-center → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0",
+      "div.relative.overflow-hidden → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0",
+      "aside.w-[420px].min-w-[340px] → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0"
+     ],
+     "gradients": 2,
+     "scrims": 0,
+     "gradientSamples": [
+      "div.relative.overflow-hidden → linear-gradient(to right bottom in oklab, rgb(22, 25, 35) 0%, rgb(18, 21, 28) 50%, rgb(16, 19, 25) 100%)",
+      "div.flex-1.overflow-y-auto → radial-gradient(circle at 50% 0%, rgba(34, 211, 238, 0.04), rgba(0, 0, 0, 0) 50%)"
+     ],
+     "gradientText": 0,
+     "hairlines": 3,
+     "hairlineSamples": [
+      "aside.w-[420px].min-w-[340px] 420px",
+      "div.h-16.px-4 419px",
+      "div.p-3.border-t 419px"
+     ],
+     "outlinedBoxes": 0,
+     "dashed": 0,
+     "blurred": 4,
+     "roundedBoxes": 1,
+     "boxRadius": 99,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 2,
+     "fixed": false,
+     "height": 64,
+     "floatingPill": false,
+     "blur": true
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "pageH": 844,
+    "margins": {
+     "left": 2,
+     "right": 0
+    },
+    "sections": [],
+    "gaps": [],
+    "h1s": [],
+    "edgeText": [
+     {
+      "text": "Workspaces (",
+      "side": "left",
+      "px": 2
+     },
+     {
+      "text": "Select a workspace below to enter its processing d",
+      "side": "left",
+      "px": 2
+     },
+     {
+      "text": "Enter to send · Shift+Enter newline",
+      "side": "right",
+      "px": 0
+     }
+    ],
+    "edges": [
+     {
+      "x": 2,
+      "n": 1
+     },
+     {
+      "x": 27,
+      "n": 1
+     },
+     {
+      "x": 83,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 3,
+    "bodySize": 12,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "dark": true,
+    "ground": "#0e1016",
+    "sidebar": null,
+    "topbar": {
+     "h": 64
+    },
+    "canvas": {
+     "left": 2,
+     "right": 0
+    },
+    "hero": {
+     "text": "SYRUSS",
+     "words": 1,
+     "chars": 6,
+     "lines": 1,
+     "size": 12,
+     "vw": 3.1,
+     "font": "Avenir Next",
+     "weight": 700,
+     "tracking": -0.02,
+     "leading": 1.33,
+     "top": 24,
+     "tag": "span",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 0,
+     "firstScreen": 0,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 0,
+     "radii": [],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 2,
+     "hues": 2,
+     "samples": [
+      {
+       "hue": 158,
+       "size": 40,
+       "radius": "12px"
+      },
+      {
+       "hue": 192,
+       "size": 28,
+       "radius": "8px"
+      }
+     ]
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 0,
+     "tabularShare": null,
+     "kpiMax": null
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.92,
+     "tiny": 6,
+     "tinySamples": [
+      "Org 9px",
+      "Shared Master 10px",
+      "Online 9px",
+      "Suggested Inquiries 10px"
+     ],
+     "sizes": [
+      9,
+      10,
+      11,
+      12,
+      14,
+      24
+     ]
+    },
+    "title": null,
+    "colourShare": 0.008
+   },
+   "consoleErrors": []
+  }
+ ],
+ "findings": [
+  {
+   "level": "FAIL",
+   "id": "micro-label",
+   "width": 1440,
+   "message": "3 tiny uppercase letter-spaced labels (e.g. \"Workspaces (0)\", \"Online\", \"Suggested Inquiries\").",
+   "fix": "Use sentence-case text at a readable size, or delete the label.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "gradient",
+   "width": 1440,
+   "message": "3 gradient fill(s): main.flex-1.overflow-y-auto → radial-gradient(circle at 100% 0px, rgba(34, 211, 238, 0.06), rgba(0, 0, 0, 0) 35%) | div.relative.overflow-hidden → linear-gradient(to right bottom in oklab, rgb(22, 25, 35) 0%, rgb(18, 21, 28) 50%, rgb(16, 19, 25) 100%) | div.flex-1.overflow-y-auto → radial-gradient(circle at 50% 0%, rgba(34, 211, 238, 0.04), rgba(0, 0, 0, 0) 50%)",
+   "fix": "Use a flat colour or a real image. The only gradient allowed by default is a neutral scrim over a photo for legibility.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "contrast",
+   "width": 1440,
+   "message": "Low-contrast text: \"Search workspace\" 3.9:1 needs 4.5:1; \"Enter to send · Shift+Enter newline\" 3.9:1 needs 4.5:1",
+   "fix": "Darken or lighten the text colour.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "font-fallback",
+   "width": 1440,
+   "message": "Typeface(s) declared but not loaded, so a fallback is rendering: Avenir Next",
+   "fix": "Fix the font URL / family name, or the screenshots you are judging are not the design.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "font-not-dealt",
+   "width": 1440,
+   "message": "The sheet dealt IBM Plex Sans, but the page renders Avenir Next, ui-monospace.",
+   "fix": "Load the dealt face (the link on the sheet) and put it first in font-family. A build that falls back to a default face lands on the default look."
+  },
+  {
+   "level": "FAIL",
+   "id": "tiny-text",
+   "width": 1440,
+   "message": "6 text blocks under 11px: Org 9px, Shared Master 10px, Online 9px, Suggested Inquiries 10px.",
+   "fix": "Nothing below 11px; secondary text 12px, data 13–14px.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "headline-lines",
+   "width": 768,
+   "message": "1 headline(s) wrap past two lines at 768px: \"Default Enterprise Organization\" → 3 lines (3 words, 30px)",
+   "fix": "Cut words first (a headline is a title, not a sentence). Then give it a wider measure. Lower the size only as a last resort and never below the scale you chose. A real statement paragraph belongs in a <p> or <blockquote> at 32px or less."
+  },
+  {
+   "level": "FAIL",
+   "id": "edge-text",
+   "width": 390,
+   "message": "3 text block(s) sit within 12px of the screen edge: \"Workspaces (\" (2px from the left); \"Select a workspace below to en\" (2px from the left); \"Enter to send · Shift+Enter ne\" (0px from the right)",
+   "fix": "Keep text inside the page margin (16–20px). Only display type deliberately bled past the edge may touch it."
+  },
+  {
+   "level": "FAIL",
+   "id": "no-title",
+   "width": 390,
+   "message": "The screen has no h1.",
+   "fix": "Name the screen in an h1 at the top of the canvas (18–28px): \"Overview\", \"Payouts\", the project's name."
+  },
+  {
+   "level": "FAIL",
+   "id": "covered-text",
+   "width": 390,
+   "message": "Large text lies under another element at some scroll position: \"Default Enterprise Organization\" (screen 1, 100% hidden)",
+   "fix": "Nothing may sit on top of a headline or statement. Move the picture, shorten the pinned run, or raise the text above it (z-index) and give it a ground."
+  }
+ ],
+ "images": [
+  {
+   "viewport": "desktop",
+   "width": 1440,
+   "fold": "C:\\Users\\sadee\\OneDrive\\Documents\\document-processing-agentic-system\\www\\.taste-skill\\before\\desktop-fold.jpg",
+   "pages": [
+    "C:\\Users\\sadee\\OneDrive\\Documents\\document-processing-agentic-system\\www\\.taste-skill\\before\\desktop-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "tablet",
+   "width": 768,
+   "fold": "C:\\Users\\sadee\\OneDrive\\Documents\\document-processing-agentic-system\\www\\.taste-skill\\before\\tablet-fold.jpg",
+   "pages": [
+    "C:\\Users\\sadee\\OneDrive\\Documents\\document-processing-agentic-system\\www\\.taste-skill\\before\\tablet-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "mobile",
+   "width": 390,
+   "fold": "C:\\Users\\sadee\\OneDrive\\Documents\\document-processing-agentic-system\\www\\.taste-skill\\before\\mobile-fold.jpg",
+   "pages": [
+    "C:\\Users\\sadee\\OneDrive\\Documents\\document-processing-agentic-system\\www\\.taste-skill\\before\\mobile-page-01.jpg"
+   ],
+   "film": []
+  }
+ ]
+}

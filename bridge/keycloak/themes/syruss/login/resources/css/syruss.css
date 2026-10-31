@@ -1,0 +1,193 @@
+/*
+ * Syruss sign-in and registration. Same look as the site: a dark ground, a teal field beside the form (the way
+ * the site's "how it works" screen is split), IBM Plex Sans, a near-white main button, square corners.
+ * Keycloak's own (PatternFly) pieces are restyled, not replaced, so every flow it has (reset password,
+ * two-step codes, errors) inherits this. Each page fits one screen: nothing to scroll at 1280 x 700.
+ */
+@font-face { font-family: "IBM Plex Sans"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 500; font-style: normal; font-display: swap; src: url("../fonts/ibm-plex-sans-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 600; font-style: normal; font-display: swap; src: url("../fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2"); }
+
+:root, :root.pf-v5-theme-dark {
+  --syruss-sheet: #0b0b0c;
+  --syruss-frame: #121314;
+  --syruss-aside: #10282e;
+  --syruss-ink: #f2f3f4;
+  --syruss-muted: #b2b5b9;
+  --syruss-control: #4a4e53;
+  --syruss-line: #25272a;
+  --syruss-accent: #5bb3c7;
+  --syruss-accent-ink: #7cc7d8;
+  --syruss-negative: #f08a8e;
+  --syruss-negative-bg: #2e1517;
+  --syruss-good: #63d197;
+  --syruss-good-bg: #12291c;
+  --syruss-warn: #e8b25c;
+  --syruss-warn-bg: #2c2110;
+  color-scheme: dark;
+
+  --pf-v5-global--FontFamily--text: "IBM Plex Sans", system-ui, sans-serif;
+  --pf-v5-global--FontFamily--heading: "IBM Plex Sans", system-ui, sans-serif;
+  --pf-v5-global--FontFamily--sans-serif: "IBM Plex Sans", system-ui, sans-serif;
+  --pf-v5-global--BackgroundColor--100: var(--syruss-sheet);
+  --pf-v5-global--BackgroundColor--200: var(--syruss-frame);
+  --pf-v5-global--Color--100: var(--syruss-ink);
+  --pf-v5-global--Color--200: var(--syruss-muted);
+  --pf-v5-global--BorderColor--100: var(--syruss-control);
+  --pf-v5-global--primary-color--100: var(--syruss-accent);
+  --pf-v5-global--link--Color: var(--syruss-accent-ink);
+  --pf-v5-global--link--Color--hover: var(--syruss-ink);
+  --pf-v5-global--active-color--100: var(--syruss-accent);
+  --pf-v5-global--danger-color--100: var(--syruss-negative);
+  --pf-v5-global--BorderRadius--sm: 4px;
+}
+
+html, body, .login-pf body { background: var(--syruss-sheet); color: var(--syruss-ink); font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 17px; line-height: 1.5; -webkit-font-smoothing: antialiased; margin: 0; }
+.login-pf body { background-image: none !important; }
+
+/* Two halves: what Syruss is, and the form. */
+.syruss-shell { display: grid; grid-template-columns: minmax(340px, 5fr) 6fr; min-height: 100vh; }
+.syruss-aside { background: var(--syruss-aside); padding: 32px 48px; display: grid; grid-template-rows: auto 1fr; gap: 24px; overflow: hidden; }
+.syruss-aside-body { align-self: center; display: grid; gap: 20px; max-width: 520px; }
+.syruss-aside-title { font-size: clamp(34px, 3.4vw, 52px); line-height: 1; letter-spacing: -0.03em; font-weight: 500; margin: 0; }
+.syruss-aside-text { color: var(--syruss-muted); font-size: 17px; max-width: 34ch; margin: 0; }
+.syruss-aside { position: relative; isolation: isolate; }
+.syruss-aside > * { position: relative; z-index: 2; }
+.syruss-aside::after { content: ""; position: absolute; inset: 0; z-index: 1; background: linear-gradient(180deg, color-mix(in oklab, var(--syruss-aside) 78%, transparent) 0%, color-mix(in oklab, var(--syruss-aside) 55%, transparent) 40%, color-mix(in oklab, var(--syruss-aside) 92%, transparent) 100%); }
+.syruss-slides { position: absolute !important; inset: 0; z-index: 0 !important; }
+.syruss-slide { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; animation: syruss-slide 24s ease-in-out infinite; }
+.syruss-slide:nth-child(2) { animation-delay: 6s; }
+.syruss-slide:nth-child(3) { animation-delay: 12s; }
+.syruss-slide:nth-child(4) { animation-delay: 18s; }
+@keyframes syruss-slide { 0% { opacity: 0; transform: scale(1.04); } 6%, 25% { opacity: 0.9; } 31% { opacity: 0; transform: scale(1.12); } 100% { opacity: 0; transform: scale(1.12); } }
+.syruss-aside-title span { display: inline-block; animation: syruss-rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) 120ms both; }
+.syruss-aside-title span:last-child { animation-delay: 300ms; }
+.syruss-aside-text { animation: syruss-rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) 520ms both; }
+@keyframes syruss-rise { from { opacity: 0; transform: translateY(16px); } }
+/* The brand mark's read line sweeps down the page and back, like Syruss reading it. */
+.syruss-scan { animation: syruss-read 2.8s ease-in-out infinite; transform-box: fill-box; }
+@keyframes syruss-read { 0%, 100% { transform: translateY(-9px); opacity: 0.35; } 50% { transform: translateY(8px); opacity: 1; } }
+
+.syruss-pane { background: var(--syruss-sheet); display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 32px 40px; }
+.syruss-mobile-brand { display: none; }
+.syruss-brand { display: inline-flex; align-items: center; gap: 10px; color: var(--syruss-ink); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; text-decoration: none; text-transform: none; }
+.syruss-brand:hover { color: var(--syruss-ink); }
+#kc-header-wrapper { font-size: 20px; letter-spacing: -0.01em; text-transform: none; color: var(--syruss-ink) !important; text-align: left; line-height: 1; }
+
+/* The form column */
+.pf-v5-c-login__main { width: min(100%, 420px); background: none; box-shadow: none; padding: 0; margin: 0; border-radius: 0; animation: syruss-in 360ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes syruss-in { from { opacity: 0; transform: translateY(10px); } }
+.pf-v5-c-login__main-header { display: block; padding: 0 0 20px; border: 0; margin: 0; }
+.pf-v5-c-login__main-header::before, .pf-v5-c-login__main-header::after { display: none; }
+.pf-v5-c-login__main-body { padding: 0; }
+#kc-page-title, .pf-v5-c-title { font-size: 32px; line-height: 1.1; letter-spacing: -0.025em; font-weight: 500; color: var(--syruss-ink); margin: 0; }
+.pf-v5-c-login__main-header-utilities { display: none; }
+.subtitle { display: none; }
+
+/* Fields: ONE box each. The wrapper draws the border; the input inside is plain. */
+.pf-v5-c-form { gap: 16px; --pf-v5-c-form--GridGap: 16px; }
+.pf-v5-c-form__group { display: grid; gap: 0; margin: 0; }
+.pf-v5-c-form__group-label { display: block; margin: 0 0 6px; padding: 0; }
+.pf-v5-c-form__label-text, .pf-v5-c-form__label { font-size: 14px; font-weight: 500; color: var(--syruss-ink); }
+.pf-v5-c-form__label-required { color: var(--syruss-negative); margin-left: 2px; }
+.pf-v5-c-form-control { position: relative; display: flex; align-items: center; height: 48px; min-height: 48px; padding: 0; border: 0; border-radius: 4px; background: var(--syruss-sheet); color: var(--syruss-ink); font-size: 17px; }
+.pf-v5-c-form-control::before { content: ""; position: absolute; inset: 0; border: 1.5px solid var(--syruss-control); border-radius: 4px; pointer-events: none; }
+.pf-v5-c-form-control::after { display: none !important; }
+.pf-v5-c-form-control input, .pf-v5-c-form-control select, .pf-v5-c-form-control textarea { width: 100%; height: 100%; padding: 0 14px; border: 0 !important; outline: 0 !important; box-shadow: none !important; background: transparent !important; color: var(--syruss-ink); font: inherit; border-radius: 4px; }
+.pf-v5-c-form-control:focus-within { outline: 3px solid var(--syruss-accent); outline-offset: 1px; }
+.pf-v5-c-form-control:focus-within::before { border-color: var(--syruss-accent); }
+.pf-v5-c-form-control.pf-m-readonly, .pf-v5-c-form-control.pf-m-readonly input { background: var(--syruss-frame); color: var(--syruss-muted); }
+.pf-v5-c-form-control[aria-invalid="true"]::before, .pf-v5-c-form-control.pf-m-error::before { border-color: var(--syruss-negative); }
+.pf-v5-c-form-control__utilities { display: none; }
+.pf-v5-c-helper-text__item-text { font-size: 14px; color: var(--syruss-muted); }
+.pf-v5-c-helper-text__item-text.pf-m-error, .kc-feedback-text.pf-m-error { color: var(--syruss-negative); }
+.pf-v5-c-check__label { font-size: 14px; color: var(--syruss-muted); }
+.pf-v5-c-check__input { accent-color: var(--syruss-accent); }
+
+/* A password field and its show/hide button read as one control. */
+.pf-v5-c-input-group { display: flex; align-items: stretch; height: 48px; border: 1.5px solid var(--syruss-control); border-radius: 4px; background: var(--syruss-sheet); }
+.pf-v5-c-input-group:focus-within { outline: 3px solid var(--syruss-accent); outline-offset: 1px; border-color: var(--syruss-accent); }
+.pf-v5-c-input-group .pf-v5-c-form-control { flex: 1; height: 100%; min-height: 0; outline: 0 !important; }
+.pf-v5-c-input-group .pf-v5-c-form-control::before { display: none; }
+.pf-v5-c-input-group__item { display: flex; align-items: stretch; }
+.pf-v5-c-input-group__item.pf-m-fill { flex: 1; }
+.pf-v5-c-input-group .pf-v5-c-button { border: 0; height: auto; width: 48px; padding: 0; justify-content: center; background: transparent; color: var(--syruss-muted); }
+.pf-v5-c-input-group .pf-v5-c-button:hover { color: var(--syruss-ink); }
+.pf-v5-c-button::after, .pf-v5-c-button::before { display: none !important; }
+
+/* Buttons: the primary action is near-white like the site's; square corners. */
+.pf-v5-c-button { font-family: inherit; font-size: 17px; font-weight: 500; border-radius: 4px; }
+.pf-v5-c-button.pf-m-primary, input.pf-v5-c-button.pf-m-primary { background: var(--syruss-ink); color: var(--syruss-sheet); height: 52px; width: 100%; border: 0; transition: transform 160ms cubic-bezier(0.2, 0.7, 0.2, 1); }
+.pf-v5-c-button.pf-m-primary:hover { transform: translateY(-2px); background: var(--syruss-ink); color: var(--syruss-sheet); }
+.pf-v5-c-button.pf-m-primary:active { transform: none; }
+.pf-v5-c-button.pf-m-secondary, a.pf-v5-c-button.pf-m-secondary { background: var(--syruss-frame); color: var(--syruss-ink); border: 0; height: 52px; display: inline-flex; align-items: center; justify-content: center; width: 100%; }
+.pf-v5-c-form__actions { margin: 4px 0 0; }
+#kc-form-buttons { margin-top: 4px; }
+
+/* Links */
+a { color: var(--syruss-accent-ink); text-underline-offset: 4px; }
+a:hover { color: var(--syruss-ink); }
+#kc-registration-container, .pf-v5-c-login__main-footer-band { margin: 20px 0 0; padding: 0; background: transparent; border: 0; display: block; text-align: center; }
+.pf-v5-c-login__main-footer-band-item { color: var(--syruss-muted); font-size: 17px; margin: 0; }
+.pf-v5-c-login__main-footer-band-item a { color: var(--syruss-ink); font-weight: 500; text-decoration: underline; text-decoration-thickness: 2px; }
+#kc-form-options { margin: 0; }
+.pf-v5-c-form__group.pf-v5-c-login__main-footer-band { margin-top: 4px; }
+
+/* Google and other providers: first, then "or", then the form. */
+.pf-v5-c-login__main-footer { padding: 0; margin: 0; }
+.syruss-social-wrap { margin-bottom: 16px; }
+.syruss-social { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.syruss-social-button { display: flex; align-items: center; justify-content: center; gap: 12px; height: 52px; border-radius: 4px; background: var(--syruss-frame); color: var(--syruss-ink); font-weight: 500; text-decoration: none; transition: transform 160ms cubic-bezier(0.2, 0.7, 0.2, 1), background-color 160ms; }
+.syruss-social-button:hover { transform: translateY(-2px); background: #1b1d1f; color: var(--syruss-ink); }
+.syruss-or { display: flex; align-items: center; gap: 14px; margin-top: 16px; color: var(--syruss-muted); font-size: 14px; }
+.syruss-or::before, .syruss-or::after { content: ""; flex: 1; height: 1px; background: var(--syruss-line); }
+
+/* Registration: names and passwords sit side by side, so the whole form fits one screen. */
+#kc-register-form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+#kc-register-form > * { grid-column: 1 / -1; }
+#kc-register-form > .pf-v5-c-form__group:nth-of-type(n + 2):nth-of-type(-n + 5) { grid-column: auto; }
+.pf-v5-c-login__main-body:has(#kc-register-form) { padding-top: 0; }
+
+/* Messages */
+.pf-v5-c-alert { border: 0; border-radius: 4px; padding: 10px 14px; font-size: 14px; box-shadow: none; background: var(--syruss-frame); color: var(--syruss-ink); margin: 0 0 16px; }
+.pf-v5-c-alert::before { display: none; }
+.pf-v5-c-alert.pf-m-danger { background: var(--syruss-negative-bg); color: var(--syruss-negative); }
+.pf-v5-c-alert.pf-m-success { background: var(--syruss-good-bg); color: var(--syruss-good); }
+.pf-v5-c-alert.pf-m-warning { background: var(--syruss-warn-bg); color: var(--syruss-warn); }
+.pf-v5-c-alert__title { color: inherit; font-weight: 500; }
+.pf-v5-c-alert__icon { display: none; }
+hr { border-color: var(--syruss-control); opacity: 0.4; }
+
+/* Phones and narrow windows: the field goes, the brand moves above the form. */
+@media (max-width: 900px) {
+  .syruss-shell { display: block; }
+  .syruss-aside { display: none; }
+  .syruss-pane { min-height: 100vh; justify-content: flex-start; align-items: stretch; padding: 24px 20px 40px; }
+  .syruss-mobile-brand { display: block; margin-bottom: 28px; }
+  .pf-v5-c-login__main { width: 100%; }
+  #kc-register-form { grid-template-columns: 1fr; }
+  #kc-register-form > .pf-v5-c-form__group:nth-of-type(n + 2):nth-of-type(-n + 5) { grid-column: 1 / -1; }
+}
+/* The form: each part arrives a beat after the one above it. */
+.pf-v5-c-login__main-header, .pf-v5-c-form > *, #kc-form-buttons, .syruss-social, #kc-registration, .pf-v5-c-login__main-footer { animation: syruss-rise 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.pf-v5-c-form > :nth-child(1) { animation-delay: 80ms; }
+.pf-v5-c-form > :nth-child(2) { animation-delay: 150ms; }
+.pf-v5-c-form > :nth-child(3) { animation-delay: 220ms; }
+.pf-v5-c-form > :nth-child(4) { animation-delay: 290ms; }
+.pf-v5-c-form > :nth-child(5) { animation-delay: 360ms; }
+.pf-v5-c-form > :nth-child(6) { animation-delay: 430ms; }
+.pf-v5-c-form > :nth-child(n + 7) { animation-delay: 500ms; }
+.pf-v5-c-login__main-footer { animation-delay: 560ms; }
+.pf-v5-c-button.pf-m-primary { transition: transform 160ms cubic-bezier(0.2, 0.7, 0.2, 1), background-color 160ms; }
+.pf-v5-c-button.pf-m-primary:hover { transform: translateY(-2px); }
+.pf-v5-c-button.pf-m-primary:active { transform: translateY(0); }
+.pf-v5-c-form-control:focus-within, .pf-v5-c-form-control:has(input:focus) { box-shadow: 0 0 0 4px color-mix(in oklab, var(--syruss-accent) 28%, transparent); transition: box-shadow 200ms; }
+.pf-v5-c-alert.pf-m-danger { animation: syruss-shake 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+@keyframes syruss-shake { 10%, 90% { transform: translateX(-1px); } 20%, 80% { transform: translateX(2px); } 30%, 50%, 70% { transform: translateX(-4px); } 40%, 60% { transform: translateX(4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .syruss-slide, .syruss-scan, .syruss-aside-title span, .syruss-aside-text { animation: none; }
+  .syruss-slide:first-child { opacity: 0.9; }
+  .pf-v5-c-login__main-header, .pf-v5-c-form > *, #kc-form-buttons, .syruss-social, #kc-registration, .pf-v5-c-login__main-footer, .pf-v5-c-alert.pf-m-danger { animation: none; }
+  .pf-v5-c-login__main { animation: none; }
+  .pf-v5-c-button, .syruss-social-button { transition: none; }
+}
