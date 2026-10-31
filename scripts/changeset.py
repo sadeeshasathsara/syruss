@@ -496,6 +496,10 @@ def cmd_check(args: argparse.Namespace) -> int:
         return 0
 
     changesets = read_pending_changesets()
+    if not changesets and CHANGELOG_PATH.name in changed_files:
+        print("[OK] No pending fragments, but CHANGELOG.md was updated: changesets were already applied upstream.")
+        return 0
+
     if not changesets:
         print("\n[ERROR] PR VALIDATION FAILED: No changeset fragment found in .changeset/")
         print("------------------------------------------------------------")
