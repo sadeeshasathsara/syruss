@@ -1,0 +1,16 @@
+# Lines starting with '#' are considered comments.
+# Each line is a file pattern followed by one or more owners.
+
+# Global default: owner for everything in the repository
+* @sadeeshasathsara
+
+# Services & Applications
+/server/             @sadeeshasathsara
+/agentic_framework/  @sadeeshasathsara
+/www/                @sadeeshasathsara
+/site/               @sadeeshasathsara
+/admin/              @sadeeshasathsara
+
+# Infrastructure & CI/CD
+/bridge/             @sadeeshasathsara
+/.github/            @sadeeshasathsara

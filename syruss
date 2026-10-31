@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+if command -v python3 &>/dev/null; then
+    exec python3 -m scripts "$@"
+else
+    exec python -m scripts "$@"
+fi
