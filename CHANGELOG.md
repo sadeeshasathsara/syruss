@@ -7,14 +7,35 @@ All notable changes to Syruss services.
 | Service | Development (`dev`) | Staging (`test`) | Production (`main`) |
 | :--- | :---: | :---: | :---: |
 | **admin** | — | — | — |
-| **agent** | `0.2.0-dev.1` | — | — |
-| **server** | `0.2.0-dev.1` | — | — |
-| **site** | `0.2.0-dev.1` | — | — |
-| **www** | `0.2.0-dev.1` | — | — |
+| **agent** | `0.2.0-dev.1` | `0.2.0-rc.1` | — |
+| **server** | `0.2.0-dev.1` | `0.2.0-rc.1` | — |
+| **site** | `0.2.0-dev.1` | `0.2.0-rc.1` | — |
+| **www** | `0.2.0-dev.1` | `0.2.0-rc.1` | — |
 
 ---
 
 ## Release History
+
+## [2026-10-31] - Release Candidate (test)
+
+### agent (0.2.0-rc.1)
+- Add agent, server, site and www service updates
+- Synchronize agent worker release with core API updates
+- Initial agentic framework worker release
+
+### server (0.2.0-rc.1)
+- Add agent, server, site and www service updates
+- Add missing SendResult imports across destination adapters
+- Initial FastAPI core services and destination adapters
+
+### site (0.2.0-rc.1)
+- Add agent, server, site and www service updates
+- Initial landing page and onboarding portal release
+
+### www (0.2.0-rc.1)
+- Add agent, server, site and www service updates
+- Display entity badges and reference dropdowns in SchemaEditor for relationship template objects
+- Initial workspace application release
 
 ## [2026-10-31] - Release via dev
 
