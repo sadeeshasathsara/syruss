@@ -1,0 +1,26 @@
+{#- The frame every email shares: one narrow column with inline styles (mail apps ignore stylesheets).
+    A template extends this and fills the blocks: preheader, heading, content, footer. -#}
+{% import "_components.html" as ui %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}{{ self.heading() }}{% endblock %}</title>
+</head>
+<body style="margin:0;padding:0;background:{{ ui.PAGE }}">
+  <span style="display:none;max-height:0;overflow:hidden;opacity:0">{% block preheader %}{% endblock %}</span>
+  <table role="presentation" width="100%" style="background:{{ ui.PAGE }};padding:32px 12px">
+    <tr><td align="center">
+      <table role="presentation" width="100%" style="max-width:520px;background:#ffffff;border:1px solid {{ ui.LINE }};border-radius:12px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+        <tr><td style="padding:32px 32px 8px;font-size:15px;font-weight:600;letter-spacing:.2px;color:{{ ui.INK }}">Syruss</td></tr>
+        <tr><td style="padding:8px 32px 0">
+          <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;font-weight:600;color:{{ ui.INK }}">{% block heading %}{% endblock %}</h1>
+          {% block content %}{% endblock %}
+        </td></tr>
+        <tr><td style="padding:16px 32px 28px;font-size:13px;line-height:1.5;color:{{ ui.MUTED }}">{% block footer %}{% endblock %}</td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

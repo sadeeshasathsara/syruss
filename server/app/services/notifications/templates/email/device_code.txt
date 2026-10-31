@@ -1,0 +1,11 @@
+Confirm this sign-in
+
+Someone signed in to your Syruss account from a browser we don't recognise. If that was you, enter this code to continue. It works once and expires in {{ minutes }} minutes.
+
+{{ code }}
+
+Browser: {{ device }}
+Address: {{ ip }}
+When: {{ when }}
+
+If this wasn't you, don't share the code: without it, nobody gets in. Change your password as a precaution.

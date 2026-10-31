@@ -1,0 +1,33 @@
+{#- Small pieces the emails are built from. Colors live here once. -#}
+{% set INK = "#15171a" %}
+{% set MUTED = "#5b616b" %}
+{% set LINE = "#e4e6ea" %}
+{% set PAGE = "#f4f5f7" %}
+
+{% macro paragraph(text) -%}
+<p style="margin:0 0 16px;font-size:16px;line-height:1.55;color:{{ INK }}">{{ text }}</p>
+{%- endmacro %}
+
+{% macro facts(rows) -%}
+<table role="presentation" style="margin:4px 0 24px;border-collapse:collapse">
+  {% for label, value in rows if value %}
+  <tr>
+    <td style="padding:6px 16px 6px 0;font-size:14px;color:{{ MUTED }};white-space:nowrap">{{ label }}</td>
+    <td style="padding:6px 0;font-size:14px;color:{{ INK }}">{{ value }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{%- endmacro %}
+
+{% macro quote(text) -%}
+<blockquote style="margin:0 0 24px;padding:4px 0 4px 16px;border-left:3px solid {{ LINE }};font-size:15px;line-height:1.55;color:{{ INK }}">{{ text }}</blockquote>
+{%- endmacro %}
+
+{% macro code(value) -%}
+<p style="margin:8px 0 24px;padding:16px 0;text-align:center;background:{{ PAGE }};border-radius:8px;font-size:32px;font-weight:600;letter-spacing:8px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:{{ INK }}">{{ value }}</p>
+{%- endmacro %}
+
+{% macro button(label, url) -%}
+<p style="margin:0 0 28px"><a href="{{ url }}" style="display:inline-block;padding:12px 22px;background:{{ INK }};color:#ffffff;text-decoration:none;border-radius:8px;font-size:15px;font-weight:600">{{ label }}</a></p>
+<p style="margin:0 0 8px;font-size:13px;line-height:1.5;color:{{ MUTED }}">Or open this link: <a href="{{ url }}" style="color:{{ MUTED }};word-break:break-all">{{ url }}</a></p>
+{%- endmacro %}

@@ -1,0 +1,61 @@
+{
+  "image_id": 6,
+  "image_file": "6.jpeg",
+  "original_filename": "94743518058_20260722_115416_902161_c1e94bb2.jpeg",
+  "document_type": "Daily Attendance Format",
+  "confidence": 0.95,
+  "date": "2026-07-21",
+  "location_number": "6386",
+  "location_name": "Katunayaka Land",
+  "shift_summary": [
+    {
+      "shift_name": "Day Shift",
+      "scheduled_in_time": "07:00",
+      "scheduled_out_time": "19:00"
+    },
+    {
+      "shift_name": "Night Shift",
+      "scheduled_in_time": "19:00",
+      "scheduled_out_time": "07:00"
+    }
+  ],
+  "attendance_records": [
+    {
+      "row_id": 1,
+      "employee_id": "76091",
+      "name": "Serasingha S.N.S.",
+      "rank": "OC",
+      "working_rank": "OC",
+      "shift_type": "Day",
+      "in_time": "07:00",
+      "out_time": "19:00",
+      "signature_present": true,
+      "confidence": 0.96,
+      "other": []
+    },
+    {
+      "row_id": 2,
+      "employee_id": "71800",
+      "name": "Shantha K.K.R.N.",
+      "rank": "OC",
+      "working_rank": "OC",
+      "shift_type": "Night",
+      "in_time": "19:00",
+      "out_time": "07:00",
+      "signature_present": true,
+      "confidence": 0.95,
+      "other": []
+    }
+  ],
+  "supervisors": [
+    {
+      "designation": "OIC",
+      "name": null,
+      "employee_id": null,
+      "signature_present": true,
+      "date": null,
+      "confidence": 0.95
+    }
+  ],
+  "other": []
+}
