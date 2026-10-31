@@ -1,0 +1,17 @@
+{{ inviter }} invited you to {{ workspace or organization }} on Syruss
+
+{{ inviter }} invited you to join {% if workspace %}the workspace {{ workspace }} in {{ organization }}{% else %}the organization {{ organization }}{% endif %} on Syruss.
+{% if role_description %}
+Your role is {{ role }}: {{ role_description }}
+{% endif %}
+{% if workspace %}Workspace: {{ workspace }}
+{% endif %}Organization: {{ organization }}
+Your role: {{ role }}
+Invited address: {{ to }}
+Valid until: {{ expires_on }}
+{% if note %}
+"{{ note }}"
+{% endif %}
+Accept the invitation: {{ url }}
+
+You were invited by someone who has this address. If you weren't expecting this, you can ignore the email: nothing happens until you accept.

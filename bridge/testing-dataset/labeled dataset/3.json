@@ -1,0 +1,50 @@
+{
+  "image_id": 3,
+  "image_file": "3.jpeg",
+  "original_filename": "94704599305_20260722_154029_096572_72d78ce8.jpeg",
+  "document_type": "Handwritten Attendance Sheet",
+  "confidence": 0.94,
+  "date": "2026-07-21",
+  "location_number": "6455",
+  "location_name": "Farab Company",
+  "shift_summary": [],
+  "attendance_records": [
+    {
+      "row_id": 1,
+      "employee_id": "67118",
+      "name": "Vithana V.P.W.",
+      "rank": "OIC",
+      "working_rank": "OIC",
+      "shift_type": "Day",
+      "in_time": "07:00",
+      "out_time": "19:00",
+      "signature_present": true,
+      "confidence": 0.95,
+      "other": []
+    },
+    {
+      "row_id": 2,
+      "employee_id": "67118",
+      "name": "Vithana V.P.W.",
+      "rank": "OIC",
+      "working_rank": "OIC",
+      "shift_type": "Night",
+      "in_time": "19:00",
+      "out_time": "07:00",
+      "signature_present": true,
+      "confidence": 0.95,
+      "other": []
+    }
+  ],
+  "supervisors": [
+    {
+      "designation": "OIC",
+      "name": "Vithana V.P.W.",
+      "employee_id": "67118",
+      "signature_present": true,
+      "date": "2026-07-21",
+      "confidence": 0.94
+    }
+  ],
+  "other": []
+}

@@ -1,0 +1,63 @@
+{
+  "image_id": 18,
+  "image_file": "18.jpeg",
+  "original_filename": "94773926781_20260722_121145_862095_04837aa9.jpeg",
+  "document_type": "Handwritten Shift Sheet",
+  "confidence": 0.95,
+  "date": "2026-07-21",
+  "location_number": "3033",
+  "location_name": "Ales Garden",
+  "shift_summary": [],
+  "attendance_records": [
+    {
+      "row_id": 1,
+      "employee_id": "76075",
+      "name": "Madushanka",
+      "rank": "SSO",
+      "working_rank": "JSO",
+      "shift_type": "Day",
+      "in_time": "06:00",
+      "out_time": "18:00",
+      "signature_present": true,
+      "confidence": 0.95,
+      "other": []
+    },
+    {
+      "row_id": 2,
+      "employee_id": "27179",
+      "name": "Darmathilaka",
+      "rank": "OIC",
+      "working_rank": "JSO",
+      "shift_type": "Night",
+      "in_time": "18:00",
+      "out_time": "06:00",
+      "signature_present": true,
+      "confidence": 0.94,
+      "other": []
+    },
+    {
+      "row_id": 3,
+      "employee_id": "76075",
+      "name": "Madushanka",
+      "rank": "SSO",
+      "working_rank": "JSO",
+      "shift_type": "Night",
+      "in_time": "18:00",
+      "out_time": "06:00",
+      "signature_present": true,
+      "confidence": 0.95,
+      "other": []
+    }
+  ],
+  "supervisors": [
+    {
+      "designation": "OIC",
+      "name": null,
+      "employee_id": "26684",
+      "signature_present": true,
+      "date": "2026-07-21",
+      "confidence": 0.95
+    }
+  ],
+  "other": []
+}

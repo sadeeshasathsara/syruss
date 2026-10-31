@@ -1,0 +1,278 @@
+@import "tailwindcss";
+/* Alternate build folders (a second dev server, a test build) hold binary caches, not class names. */
+@source not "../../.next-*";
+
+/*
+ * Design tokens. Style: framed sheet — one tinted frame (sidebar + top bar) and the work on a
+ * white sheet. The frame is tinted like scanned paper; colour lives on data and status only.
+ * The one primary action is near-black. The teal is the data hue (and the active tab), nothing else.
+ *
+ * Grouped things (template objects, chat items) are separated by a tone step, not by more lines:
+ * cards sit on a well. Light: white cards on a tinted well. Dark: cards one step lighter than the well.
+ */
+:root {
+  color-scheme: light;
+  --frame: #f1f4f7;
+  --sheet: #ffffff;
+  --raised: #f5f7f9;
+  --active: #e5e9ed;
+  --shine: rgba(255, 255, 255, 0.75);
+  --well: #eef1f4;
+  --card: #ffffff;
+  --bubble: #dfe5eb;
+  --chat-panel: #ffffff;
+  --chat-bg: #eef1f4;
+  --border: #e2e6ea;
+  --rule: #edf0f3;
+  --control: #cbd1d7;
+  --ink: #131416;
+  --muted: #54585d;
+  --faint: #686c71;
+  --primary: #16181b;
+  --primary-ink: #ffffff;
+  --accent: #1b6c80;
+  --accent-soft: #e3f0f3;
+  --positive: #1e7b4f;
+  --negative: #c4242a;
+  --focus: #1b6c80;
+
+  --pill-neutral-bg: #eceff2;  --pill-neutral-ink: #353a3f;
+  --pill-positive-bg: #dcf5e6; --pill-positive-ink: #0d3b22;
+  --pill-negative-bg: #ffedea; --pill-negative-ink: #831c1e;
+  --pill-warning-bg: #fdf3dc;  --pill-warning-ink: #7a3a08;
+  --pill-info-bg: #e5eef9;     --pill-info-ink: #1d4f8a;
+  --pill-accent-bg: #e3f0f3;   --pill-accent-ink: #114c5b;
+
+  --shadow-card: 0 1px 3px rgb(16 24 32 / 0.08), 0 0 0 1px rgb(16 24 32 / 0.07);
+  --shadow-float: 0 10px 30px rgb(16 24 32 / 0.12), 0 1px 3px rgb(16 24 32 / 0.08);
+  --scrim: rgb(16 20 24 / 0.32);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --frame: #121314;
+  --sheet: #0b0b0c;
+  --raised: #17181a;
+  --active: #232528;
+  --shine: rgba(255, 255, 255, 0.07);
+  --well: #0b0b0c;
+  --card: #18191b;
+  --bubble: #2a2d31;
+  --chat-panel: #121314;
+  --chat-bg: #121314;
+  --border: #25272a;
+  --rule: #1c1d20;
+  --control: #3d4045;
+  --ink: #f2f3f4;
+  --muted: #b2b5b9;
+  --faint: #95989d;
+  --primary: #f2f3f4;
+  --primary-ink: #0b0b0c;
+  --accent: #5bb3c7;
+  --accent-soft: #10282e;
+  --positive: #4cc287;
+  --negative: #ec6a6f;
+  --focus: #5bb3c7;
+
+  --pill-neutral-bg: #232528;  --pill-neutral-ink: #d4d6d9;
+  --pill-positive-bg: #12291c; --pill-positive-ink: #63d197;
+  --pill-negative-bg: #2e1517; --pill-negative-ink: #f08a8e;
+  --pill-warning-bg: #2c2110;  --pill-warning-ink: #e8b25c;
+  --pill-info-bg: #142338;     --pill-info-ink: #8db8ec;
+  --pill-accent-bg: #10282e;   --pill-accent-ink: #7cc7d8;
+
+  --shadow-card: 0 1px 4px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(0 0 0 / 0.22);
+  --shadow-float: 0 12px 32px rgb(0 0 0 / 0.5);
+  --scrim: rgb(0 0 0 / 0.55);
+}
+
+@theme inline {
+  --color-frame: var(--frame);
+  --color-sheet: var(--sheet);
+  --color-raised: var(--raised);
+  --color-active: var(--active);
+  --color-well: var(--well);
+  --color-card: var(--card);
+  --color-bubble: var(--bubble);
+  --color-chat-panel: var(--chat-panel);
+  --color-chat: var(--chat-bg);
+  --color-border: var(--border);
+  --color-rule: var(--rule);
+  --color-control: var(--control);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-primary: var(--primary);
+  --color-primary-ink: var(--primary-ink);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+
+  --font-sans: var(--font-plex-sans), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  --radius-chip: 4px;
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-sheet: 16px;
+
+  --shadow-float: var(--shadow-float);
+  --shadow-card: var(--shadow-card);
+
+  /* App type scale: 12 / 14 / 16 / 22. The title steps down on narrow screens. */
+  --text-meta: 12px;
+  --text-meta--line-height: 16px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-section: 16px;
+  --text-section--line-height: 24px;
+  --text-title: clamp(19px, 0.6vw + 15px, 22px);
+  --text-title--line-height: 1.25;
+  --text-figure: clamp(22px, 1vw + 16px, 28px);
+  --text-figure--line-height: 1.15;
+
+  --breakpoint-xs: 30rem;
+
+  /* Motion: short and eased out; arriving items rise a few pixels. */
+  --animate-rise: rise 220ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-fade: fade 180ms ease-out both;
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+  }
+  @keyframes fade {
+    from { opacity: 0; }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    background: var(--frame);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Phones: slightly larger reading size so text never needs zooming. */
+  @media (max-width: 640px) {
+    body { font-size: 15px; line-height: 22px; }
+  }
+  h1, h2, h3 { text-wrap: balance; }
+  p { text-wrap: pretty; }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  ::selection { background: var(--accent-soft); }
+  input, textarea, select, button { font: inherit; color: inherit; }
+  /* Everything you can click shows the pointer (Tailwind v4 no longer sets it on buttons). */
+  button:not(:disabled), [role="button"]:not([aria-disabled="true"]), [role="tab"], [role="option"], [role="menuitem"],
+  a[href], summary, label:has(> input:not(:disabled)), select:not(:disabled),
+  input:is([type="checkbox"], [type="radio"], [type="file"]):not(:disabled) {
+    cursor: pointer;
+  }
+  :is(button, select, input):disabled { cursor: not-allowed; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+  }
+}
+
+@utility num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Smooth open/close for disclosures: the row track animates from 0 to the content's height. */
+@utility collapsible {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms cubic-bezier(0.2, 0.7, 0.2, 1), opacity 180ms ease-out;
+  opacity: 0;
+  & > * { min-height: 0; overflow: hidden; }
+  &[data-open="true"] { grid-template-rows: 1fr; opacity: 1; }
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--control) transparent;
+}
+
+/* The agent's replies (markdown). Sized for a chat column: headings step down, nothing shouts. */
+@layer components {
+  .md { min-width: 0; overflow-wrap: anywhere; }
+  .md > * + * { margin-top: 8px; }
+  .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { font-weight: 600; color: var(--ink); text-wrap: balance; }
+  .md h1 { font-size: 16px; line-height: 24px; }
+  .md h2 { font-size: 15px; line-height: 22px; }
+  .md h3, .md h4, .md h5, .md h6 { font-size: 14px; line-height: 20px; }
+  .md * + h1, .md * + h2, .md * + h3, .md * + h4 { margin-top: 14px; }
+  .md ul, .md ol { padding-left: 20px; }
+  .md ul { list-style: disc; }
+  .md ol { list-style: decimal; }
+  .md ul ul { list-style: circle; }
+  .md li + li { margin-top: 2px; }
+  .md li > ul, .md li > ol { margin-top: 2px; }
+  .md li::marker { color: var(--muted); }
+  .md li:has(> input[type="checkbox"]) { list-style: none; margin-left: -20px; }
+  .md input[type="checkbox"] { margin-right: 6px; vertical-align: -2px; accent-color: var(--ink); }
+  .md strong { font-weight: 600; }
+  .md del { color: var(--muted); }
+  .md a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--control); text-underline-offset: 2px; }
+  .md a:hover { text-decoration-color: var(--ink); }
+  .md blockquote { border-left: 2px solid var(--control); padding-left: 10px; color: var(--muted); }
+  .md hr { border: 0; border-top: 1px solid var(--rule); margin: 12px 0; }
+  .md img { max-width: 100%; border-radius: 6px; }
+  .md code { font-family: var(--font-mono); font-size: 12.5px; background: var(--raised); border-radius: 4px; padding: 1px 4px; }
+  .md pre { background: var(--raised); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; overflow-x: auto; line-height: 18px; }
+  .md pre code { background: none; padding: 0; font-size: 12.5px; }
+  .md-table { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; }
+  .md table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .md th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; background: var(--raised); }
+  .md td, .md th { padding: 6px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  .md tr:last-child td { border-bottom: 0; }
+}
+
+/* Loading: a page being read. The beam passes down it and each line lights as it is read. */
+.syruss-loader { display: grid; justify-items: center; gap: 22px; color: var(--ink); animation: syruss-loader-in 300ms cubic-bezier(0.2, 0.7, 0.2, 1) 120ms both; }
+.syruss-loader-fill { min-height: 100dvh; place-content: center; background: var(--frame); }
+.syruss-loader-scan { overflow: visible; animation: syruss-loader-float 3.2s ease-in-out infinite; }
+.syruss-loader-scan-page { fill: var(--sheet); stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; }
+.syruss-loader-scan-fold { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; }
+.syruss-loader-scan-line { fill: var(--border); animation: syruss-loader-line 2.6s ease-in-out infinite; }
+.syruss-loader-scan-beam { fill: var(--accent); transform-box: fill-box; filter: drop-shadow(0 0 5px var(--accent)); animation: syruss-loader-beam 2.6s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+.syruss-loader-label { font-size: 14px; letter-spacing: 0.01em; color: transparent; background: linear-gradient(90deg, var(--muted) 35%, var(--ink) 50%, var(--muted) 65%) 0 0 / 220% 100%; -webkit-background-clip: text; background-clip: text; animation: syruss-loader-label 2.2s linear infinite; }
+@keyframes syruss-loader-beam { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 1; } 80% { opacity: 1; } 100% { transform: translateY(56px); opacity: 0; } }
+@keyframes syruss-loader-line { 0% { fill: var(--border); } 10%, 62% { fill: var(--accent); } 100% { fill: var(--border); } }
+@keyframes syruss-loader-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes syruss-loader-label { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+@keyframes syruss-loader-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .syruss-loader-scan, .syruss-loader-scan-beam, .syruss-loader-label { animation: none; }
+  .syruss-loader-scan-line { animation: none; fill: var(--accent); }
+  .syruss-loader-scan-beam { opacity: 0; }
+  .syruss-loader-label { color: var(--muted); background: none; }
+}
+.syruss-progress { position: fixed; inset: 0 0 auto 0; height: 3px; z-index: 100; background: var(--accent); transform: scaleX(0); transform-origin: left; opacity: 0; pointer-events: none; }
+.syruss-progress[data-state="running"] { opacity: 1; transform: scaleX(0.82); transition: transform 8s cubic-bezier(0.1, 0.6, 0.2, 1); }
+.syruss-progress[data-state="done"] { opacity: 0; transform: scaleX(1); transition: transform 180ms ease-out, opacity 300ms 180ms; }
+@media (prefers-reduced-motion: reduce) { .syruss-progress { transition: none !important; } }
+
+/* Loading placeholders: the final layout in flat bars with a soft light passing over them. */
+.skeleton { position: relative; overflow: hidden; background: var(--active); }
+.skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(100deg, transparent 20%, var(--shine) 50%, transparent 80%); animation: skeleton-shine 1.5s ease-in-out infinite; }
+@keyframes skeleton-shine { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .skeleton::after { animation: none; opacity: 0; } }
+
+/* Toasts slide in from the right and show how long they have left. */
+.syruss-toast { animation: syruss-toast-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.syruss-toast-timer { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: var(--accent); transform-origin: left; opacity: 0.55; animation: syruss-toast-timer linear forwards; }
+@keyframes syruss-toast-in { from { opacity: 0; transform: translateX(24px) scale(0.98); } }
+@keyframes syruss-toast-timer { to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .syruss-toast { animation: fade 150ms ease-out both; } .syruss-toast-timer { display: none; } }

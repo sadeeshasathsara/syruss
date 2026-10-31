@@ -1,0 +1,76 @@
+{
+  "image_id": 12,
+  "image_file": "12.jpeg",
+  "original_filename": "94771079086_20260722_223853_805226_fd4e41b2.jpeg",
+  "document_type": "Daily Attendance Format",
+  "confidence": 0.96,
+  "date": "2026-07-21",
+  "location_number": "7308",
+  "location_name": "EKHO Weligama",
+  "shift_summary": [],
+  "attendance_records": [
+    {
+      "row_id": 1,
+      "employee_id": "76106",
+      "name": "N.H. Ramyasiri",
+      "rank": "SSO",
+      "working_rank": "SSO",
+      "shift_type": "Day",
+      "in_time": "07:00",
+      "out_time": "19:00",
+      "signature_present": true,
+      "confidence": 0.96,
+      "other": []
+    },
+    {
+      "row_id": 2,
+      "employee_id": "76211",
+      "name": "P.D. Priyankara",
+      "rank": "SSO",
+      "working_rank": "SSO",
+      "shift_type": "Day",
+      "in_time": "07:00",
+      "out_time": "19:00",
+      "signature_present": true,
+      "confidence": 0.96,
+      "other": []
+    },
+    {
+      "row_id": 3,
+      "employee_id": "76106",
+      "name": "N.H. Ramyasiri",
+      "rank": "SSO",
+      "working_rank": "SSO",
+      "shift_type": "Night",
+      "in_time": "19:00",
+      "out_time": "07:00",
+      "signature_present": true,
+      "confidence": 0.96,
+      "other": []
+    },
+    {
+      "row_id": 4,
+      "employee_id": "76211",
+      "name": "P.D. Priyankara",
+      "rank": "SSO",
+      "working_rank": "SSO",
+      "shift_type": "Night",
+      "in_time": "19:00",
+      "out_time": "07:00",
+      "signature_present": true,
+      "confidence": 0.96,
+      "other": []
+    }
+  ],
+  "supervisors": [
+    {
+      "designation": "SM/CSO/OIC",
+      "name": null,
+      "employee_id": null,
+      "signature_present": true,
+      "date": null,
+      "confidence": 0.95
+    }
+  ],
+  "other": []
+}

@@ -1,0 +1,7 @@
+Confirm your email address
+
+Enter this code in Syruss to confirm {{ to }}. It works once and expires in {{ minutes }} minutes.
+
+{{ code }}
+
+If you didn't try to create a Syruss account, you can ignore this email. Nobody can use the code without your inbox.

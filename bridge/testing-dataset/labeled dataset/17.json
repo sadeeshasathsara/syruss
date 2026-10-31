@@ -1,0 +1,61 @@
+{
+  "image_id": 17,
+  "image_file": "17.jpeg",
+  "original_filename": "94743518058_20260722_115421_011497_30ddc157.jpeg",
+  "document_type": "Daily Attendance Format",
+  "confidence": 0.95,
+  "date": "2026-07-19",
+  "location_number": "6386",
+  "location_name": "Katunayaka Land",
+  "shift_summary": [
+    {
+      "shift_name": "Day Shift",
+      "scheduled_in_time": "07:00",
+      "scheduled_out_time": "19:00"
+    },
+    {
+      "shift_name": "Night Shift",
+      "scheduled_in_time": "19:00",
+      "scheduled_out_time": "07:00"
+    }
+  ],
+  "attendance_records": [
+    {
+      "row_id": 1,
+      "employee_id": "76969",
+      "name": "Banneheka",
+      "rank": "OC",
+      "working_rank": "OC",
+      "shift_type": "Day",
+      "in_time": "07:00",
+      "out_time": "19:00",
+      "signature_present": true,
+      "confidence": 0.95,
+      "other": []
+    },
+    {
+      "row_id": 2,
+      "employee_id": "69450",
+      "name": "Silva W.R.",
+      "rank": "OC",
+      "working_rank": "OC",
+      "shift_type": "Night",
+      "in_time": "19:00",
+      "out_time": "07:00",
+      "signature_present": true,
+      "confidence": 0.95,
+      "other": []
+    }
+  ],
+  "supervisors": [
+    {
+      "designation": "OIC",
+      "name": null,
+      "employee_id": null,
+      "signature_present": true,
+      "date": null,
+      "confidence": 0.94
+    }
+  ],
+  "other": []
+}

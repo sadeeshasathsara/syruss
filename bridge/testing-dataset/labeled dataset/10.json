@@ -1,0 +1,37 @@
+{
+  "image_id": 10,
+  "image_file": "10.jpeg",
+  "original_filename": "94740835902_20260722_070016_886976_d285cb76.jpeg",
+  "document_type": "Daily Attendance Format",
+  "confidence": 0.94,
+  "date": "2026-07-11",
+  "location_number": "11400",
+  "location_name": "Beragala Land",
+  "shift_summary": [],
+  "attendance_records": [
+    {
+      "row_id": 1,
+      "employee_id": "61306",
+      "name": "A.A.G.K. Anandakoon",
+      "rank": "SSO 2",
+      "working_rank": "SSO 2",
+      "shift_type": "Day",
+      "in_time": "07:00",
+      "out_time": "19:00",
+      "signature_present": true,
+      "confidence": 0.94,
+      "other": []
+    }
+  ],
+  "supervisors": [
+    {
+      "designation": "SM/CSO/OIC",
+      "name": null,
+      "employee_id": null,
+      "signature_present": true,
+      "date": null,
+      "confidence": 0.94
+    }
+  ],
+  "other": []
+}

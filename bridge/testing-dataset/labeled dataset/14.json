@@ -1,0 +1,55 @@
+{
+  "image_id": 14,
+  "image_file": "14.jpeg",
+  "original_filename": "94704599305_20260722_154030_883528_9f00a738.jpeg",
+  "document_type": "Daily Attendance Form",
+  "confidence": 0.96,
+  "date": "2026-07-21",
+  "location_number": "6483",
+  "location_name": "Evergreen Shipping Agency Lanka",
+  "shift_summary": [],
+  "attendance_records": [
+    {
+      "row_id": 1,
+      "employee_id": "51760",
+      "name": "Wickramarathne I.G.A.",
+      "rank": "OIC",
+      "working_rank": null,
+      "shift_type": "Day",
+      "in_time": "07:00",
+      "out_time": "19:00",
+      "signature_present": true,
+      "confidence": 0.96,
+      "other": []
+    },
+    {
+      "row_id": 2,
+      "employee_id": "51760",
+      "name": "Wickramarathne I.G.A.",
+      "rank": "OIC",
+      "working_rank": null,
+      "shift_type": "Night",
+      "in_time": "19:00",
+      "out_time": "07:00",
+      "signature_present": true,
+      "confidence": 0.96,
+      "other": []
+    }
+  ],
+  "supervisors": [
+    {
+      "designation": "SM/CSO/OIC",
+      "name": "Wickramarathne I.G.A.",
+      "employee_id": "51760",
+      "signature_present": true,
+      "date": null,
+      "confidence": 0.95
+    }
+  ],
+  "other": [
+    {
+      "key": "notes",
+      "value": "Marked as Day and Night shifts in a unified section"
+    }
+  ]
+}

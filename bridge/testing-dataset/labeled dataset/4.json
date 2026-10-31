@@ -1,0 +1,76 @@
+{
+  "image_id": 4,
+  "image_file": "4.jpeg",
+  "original_filename": "94743518058_20260722_115445_396087_ecf278b2.jpeg",
+  "document_type": "Handwritten Lined Shift Sheet",
+  "confidence": 0.97,
+  "date": "2026-07-21",
+  "location_number": "7166",
+  "location_name": "Navitas Solar - Veyangoda (Madampella)",
+  "shift_summary": [],
+  "attendance_records": [
+    {
+      "row_id": 1,
+      "employee_id": "76531",
+      "name": "W.J.R. Wijesingha",
+      "rank": "OIC",
+      "working_rank": "OIC",
+      "shift_type": "Day",
+      "in_time": "07:00",
+      "out_time": "19:00",
+      "signature_present": true,
+      "confidence": 0.97,
+      "other": []
+    },
+    {
+      "row_id": 2,
+      "employee_id": "76925",
+      "name": "R.N. Abechandra",
+      "rank": "SSO",
+      "working_rank": "SSO",
+      "shift_type": "Day",
+      "in_time": "07:00",
+      "out_time": "19:00",
+      "signature_present": true,
+      "confidence": 0.97,
+      "other": []
+    },
+    {
+      "row_id": 3,
+      "employee_id": "76531",
+      "name": "W.J.R. Wijesingha",
+      "rank": "OIC",
+      "working_rank": "OIC",
+      "shift_type": "Night",
+      "in_time": "19:00",
+      "out_time": "07:00",
+      "signature_present": true,
+      "confidence": 0.97,
+      "other": []
+    },
+    {
+      "row_id": 4,
+      "employee_id": "76925",
+      "name": "R.N. Abechandra",
+      "rank": "SSO",
+      "working_rank": "SSO",
+      "shift_type": "Night",
+      "in_time": "19:00",
+      "out_time": "07:00",
+      "signature_present": true,
+      "confidence": 0.97,
+      "other": []
+    }
+  ],
+  "supervisors": [
+    {
+      "designation": "OIC",
+      "name": "W.J.R. Wijesingha",
+      "employee_id": "76531",
+      "signature_present": true,
+      "date": null,
+      "confidence": 0.96
+    }
+  ],
+  "other": []
+}

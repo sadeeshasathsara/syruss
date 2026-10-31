@@ -1,0 +1,245 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DailyAttendanceDocument",
+  "description": "JSON Schema for daily attendance sheets and guard deployment records.",
+  "type": "object",
+  "properties": {
+    "image_id": {
+      "type": "integer",
+      "description": "Sequential ID number assigned to the labeled image (1 to 20)"
+    },
+    "image_file": {
+      "type": "string",
+      "description": "Filename of the image in the labeled images directory"
+    },
+    "original_filename": {
+      "type": "string",
+      "description": "Original image filename from the testing dataset"
+    },
+    "document_type": {
+      "type": "string",
+      "description": "Document format or template type"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Extraction confidence score for the entire document"
+    },
+    "date": {
+      "type": "string",
+      "description": "Date of attendance in standardized format (YYYY-MM-DD)"
+    },
+    "location_number": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Location / site code"
+    },
+    "location_name": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Location or facility name written in English"
+    },
+    "shift_summary": {
+      "type": "array",
+      "description": "Shift schedule details defined on the document",
+      "items": {
+        "type": "object",
+        "properties": {
+          "shift_name": {
+            "type": "string"
+          },
+          "scheduled_in_time": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scheduled_out_time": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "shift_name"
+        ]
+      }
+    },
+    "attendance_records": {
+      "type": "array",
+      "description": "Individual attendance rows extracted from the sheet",
+      "items": {
+        "type": "object",
+        "properties": {
+          "row_id": {
+            "type": "integer"
+          },
+          "employee_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Employee / EPF identification number"
+          },
+          "name": {
+            "type": "string",
+            "description": "Employee name in English"
+          },
+          "rank": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Designated rank (e.g., OIC, SSO, LSO, JSO)"
+          },
+          "working_rank": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Actual working rank on duty"
+          },
+          "shift_type": {
+            "type": "string",
+            "enum": [
+              "Day",
+              "Night",
+              "D",
+              "N",
+              "Other"
+            ],
+            "description": "Shift classification"
+          },
+          "in_time": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Reported check-in time (HH:MM)"
+          },
+          "out_time": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Reported check-out time (HH:MM)"
+          },
+          "signature_present": {
+            "type": "boolean",
+            "description": "Whether employee signature/initial is present"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "Confidence score for this record"
+          },
+          "other": {
+            "type": "array",
+            "description": "Any additional values found beyond the standard fields",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {}
+              },
+              "required": [
+                "key",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "row_id",
+          "name",
+          "shift_type",
+          "signature_present",
+          "confidence",
+          "other"
+        ]
+      }
+    },
+    "supervisors": {
+      "type": "array",
+      "description": "Supervisor/OIC/CSO/SM signature blocks and approvals",
+      "items": {
+        "type": "object",
+        "properties": {
+          "designation": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "employee_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signature_present": {
+            "type": "boolean"
+          },
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+          }
+        },
+        "required": [
+          "designation",
+          "signature_present",
+          "confidence"
+        ]
+      }
+    },
+    "other": {
+      "type": "array",
+      "description": "Any additional document-level attributes beyond the schema",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {}
+        },
+        "required": [
+          "key",
+          "value"
+        ]
+      }
+    }
+  },
+  "required": [
+    "image_id",
+    "image_file",
+    "original_filename",
+    "document_type",
+    "confidence",
+    "date",
+    "location_number",
+    "location_name",
+    "attendance_records",
+    "supervisors",
+    "other"
+  ]
+}
