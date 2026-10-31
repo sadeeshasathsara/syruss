@@ -7,14 +7,28 @@ All notable changes to Syruss services.
 | Service | Development (`dev`) | Staging (`test`) | Production (`main`) |
 | :--- | :---: | :---: | :---: |
 | **admin** | — | — | — |
-| **agent** | `0.1.0-dev.21` | — | — |
-| **server** | `0.1.0-dev.21` | — | — |
-| **site** | `0.1.0-dev.8` | — | — |
-| **www** | `0.1.0-dev.21` | — | — |
+| **agent** | `0.2.0-dev.1` | — | — |
+| **server** | `0.2.0-dev.1` | — | — |
+| **site** | `0.2.0-dev.1` | — | — |
+| **www** | `0.2.0-dev.1` | — | — |
 
 ---
 
 ## Release History
+
+## [2026-10-31] - Release via dev
+
+### agent (0.2.0-dev.1)
+- Add agent, server, site and www service updates
+
+### server (0.2.0-dev.1)
+- Add agent, server, site and www service updates
+
+### site (0.2.0-dev.1)
+- Add agent, server, site and www service updates
+
+### www (0.2.0-dev.1)
+- Add agent, server, site and www service updates
 
 ## [2026-10-26] - Release via dev
 
