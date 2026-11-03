@@ -6,7 +6,7 @@ import { safeReturnTo } from "@/lib/auth/config";
 
 export const dynamic = "force-dynamic";
 
-async function Resolve({ next }: { next?: string }) {
+async function Resolve({ next }: { next?: string }): Promise<never> {
   const here = next ? `/continue?next=${encodeURIComponent(next)}` : "/continue";
   const session = await requireSession(here);
   const ctx = await api<Context>(session, "/me/context", { returnTo: here });
