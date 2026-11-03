@@ -33,7 +33,9 @@ class ProposeTemplateArgs(BaseModel):
             "that hold the identifying value of a related entity. "
             "(3) Every resolves_to target must have an identity block. "
             "(4) Add \"identification\": parts are {object, field} pairs from objects with \"multiple\":false; "
-            "it names each document to people (e.g. site + date) instead of its file name. "
+            "it names each document to people (e.g. site + date) instead of its file name. Choose "
+            "descriptive fields people understand (a site's name, a customer's name, a date), not IDs or codes: if "
+            "the page shows a name next to a code, put the name in a one-per-document field and use it. "
             f"Minimal example: {_SCHEMA_EXAMPLE}"
         ),
     )

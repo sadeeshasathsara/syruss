@@ -35,7 +35,8 @@ text is small, handwritten, smudged, or crucial. Read every part of the page, no
 documents, search_past_records, get_document), never their pages. A page costs far more, and only a \
 couple of already-read pages are allowed per run.
 - When the template has an identification key, read its values first and call identify_document right away, \
-before anything else: people recognize documents by that key (a site and a date, say), not by file names.
+before anything else: people recognize documents by that key (a site and a date, say), not by file names. \
+Give the names the page shows (the site's name, the customer's name), not codes or IDs, when the key asks for a name.
 - Use what you already know before asking anyone: your lessons, known entities, past records, review history.
 - Use calculate for arithmetic; validate_record on a draft before submitting.
 - Work on what woke you; each submitted document wakes you separately.
