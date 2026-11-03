@@ -232,6 +232,8 @@ jobs:
           push: true
           build-args: |
             NEXT_PUBLIC_APP_VERSION=${{ env.VERSION }}
+            NEXT_PUBLIC_SITE_URL=${{ github.ref_name == 'test' && vars.TEST_SITE_URL || 'http://localhost:3100' }}
+            NEXT_PUBLIC_ACCOUNT_URL=${{ github.ref_name == 'test' && vars.TEST_ACCOUNT_URL || 'http://localhost:8080/realms/syruss/account' }}
           tags: |
             ghcr.io/${{ github.repository }}/www:${{ env.ENV_TAG }}
             ghcr.io/${{ github.repository }}/www:v${{ env.VERSION }}
@@ -353,3 +355,78 @@ jobs:
             ghcr.io/${{ github.repository }}/admin:v${{ env.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ----------------------------------------------------------------------------
+  # Database image (Postgres + pgvector + Apache AGE), built here so servers only pull it
+  # ----------------------------------------------------------------------------
+  release-postgres:
+    name: Package Postgres (pgvector + AGE)
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./bridge/postgres
+          push: true
+          tags: ghcr.io/${{ github.repository }}/postgres:${{ github.ref_name == 'main' && 'latest' || github.ref_name }}
+          cache-from: type=gha,scope=postgres
+          cache-to: type=gha,mode=max,scope=postgres
+
+  # ----------------------------------------------------------------------------
+  # Test environment: tell the server to pull the new :test images. Nothing is built there.
+  # Needs the repository secrets VM_HOST, VM_USER and VM_SSH_KEY.
+  # ----------------------------------------------------------------------------
+  deploy-test:
+    name: Deploy to the test server
+    needs: [prepare-release, release-server, release-agent, release-www, release-site, release-postgres]
+    # Runs even when some services had no release (their jobs are skipped), but not when one failed.
+    if: ${{ !cancelled() && github.ref_name == 'test' && !contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-test
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          ssh-keyscan -H "${{ secrets.VM_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Send the compose file and Keycloak realm
+        run: |
+          mkdir -p stage/keycloak
+          cp deploy/test/docker-compose.yml stage/
+          cp -r bridge/keycloak/realm-syruss.json bridge/keycloak/themes stage/keycloak/
+          tar -C stage -cf - . | ssh -i ~/.ssh/deploy "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}" \
+            'mkdir -p ~/syruss-deploy && tar -C ~/syruss-deploy -xf -'
+
+      - name: Let the server read the images
+        run: |
+          printf '%s' "${{ secrets.GITHUB_TOKEN }}" | ssh -i ~/.ssh/deploy "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}" \
+            'docker login ghcr.io -u "${{ github.actor }}" --password-stdin'
+
+      - name: Pull the new images and restart what changed
+        run: |
+          ssh -i ~/.ssh/deploy "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}" '
+            set -e
+            cd ~/syruss-deploy
+            docker compose --env-file env/stack.env pull
+            docker compose --env-file env/stack.env up -d --remove-orphans
+            docker image prune -f
+            docker compose --env-file env/stack.env ps'
+
+      - name: Remove the registry login from the server
+        if: ${{ always() }}
+        run: ssh -i ~/.ssh/deploy "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}" 'docker logout ghcr.io' || true
