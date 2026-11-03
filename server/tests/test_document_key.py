@@ -108,3 +108,23 @@ async def test_a_key_must_use_fields_that_appear_once_per_document(client):
     assert refused.status_code == 422 and "once per document" in str(refused.json())
     assert (await client.put(f"{API}/templates/{tpl}/identification", headers=ws(tpl),
                              json={"parts": [{"object": "Roster", "field": "nope"}]})).status_code == 422
+
+
+async def test_the_agent_can_name_a_document_before_it_has_a_record(client):
+    tpl = await create_template(client, schema={**ROSTER_SCHEMA, "identification": KEY})
+    doc = await upload(client, tpl, "94771079086_20260722_223851.jpeg")
+
+    named = await client.post(f"{AGENT}/documents/{doc}/identification", headers=agent(tpl),
+                              json={"details": {"Roster": {"site_id": "S12", "date": "2026-07-22"}}})
+    assert named.status_code == 200 and named.json()["name"] == "S12_2026-07-22", named.text
+    assert (await _listed(client, tpl))[doc]["display_name"] == "S12_2026-07-22"
+    seen = (await client.get(f"{AGENT}/documents/{doc}", headers=agent(tpl))).json()
+    assert seen["name"] == "S12_2026-07-22" and seen["filename"] == "94771079086_20260722_223851.jpeg"
+
+    empty = await client.post(f"{AGENT}/documents/{doc}/identification", headers=agent(tpl), json={"details": {"Guard": {"name": "x"}}})
+    assert empty.status_code == 422 and "Roster" in empty.text
+
+    plain = await create_template(client, name="Plain")
+    other = await upload(client, plain)
+    refused = await client.post(f"{AGENT}/documents/{other}/identification", headers=agent(plain), json={"details": {"Roster": {"site_id": "S1"}}})
+    assert refused.status_code == 409
