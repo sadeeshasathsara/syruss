@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/Pill";
 import { ScrollingLog, useExtractionLog } from "@/components/workspace/ExtractionLog";
 import { api } from "@/lib/api";
-import { ago, cn } from "@/lib/format";
+import { ago, cn, docName } from "@/lib/format";
 import type { DocumentStatus, Overview } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -112,52 +112,40 @@ export default function Overview() {
 
       <ConnectionsHealth />
 
+      <Panel title="Waiting on you" aside={waiting ? <span className="num">{waiting}</span> : undefined}>
+        {waiting === 0 ? (
+          <p className="text-body text-muted">No reviews, questions or proposals right now.</p>
+        ) : (
+          <ul className="flex flex-col">
+            {(questions.data ?? []).slice(0, 3).map((q) => (
+              <li key={q.id} className="border-b border-rule py-2.5 last:border-0">
+                <Link href={href("agent")} className="block hover:underline">
+                  <span className="block text-body text-ink">{q.question}</span>
+                  <span className="text-meta text-muted">Question from the agent, {ago(q.created_at).toLowerCase()}</span>
+                </Link>
+              </li>
+            ))}
+            {(proposals.data ?? []).slice(0, 2).map((p) => (
+              <li key={p.id} className="border-b border-rule py-2.5 last:border-0">
+                <Link href={href("agent")} className="block hover:underline">
+                  <span className="line-clamp-2 block text-body text-ink">{p.observation}</span>
+                  <span className="text-meta text-muted">Proposed change, {ago(p.created_at).toLowerCase()}</span>
+                </Link>
+              </li>
+            ))}
+            {(reviews.data ?? []).slice(0, 5).map((r) => (
+              <li key={r.id} className="border-b border-rule py-2.5 last:border-0">
+                <Link href={href(`review?item=${r.id}`)} className="block hover:underline">
+                  <span className="line-clamp-2 block text-body text-ink">{r.reason}</span>
+                  <span className="text-meta text-muted">Review, {ago(r.created_at).toLowerCase()}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+
       <div className="grid grid-cols-1 items-start gap-6 @4xl:grid-cols-2">
-        <Panel title="Waiting on you" aside={waiting ? <span className="num">{waiting}</span> : undefined}>
-          {waiting === 0 ? (
-            <p className="text-body text-muted">No reviews, questions or proposals right now.</p>
-          ) : (
-            <ul className="flex flex-col">
-              {(questions.data ?? []).slice(0, 3).map((q) => (
-                <li key={q.id} className="border-b border-rule py-2.5 last:border-0">
-                  <Link href={href("agent")} className="block hover:underline">
-                    <span className="block text-body text-ink">{q.question}</span>
-                    <span className="text-meta text-muted">Question from the agent, {ago(q.created_at).toLowerCase()}</span>
-                  </Link>
-                </li>
-              ))}
-              {(proposals.data ?? []).slice(0, 2).map((p) => (
-                <li key={p.id} className="border-b border-rule py-2.5 last:border-0">
-                  <Link href={href("agent")} className="block hover:underline">
-                    <span className="line-clamp-2 block text-body text-ink">{p.observation}</span>
-                    <span className="text-meta text-muted">Proposed change, {ago(p.created_at).toLowerCase()}</span>
-                  </Link>
-                </li>
-              ))}
-              {(reviews.data ?? []).slice(0, 5).map((r) => (
-                <li key={r.id} className="border-b border-rule py-2.5 last:border-0">
-                  <Link href={href(`review?item=${r.id}`)} className="block hover:underline">
-                    <span className="line-clamp-2 block text-body text-ink">{r.reason}</span>
-                    <span className="text-meta text-muted">Review, {ago(r.created_at).toLowerCase()}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Panel>
-
-        <Panel title="Latest in the log" aside={<Link href={href("log")} className="hover:text-ink">Open the log</Link>}>
-          {latest.isLoading ? (
-            <div className="flex flex-col gap-3">{[0, 1, 2, 3].map((i) => <Bar key={i} className="h-5 w-full" />)}</div>
-          ) : latest.items.length === 0 ? (
-            <p className="text-body text-muted">Nothing has happened yet. Each step the agent takes with a document appears here.</p>
-          ) : (
-            <ScrollingLog log={latest} />
-          )}
-        </Panel>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6">
         <Panel
           title="Recent documents"
           aside={docs.length > 6 ? <Link href={href("documents")} className="hover:text-ink">View all</Link> : undefined}
@@ -173,13 +161,23 @@ export default function Overview() {
               {docs.slice(0, 6).map((d) => (
                 <li key={d.id} className="border-b border-rule last:border-0">
                   <Link href={href(`documents/${d.id}`)} className="flex items-center gap-3 py-2.5 hover:underline">
-                    <span className="min-w-0 flex-1 truncate text-body text-ink">{d.original_filename}</span>
+                    <span className="min-w-0 flex-1 truncate text-body text-ink">{docName(d)}</span>
                     <StatusPill status={d.status} />
                     <span className="num w-16 flex-none text-right text-meta text-muted">{ago(d.created_at)}</span>
                   </Link>
                 </li>
               ))}
             </ul>
+          )}
+        </Panel>
+
+        <Panel title="Latest in the log" aside={<Link href={href("log")} className="hover:text-ink">Open the log</Link>}>
+          {latest.isLoading ? (
+            <div className="flex flex-col gap-3">{[0, 1, 2, 3].map((i) => <Bar key={i} className="h-5 w-full" />)}</div>
+          ) : latest.items.length === 0 ? (
+            <p className="text-body text-muted">Nothing has happened yet. Each step the agent takes with a document appears here.</p>
+          ) : (
+            <ScrollingLog log={latest} />
           )}
         </Panel>
       </div>

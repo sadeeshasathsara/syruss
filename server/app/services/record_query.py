@@ -24,6 +24,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.document import Document, DocumentRole, DocumentStatus
 from app.models.extraction import ExtractionResult
+from app.models.template import DocumentTemplate
+from app.services.document_key import identification_key
 from app.services.graph_service import rows_of
 from app.services.rule_engine import normalize_schema
 
@@ -91,16 +93,19 @@ def _context(objects: Dict[str, Dict[str, Any]], data: Dict[str, Any]) -> Dict[s
 
 
 async def saved_records(db: AsyncSession, *, template_id: str, include_pending_review: bool = False, hidden: Sequence[str] = ()):
-    """Every saved record of the workspace, newest document first: (document id, file name, status, extracted data).
-    One more than MAX_RECORDS is fetched so callers can tell the list was cut."""
+    """Every saved record of the workspace, newest document first: (document id, name, status, extracted data). The name is
+    the document's identification key when the template has one, else its file name. One more than MAX_RECORDS is fetched so callers can tell the list was cut."""
     statuses = [DocumentStatus.COMPLETED] + ([DocumentStatus.NEEDS_REVIEW] if include_pending_review else [])
-    return (await db.execute(
+    template = await db.get(DocumentTemplate, template_id)
+    schema = template.schema_definition if template else None
+    rows = (await db.execute(
         select(Document.id, Document.original_filename, Document.status, ExtractionResult.extracted_data)
         .join(ExtractionResult, ExtractionResult.document_id == Document.id)
         .where(Document.template_id == template_id, Document.role == DocumentRole.DOCUMENT,
                Document.status.in_(statuses), Document.id.not_in(list(hidden)))
         .order_by(Document.created_at.desc()).limit(MAX_RECORDS + 1)
     )).all()
+    return [(doc_id, identification_key(schema, data) or filename, status, data) for doc_id, filename, status, data in rows]
 
 
 async def query(db: AsyncSession, *, template_id: str, schema: Dict[str, Any], q: RecordQuery,
