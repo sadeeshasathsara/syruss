@@ -20,7 +20,14 @@ and log line names a document by its **identification key**, so choose one in th
 fields of the one-per-document objects (`"multiple": false`) that tell this document from the others the
 way the team would say it, such as where and when (a site and a date), or who and which period. Prefer values
 that are on every page and short; two fields usually beat one (a date alone repeats every day, a site alone
-every week). Never use a field of a repeating object. Say your choice in the proposal's observation so the
+every week). Never use a field of a repeating object.
+
+Use details people understand, not codes. People know names, not IDs: a site's name ("Colombo Port") beats its
+code ("S12"), a customer's name beats their account number, a branch name beats a branch ID. Whenever the page
+shows both a code and a name for the same thing, put the name in a field of a one-per-document object and use
+that one in the key (keep the code as its own field too). Use a code only when the page gives nothing
+descriptive; a date or period is always fine to combine with a name. This is about the thing the document is
+about (the site, customer, branch, period), not the person who filled it in. Say your choice in the proposal's observation so the
 admin can change it, and ask when the samples leave it open. The admin can change it at any time.
 
 Headers, tables and footers are layout, not the model: one row can mention several things, and one
