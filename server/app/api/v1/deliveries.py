@@ -28,7 +28,7 @@ def _row(d: Delivery, dest: Optional[Destination], doc: Optional[Document]) -> D
         "next_attempt_at": d.next_attempt_at, "last_error": d.last_error, "last_status_code": d.last_status_code, "delivered_at": d.delivered_at,
         "external_ref": d.external_ref, "created_at": d.created_at, "updated_at": d.updated_at,
         "destination": {"id": dest.id, "name": dest.name, "kind": dest.kind, "status": dest.status} if dest else None,
-        "document": {"id": doc.id, "filename": doc.original_filename, "external_id": doc.external_id, "is_test": doc.is_test} if doc else None,
+        "document": {"id": doc.id, "filename": doc.original_filename, "display_name": doc.display_name, "external_id": doc.external_id, "is_test": doc.is_test} if doc else None,
     }
 
 

@@ -57,7 +57,7 @@ async def _what_happened(ctx: RunContext, workspace: Dict[str, Any]) -> str:
     if t == "document.submitted":
         doc = await ctx.api.get(f"/documents/{p['document_id']}")
         parked = await ctx.memory.work_items_for_document(e.tenant_id, e.template_id, p["document_id"])
-        text = (f"Document {doc['id']} ('{doc['filename']}', image {doc['image_size']}) was submitted for processing. "
+        text = (f"Document {doc['id']} ('{doc.get('name') or doc['filename']}', file {doc['filename']}, image {doc['image_size']}) was submitted for processing. "
                 "This run is for this document; other submitted documents wake you separately."
                 f"\nCurrent record: {_j(doc['record']) if doc['record'] else 'none yet'}")
         if parked:

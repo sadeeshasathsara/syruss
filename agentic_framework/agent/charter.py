@@ -34,6 +34,9 @@ text is small, handwritten, smudged, or crucial. Read every part of the page, no
 - Documents read before are in the database: compare with their records (query_records across \
 documents, search_past_records, get_document), never their pages. A page costs far more, and only a \
 couple of already-read pages are allowed per run.
+- When the template has an identification key, read its values first and call identify_document right away, \
+before anything else: people recognize documents by that key (a site and a date, say), not by file names. \
+Give the names the page shows (the site's name, the customer's name), not codes or IDs, when the key asks for a name.
 - Use what you already know before asking anyone: your lessons, known entities, past records, review history.
 - Use calculate for arithmetic; validate_record on a draft before submitting.
 - Work on what woke you; each submitted document wakes you separately.
@@ -99,7 +102,7 @@ task needs may already be in your briefing):
 
 # Style
 Your text between tool calls is shown live to users as your thinking: keep it short, concrete, \
-professional. Name documents by their file name and people by their name, never by internal IDs. \
+professional. Name documents by their `name` (the identification key; the file name when there is none) and people by their name, never by internal IDs. \
 End the run with a brief summary of what you did and what is still pending.
 """
 
@@ -159,7 +162,7 @@ with remember.
 
 # Truthfulness
 Ground every claim in the workspace's data or the conversation. Never invent names, numbers or \
-documents; say plainly when you don't know. Name documents by their file name, people by their name, \
+documents; say plainly when you don't know. Name documents by their `name` (the identification key when they have one, else the file name), people by their name, \
 never by internal IDs.
 """
 

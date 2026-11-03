@@ -24,6 +24,7 @@ from app.schemas.conversation import ChatMessageCreate
 from app.schemas.template import (
     GoldenDatasetItemCreate,
     GoldenDatasetItemResponse,
+    IdentificationUpdate,
     TemplateBenchmarkResponse,
     TemplateChatRequest,
     TemplateChatResponse,
@@ -231,6 +232,34 @@ async def update_template(
         tenant_id=scope.tenant_id, template_id=template.id, event_type="TEMPLATE_UPDATED",
         entity_type="DocumentTemplate", entity_id=template.id, actor=scope.user_id,
         details={"name": template.name, "schema_changed": payload.schema_definition is not None},
+    ))
+    await db.commit()
+    await db.refresh(template)
+    return _with_slug(template, await db.get(Workspace, template.id))
+
+
+@router.put("/{template_id}/identification", response_model=TemplateResponse)
+async def set_document_identification(
+    payload: IdentificationUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    scope: TemplateScope = Depends(get_template_scope),
+    _access: Access = Depends(require("template.publish")),
+):
+    """Changes which values name a document (its identification key). Every document is renamed at once; records are untouched."""
+    template = scope.template
+    if not template.active_version_id:
+        raise HTTPException(status_code=409, detail="The template has no active version yet.")
+    schema = {k: v for k, v in (template.schema_definition or {}).items() if k != "identification"}
+    if payload.parts:
+        schema["identification"] = {"parts": [p.model_dump() for p in payload.parts], "separator": payload.separator}
+    await template_service.add_version(
+        db, template, schema, change_summary="Changed how documents are identified",
+        created_by=scope.user_id, activate=True, approved_by=scope.user_id,
+    )
+    db.add(AuditLog(
+        tenant_id=scope.tenant_id, template_id=template.id, event_type="TEMPLATE_IDENTIFICATION_CHANGED",
+        entity_type="DocumentTemplate", entity_id=template.id, actor=scope.user_id,
+        details={"parts": [f"{p.object}.{p.field}" for p in payload.parts], "separator": payload.separator},
     ))
     await db.commit()
     await db.refresh(template)
