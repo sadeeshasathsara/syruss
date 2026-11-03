@@ -7,6 +7,7 @@ import { QualityView } from "@/components/quality/QualityView";
 import { Bar, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
+import { DocumentKeyEditor } from "@/components/workspace/DocumentKeyEditor";
 import { api } from "@/lib/api";
 import { dateTime, fieldName, humanize } from "@/lib/format";
 import type { TemplateField } from "@/lib/types";
@@ -67,6 +68,8 @@ function TemplateVersions() {
           ))}
         </div>
       )}
+
+      {!showHistory && schema && <DocumentKeyEditor key={template.data?.active_version_id ?? "none"} schema={schema} />}
 
       {!showHistory && (schema?.validation_rules?.length ?? 0) > 0 && (
         <Panel title="Checks">

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 
@@ -19,6 +19,17 @@ class TemplateUpdate(BaseModel):
     document_type: Optional[str] = None
     description: Optional[str] = None
     schema_definition: Optional[Dict[str, Any]] = None
+
+
+class IdentificationPart(BaseModel):
+    object: str
+    field: str
+
+
+class IdentificationUpdate(BaseModel):
+    """What names a document to people: fields of one-per-document objects, joined in this order. No parts clears it."""
+    parts: List[IdentificationPart] = []
+    separator: str = Field("_", max_length=5)
 
 
 class TemplateResponse(BaseModel):

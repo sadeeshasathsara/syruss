@@ -55,6 +55,7 @@ from app.services import (
     settings_service, source_service, workspace_events,
 )
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
+from app.services.document_key import document_label, label_for
 from app.services.identity_check import normalize_id
 from app.services.record_service import record_service
 from app.models.screen import WorkspaceScreen
@@ -470,7 +471,7 @@ async def set_document_status(document_id: str, body: DocumentStatusUpdate, ws: 
     if body.status == DocumentStatus.FAILED:
         await workspace_events.emit(
             ws.db, tenant_id=ws.tenant_id, template_id=ws.template_id, type="document.failed", severity="error",
-            title=f"Couldn't process {doc.original_filename}", body=body.message or "", path=f"documents/{doc.id}",
+            title=f"Couldn't process {document_label(doc)}", body=body.message or "", path=f"documents/{doc.id}",
             data={"document_id": doc.id},
         )
     await ws.db.commit()
@@ -483,7 +484,7 @@ async def set_document_status(document_id: str, body: DocumentStatusUpdate, ws: 
         DocumentStatus.FAILED: ("failed", "error", f"Couldn't be processed. {body.message or ''}".strip()),
     }[body.status]
     await extraction_log.record(tenant_id=ws.tenant_id, template_id=ws.template_id, stage=stage, level=level, message=text,
-                                document_id=doc.id, document_name=doc.original_filename, actor="Agent")
+                                document_id=doc.id, document_name=document_label(doc), actor="Agent")
     return {"status": doc.status.value}
 
 
@@ -626,16 +627,17 @@ async def submit_record(document_id: str, body: RecordSubmission, ws: Workspace 
         review_reason=body.review_reason, uncertain_fields=body.uncertain_fields,
         acknowledged_signals=body.acknowledged_signals,
     )
+    name = label_for(doc, ws.template.schema_definition, body.data)
     if outcome["status"] == "NEEDS_REVIEW":
         await workspace_events.emit(
             ws.db, tenant_id=ws.tenant_id, template_id=ws.template_id, type="document.needs_review", severity="warning",
-            title=f"{doc.original_filename} needs review", body=body.review_reason or "", path=f"documents/{doc.id}",
+            title=f"{name} needs review", body=body.review_reason or "", path=f"documents/{doc.id}",
             data={"document_id": doc.id},
         )
     elif outcome["status"] == "COMPLETED":
         await workspace_events.emit(
             ws.db, tenant_id=ws.tenant_id, template_id=ws.template_id, type="document.completed", severity="success",
-            title=f"{doc.original_filename} was read and saved", path=f"documents/{doc.id}",
+            title=f"{name} was read and saved", path=f"documents/{doc.id}",
             data={"document_id": doc.id, "confidence": body.confidence},
         )
     await ws.db.commit()
@@ -646,12 +648,12 @@ async def submit_record(document_id: str, body: RecordSubmission, ws: Workspace 
     if outcome["status"] == "NEEDS_REVIEW":
         await extraction_log.record(
             tenant_id=ws.tenant_id, template_id=ws.template_id, stage="review", level="warning", actor="Agent", document_id=doc.id,
-            document_name=doc.original_filename, message=f"Sent to review. {body.review_reason or ''}".strip(),
+            document_name=name, message=f"Sent to review. {body.review_reason or ''}".strip(),
             details={"confidence": body.confidence})
     elif outcome["status"] == "COMPLETED":
         await extraction_log.record(
             tenant_id=ws.tenant_id, template_id=ws.template_id, stage="saved", level="success", actor="Agent", document_id=doc.id,
-            document_name=doc.original_filename, message="Read and saved.", details={"confidence": body.confidence})
+            document_name=name, message="Read and saved.", details={"confidence": body.confidence})
     if outcome["status"] == "COMPLETED" and may_register:
         new = await _new_identities(ws, body.data)
         if new:

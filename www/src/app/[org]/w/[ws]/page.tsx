@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/Pill";
 import { ScrollingLog, useExtractionLog } from "@/components/workspace/ExtractionLog";
 import { api } from "@/lib/api";
-import { ago, cn } from "@/lib/format";
+import { ago, cn, docName } from "@/lib/format";
 import type { DocumentStatus, Overview } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -161,7 +161,7 @@ export default function Overview() {
               {docs.slice(0, 6).map((d) => (
                 <li key={d.id} className="border-b border-rule last:border-0">
                   <Link href={href(`documents/${d.id}`)} className="flex items-center gap-3 py-2.5 hover:underline">
-                    <span className="min-w-0 flex-1 truncate text-body text-ink">{d.original_filename}</span>
+                    <span className="min-w-0 flex-1 truncate text-body text-ink">{docName(d)}</span>
                     <StatusPill status={d.status} />
                     <span className="num w-16 flex-none text-right text-meta text-muted">{ago(d.created_at)}</span>
                   </Link>

@@ -139,7 +139,7 @@ export function OverviewPage() {
                   {o.held.map((h) => (
                     <li key={h.delivery_id} className="flex flex-wrap items-start gap-x-4 gap-y-1 border-b border-rule py-2.5 first:pt-0 last:border-0 last:pb-0">
                       <span className="min-w-0 flex-1">
-                        <Link href={href(`documents/${h.document.id}`)} className="block truncate text-body font-medium text-ink hover:underline">{h.document.filename}</Link>
+                        <Link href={href(`documents/${h.document.id}`)} className="block truncate text-body font-medium text-ink hover:underline">{h.document.display_name ?? h.document.filename}</Link>
                         <span className="block text-meta text-muted">{h.reason} · for {h.destination}</span>
                       </span>
                       <span className="num text-meta text-muted">{ago(h.since)}</span>

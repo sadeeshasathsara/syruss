@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 import { StatusPill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
-import { ago, fileSize } from "@/lib/format";
+import { ago, docName, fileSize } from "@/lib/format";
 import type { DocumentItem, DocumentStatus } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -96,7 +96,7 @@ function DocumentRows({ docs }: { docs: DocumentItem[] }) {
           <tr key={d.id} className="border-t border-rule hover:bg-raised">
             <td className="py-0" colSpan={1}>
               <Link href={href(`documents/${d.id}`)} className="block py-3 pr-3">
-                <span className="block truncate text-ink">{d.original_filename}</span>
+                <span className="block truncate text-ink">{docName(d)}</span>
                 {/* Narrow screens: the other columns move to a second line. */}
                 <span className="mt-1 flex flex-wrap items-center gap-2 text-meta text-muted @2xl:hidden">
                   <StatusPill status={d.status} />
@@ -135,7 +135,7 @@ function DocumentsScreen() {
       all.filter(
         (d) =>
           (!current.statuses || current.statuses.includes(d.status)) &&
-          (!query.trim() || d.original_filename.toLowerCase().includes(query.trim().toLowerCase())),
+          (!query.trim() || (docName(d) + " " + d.original_filename).toLowerCase().includes(query.trim().toLowerCase())),
       ),
     [all, current, query],
   );

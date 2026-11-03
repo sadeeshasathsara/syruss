@@ -17,6 +17,7 @@ from app.models.review import ReviewStatus, ReviewTask
 from app.schemas.review import ReviewDecisionRequest
 from app.services.agent_events import enqueue_agent_event, agent_event_relay
 from app.services import extraction_log
+from app.services.document_key import label_for
 from app.services.record_service import record_service
 
 
@@ -97,7 +98,7 @@ class ReviewService:
         verb = {"APPROVE": "approved", "CORRECT": "corrected and approved", "REJECT": "rejected"}[action]
         await extraction_log.record(
             tenant_id=scope.tenant_id, template_id=scope.template_id, stage="decided", actor=scope.username, document_id=doc.id,
-            document_name=doc.original_filename, level="error" if action == "REJECT" else "success",
+            document_name=label_for(doc, scope.template.schema_definition, decision.corrected_data or original), level="error" if action == "REJECT" else "success",
             message=f"Review {verb}." + (f" {decision.notes}" if decision.notes else ""))
         await db.refresh(task)
         return task
