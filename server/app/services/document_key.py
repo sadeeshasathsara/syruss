@@ -97,7 +97,7 @@ def document_label(document: Any) -> str:
 
 def label_for(document: Any, schema: Optional[Dict[str, Any]], data: Optional[Dict[str, Any]]) -> str:
     """Like document_label, for a record that was only just written (the document's relations may not show it yet)."""
-    return identification_key(schema, data) or document.original_filename
+    return identification_key(schema, data) or document.identified_key or document.original_filename
 
 
 async def labels_for(db: AsyncSession, document_ids: Iterable[str]) -> Dict[str, str]:

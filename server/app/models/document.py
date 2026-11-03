@@ -44,6 +44,8 @@ class Document(Base):
 
     status: Mapped[DocumentStatus] = mapped_column(SQLEnum(DocumentStatus), default=DocumentStatus.PENDING, nullable=False, index=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # What the agent read off the page as the template's identification key before any record was saved
+    identified_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # Where it came from, when it was sent in by another system (nothing here is read from the file itself)
     channel_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("intake_channels.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -61,9 +63,11 @@ class Document(Base):
 
     @property
     def display_name(self) -> Optional[str]:
-        """The document's identification key (see services/document_key), or None when it has none yet."""
+        """The document's identification key (see services/document_key): from its record, else what the agent read first."""
         from app.services.document_key import identification_key
         loaded = sa_inspect(self).unloaded
-        if "template" in loaded or "extraction" in loaded or not self.template or not self.extraction:
-            return None
-        return identification_key(self.template.schema_definition, self.extraction.extracted_data)
+        if "template" not in loaded and "extraction" not in loaded and self.template and self.extraction:
+            key = identification_key(self.template.schema_definition, self.extraction.extracted_data)
+            if key:
+                return key
+        return self.identified_key

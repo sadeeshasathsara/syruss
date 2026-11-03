@@ -55,7 +55,7 @@ from app.services import (
     settings_service, source_service, workspace_events,
 )
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
-from app.services.document_key import document_label, label_for
+from app.services.document_key import document_label, identification_key, identification_spec, label_for
 from app.services.identity_check import normalize_id
 from app.services.record_service import record_service
 from app.models.screen import WorkspaceScreen
@@ -270,7 +270,7 @@ async def list_documents(
         stmt = stmt.where(Document.status == status)
     docs = (await ws.db.execute(stmt.order_by(Document.created_at.desc()).offset(offset).limit(limit))).scalars().all()
     return [{
-        "id": d.id, "filename": d.original_filename, "status": d.status.value, "role": d.role.value,
+        "id": d.id, "name": document_label(d), "filename": d.original_filename, "status": d.status.value, "role": d.role.value,
         "content_type": d.content_type, "created_at": d.created_at.isoformat(),
     } for d in docs]
 
@@ -299,11 +299,11 @@ async def get_document(document_id: str, ws: Workspace = Depends(get_workspace))
             "reviewer_notes": r.reviewer_notes, "decided_by": r.decided_by,
         }
     if doc.id in ws.hidden:  # an evaluation: the document is to be read as if it had just arrived
-        return {"id": doc.id, "filename": doc.original_filename, "status": "QUEUED", "role": doc.role.value,
+        return {"id": doc.id, "name": doc.original_filename, "filename": doc.original_filename, "status": "QUEUED", "role": doc.role.value,
                 "content_type": doc.content_type, "image_size": {"width": width, "height": height},
                 "record": None, "review": None}
     return {
-        "id": doc.id, "filename": doc.original_filename, "status": doc.status.value, "role": doc.role.value,
+        "id": doc.id, "name": document_label(doc), "filename": doc.original_filename, "status": doc.status.value, "role": doc.role.value,
         "content_type": doc.content_type, "image_size": {"width": width, "height": height},
         "record": record, "review": review,
     }
@@ -370,7 +370,7 @@ async def _allow_page_view(ws: Workspace, doc: Document) -> Dict[str, Any]:
         purpose = "past"
         if not budget["already_read_this_run"]["left"]:
             raise HTTPException(status_code=429, detail=(
-                f"{doc.original_filename} was already read: its record is in the database. You have looked at "
+                f"{document_label(doc)} was already read: its record is in the database. You have looked at "
                 f"{budget['already_read_this_run']['limit']} already-read pages in this run, the most allowed; use "
                 "get_document or search_past_records instead."))
     ws.db.add(AgentPageView(tenant_id=ws.tenant_id, template_id=ws.template_id, event_id=ws.event_id or "",
@@ -451,6 +451,35 @@ class DocumentStatusUpdate(BaseModel):
     message: Optional[str] = None
 
 
+class IdentifyBody(BaseModel):
+    details: Dict[str, Any] = Field(..., description='What the page says, shaped like a record: {"Roster": {"site": "S12", "date": "2026-07-22"}}')
+
+
+@router.post("/documents/{document_id}/identification")
+async def identify_document(document_id: str, body: IdentifyBody, ws: Workspace = Depends(get_workspace)):
+    """The agent read what names this document (the template's identification key) before it has a record to save."""
+    doc = await _document(ws, document_id)
+    if ws.eval_item:
+        raise HTTPException(status_code=403, detail="Not during an evaluation.")
+    if not identification_spec(ws.template.schema_definition)["parts"]:
+        raise HTTPException(status_code=409, detail="This template has no identification key; the document is named by its file name.")
+    key = identification_key(ws.template.schema_definition, body.details)
+    if not key:
+        raise HTTPException(status_code=422, detail="None of the values the template's identification key uses were given. "
+                            "Give them shaped like a record, for example " + _key_example(ws.template.schema_definition))
+    doc.identified_key = key
+    await ws.db.commit()
+    await publish_ui_event(doc.id, "document_status", {"status": doc.status.value}, tenant_id=ws.tenant_id, template_id=ws.template_id)
+    return {"document_id": doc.id, "name": key}
+
+
+def _key_example(schema: Dict[str, Any]) -> str:
+    example: Dict[str, Dict[str, str]] = {}
+    for part in identification_spec(schema)["parts"]:
+        example.setdefault(part["object"], {})[part["field"]] = "…"
+    return json.dumps(example)
+
+
 @router.post("/documents/{document_id}/status")
 async def set_document_status(document_id: str, body: DocumentStatusUpdate, ws: Workspace = Depends(get_workspace)):
     """The agent may mark work in progress or a failure it cannot recover from; outcomes go through /record."""
@@ -511,7 +540,7 @@ async def process_for_person(document_id: str, body: ProcessBody, ws: Workspace 
     if doc.role != DocumentRole.DOCUMENT:
         raise HTTPException(status_code=400, detail="Samples are not processed into records.")
     if doc.status in (DocumentStatus.QUEUED, DocumentStatus.PROCESSING):
-        raise HTTPException(status_code=409, detail=f"{doc.original_filename} is already {doc.status.value.lower()}.")
+        raise HTTPException(status_code=409, detail=f"{document_label(doc)} is already {doc.status.value.lower()}.")
     if not ws.template.active_version_id:
         raise HTTPException(status_code=409, detail="The workspace has no published template yet.")
     doc.status, doc.error_message = DocumentStatus.QUEUED, None
@@ -523,7 +552,7 @@ async def process_for_person(document_id: str, body: ProcessBody, ws: Workspace 
     _audit(ws, "DOCUMENT_QUEUED_FROM_CHAT", "Document", doc.id, {"for": actor.get("id"), "reason": body.reason})
     await ws.db.commit()
     agent_event_relay.notify()
-    return {"document_id": doc.id, "filename": doc.original_filename, "status": doc.status.value}
+    return {"document_id": doc.id, "name": document_label(doc), "filename": doc.original_filename, "status": doc.status.value}
 
 
 # ---------------------------------------------------------------------------
