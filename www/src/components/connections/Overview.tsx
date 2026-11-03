@@ -81,7 +81,7 @@ export function OverviewPage() {
               <li key={head} className="flex flex-col gap-2 @2xl:flex-row @2xl:items-center @2xl:gap-4">
                 <span className="num flex size-7 flex-none items-center justify-center rounded-full border border-border text-meta font-medium text-ink">{i + 1}</span>
                 <span className="min-w-0 flex-1"><span className="block text-body font-medium text-ink">{head}</span><span className="block text-body text-muted">{tail}</span></span>
-                <Button asChild variant={i === 0 ? "primary" : "secondary"}><Link href={href(path)}>{action}</Link></Button>
+                <Button asChild variant={i === 0 ? "primary" : "secondary"} className="w-full @2xl:w-44 @2xl:flex-none"><Link href={href(path)}>{action}</Link></Button>
               </li>
             ))}
           </ol>
