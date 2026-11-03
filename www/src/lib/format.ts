@@ -16,6 +16,11 @@ export function fieldName(field: string | TemplateField): string {
   return typeof field === "string" ? field : field.name;
 }
 
+/** What to call a document: its identification key, else its file name. */
+export function docName(d: { display_name?: string | null; original_filename: string }): string {
+  return d.display_name || d.original_filename;
+}
+
 /** "employee_no" → "Employee no" */
 export function humanize(key: string): string {
   const s = key.replace(/[_-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").trim();

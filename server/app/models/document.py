@@ -3,6 +3,7 @@ import uuid
 from typing import Optional
 from datetime import datetime, timezone
 from sqlalchemy import Boolean, String, Integer, DateTime, JSON, Text, ForeignKey, Index, Enum as SQLEnum
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import expression, text
 from app.core.database import Base
@@ -57,3 +58,12 @@ class Document(Base):
     template = relationship("DocumentTemplate", lazy="selectin")
     extraction = relationship("ExtractionResult", back_populates="document", uselist=False, lazy="selectin", cascade="all, delete-orphan")
     review_task = relationship("ReviewTask", back_populates="document", uselist=False, lazy="selectin", cascade="all, delete-orphan")
+
+    @property
+    def display_name(self) -> Optional[str]:
+        """The document's identification key (see services/document_key), or None when it has none yet."""
+        from app.services.document_key import identification_key
+        loaded = sa_inspect(self).unloaded
+        if "template" in loaded or "extraction" in loaded or not self.template or not self.extraction:
+            return None
+        return identification_key(self.template.schema_definition, self.extraction.extracted_data)

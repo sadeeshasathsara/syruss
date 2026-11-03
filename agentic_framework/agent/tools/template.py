@@ -15,6 +15,7 @@ _SCHEMA_EXAMPLE = (
     '{"type":"Line","multiple":true,'
     '"fields":[{"name":"description","type":"string"},{"name":"quantity","type":"number"},'
     '{"name":"amount","type":"number"}]}],'
+    '"identification":{"parts":[{"object":"Invoice","field":"number"},{"object":"Invoice","field":"date"}],"separator":"_"},'
     '"validation_rules":[{"rule_type":"sum_match","object":"Line","field":"amount",'
     '"total_object":"Invoice","total_field":"total","description":"Lines must sum to invoice total"}]}'
 )
@@ -31,6 +32,8 @@ class ProposeTemplateArgs(BaseModel):
             "(2) Facts/events/transactions have no identity; use \"resolves_to\":\"<ObjectType>\" on fields "
             "that hold the identifying value of a related entity. "
             "(3) Every resolves_to target must have an identity block. "
+            "(4) Add \"identification\": parts are {object, field} pairs from objects with \"multiple\":false; "
+            "it names each document to people (e.g. site + date) instead of its file name. "
             f"Minimal example: {_SCHEMA_EXAMPLE}"
         ),
     )

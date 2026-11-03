@@ -364,6 +364,8 @@ def check_rule_definitions(schema: Dict[str, Any]) -> List[str]:
             elif not objects[target]["identity"]:
                 problems.append(f"'{otype}.{fname}' resolves_to '{target}', which has no identity; "
                                 f"give '{target}' an identity (the field that identifies it and the field that names it).")
+    from app.services.document_key import check_identification
+    problems += check_identification(schema)
     for rule in schema_rules(schema):
         rtype = rule.get("rule_type") or rule.get("type")
         obj = rule.get("object") or rule.get("target_object")
