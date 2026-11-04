@@ -10,6 +10,29 @@
 
 > Generated file. Do not edit.
 
+## [2026-11-04] - Release Candidate (test)
+
+### agent (0.3.0-rc.1)
+- Identify documents by a template-defined key (for example site and date) instead of the file name, in lists, notifications, the log and analytics
+- The agent proposes the key with the template; it can be changed or combined from the Template page
+
+### server (0.3.1-rc.1)
+- Test environment: a small deploy hook on the test server pulls only the images CI just published
+- Identify documents by a template-defined key (for example site and date) instead of the file name, in lists, notifications, the log and analytics
+- The agent proposes the key with the template; it can be changed or combined from the Template page
+
+### site (0.2.1-rc.1)
+- Show the loading animation on the sign-in continue page
+- Use the application icon as the favicon on the Keycloak sign-in pages
+
+### www (0.3.1-rc.1)
+- Build the web app with the public site and account addresses of its environment
+- Documents: the Needs review tab lists the checks and quick decisions waiting for review, each linking to the Review page, with a Go to Review button
+- Connections: give the three get-started buttons the same width
+- Identify documents by a template-defined key (for example site and date) instead of the file name, in lists, notifications, the log and analytics
+- The agent proposes the key with the template; it can be changed or combined from the Template page
+- Overview: make Waiting on you full width and show Recent documents beside Latest in the log
+
 ## [2026-10-31] - Release Candidate (test)
 
 ### agent (0.2.0-rc.1)
