@@ -2,9 +2,9 @@
 The agent's own memory, kept in the agent service's database (never the core server's).
 
 Notes are partitioned by workspace (tenant + template) and come in three kinds:
-  observation  something noticed while working, e.g. "'OT' written next to hours on Site 12 rosters"
+  observation  something noticed while working, e.g. "an unlabelled code written next to a column on some pages"
   lesson       how this business works, learned from answers and corrections,
-               e.g. "'OT' means overtime, billed at 1.5x (answer from admin)"
+               e.g. "that code means X (answer from admin)"
   work_item    work parked until something happens, e.g. waiting for a human's answer
 
 The agent decides what to write. Lessons are always loaded when it wakes up; observations

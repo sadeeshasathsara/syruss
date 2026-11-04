@@ -113,6 +113,8 @@ def open_obligations(ctx: RunContext) -> List[str]:
     if e.type in ("document.submitted", "eval.item") and e.document_id not in (ctx.resolved_documents | ctx.parked_documents):
         owed.append(f"document {e.document_id} has no outcome yet (commit, send to review, park it with a "
                     "question, or mark it failed)")
+    if e.type == "rules.ideas" and not ctx.ideas_given:
+        owed.append("you haven't given your rule ideas yet (propose_rule_ideas)")
     if e.type == "human.message" and not ctx.replied:
         owed.append("the user's message has not been answered yet (reply_to_user)")
     if e.type == "human.answered" and e.payload.get("conversation_id") and not e.payload.get("dismissed") and not ctx.replied:

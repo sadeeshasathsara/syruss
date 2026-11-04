@@ -20,3 +20,4 @@ jinja2>=3.1
 oauthlib>=3.2   # (tests only) checks the NetSuite signature against an independent implementation
 aiosmtpd>=1.4
 asyncssh>=2.14
+google-re2>=1.1   # linear-time regular expressions for rules (a pattern cannot hang the server)

@@ -89,7 +89,7 @@ function Teach({ scope }: { scope: "personal" | "workspace" }) {
         value={content}
         onChange={(e) => setContent(e.target.value)}
         maxLength={2000}
-        placeholder={scope === "personal" ? "e.g. I prefer short answers with a table" : "e.g. Night shifts run from 19:00 to 07:00"}
+        placeholder={scope === "personal" ? "e.g. I prefer short answers with a table" : "e.g. A blank in this column means the same as the row above"}
         className="flex-1"
       />
       <Button type="submit" variant="secondary" disabled={content.trim().length < 3 || teach.isPending}>Remember this</Button>

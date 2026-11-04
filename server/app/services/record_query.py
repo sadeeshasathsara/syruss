@@ -1,17 +1,17 @@
 """
 Questions across records, answered from the database in one call.
 
-"Who worked the day shift", "which documents mention site S12", "how many hours did Perera log in
-July" are questions about rows of one template object across every saved record. The agent asks
-them with a filter instead of opening records one by one (or looking at pages):
+"Which rows have this value", "which documents mention X", "how much of something in July" are
+questions about rows of one template object across every saved record. The agent asks them with a
+filter instead of opening records one by one (or looking at pages):
 
-  object    the template object whose rows are wanted (e.g. the people on a roster)
+  object    the template object whose rows are wanted
   where     conditions on the row's fields, or on fields of the document's one-per-document objects
-            written "Object.field" (e.g. the roster's date). Comparisons ignore case and spaces at
+            written "Object.field" (e.g. the document's date). Comparisons ignore case and spaces at
             the ends; gte/lte compare numbers as numbers and everything else as text (so ISO dates
             and HH:MM times order correctly).
   distinct  fields to group by: unique combinations with how often and in how many documents
-            (e.g. the unique workers matching the filter)
+            (e.g. the unique names matching the filter)
 
 When nothing matches, the values that do occur in the filtered fields are returned, so the agent
 can see how the documents write them ("D" rather than "Day") and ask again.

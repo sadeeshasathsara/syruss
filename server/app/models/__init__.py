@@ -39,6 +39,7 @@ from app.models.conversation import Conversation, ChatMessage
 from app.models.graph import EntitySighting
 from app.models.jobs import WorkspaceJob
 from app.models.screen import WorkspaceScreen
+from app.models.rule import TemplateRule
 from app.models.intake import IdempotencyRecord, IntakeChannel, IntakeEvent, IntakeUpload
 from app.models.delivery import Delivery, DeliveryAttempt, Destination
 from app.models.evaluation import EvalRun, EvalRunItem

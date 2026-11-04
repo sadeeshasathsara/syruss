@@ -74,7 +74,8 @@ def budget_note(budget: Optional[Dict[str, Any]]) -> str:
 class IdentifyArgs(BaseModel):
     document_id: str
     details_json: str = Field(..., description="What the page says for the template's identification key, shaped like a record, "
-                              'e.g. {"Roster": {"site": "S12", "date": "2026-07-22"}}. Only the fields the key uses.')
+                              'e.g. {"Head": {"name": "...", "date": "2026-07-22"}} with the key\'s own objects and fields. '
+                              'Only the fields the key uses.')
 
 
 @tool("identify_document", "Name the document the way people will recognize it: give the values the template's identification "

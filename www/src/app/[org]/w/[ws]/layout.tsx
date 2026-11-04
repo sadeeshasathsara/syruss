@@ -101,6 +101,7 @@ function navFor(org: string, w: Workspace, sees: (p?: Permission) => boolean, sc
     ["documents.view", { href: `${base}/template`, label: "Template", icon: LayoutTemplate, also: [`${base}/setup`], children: [
       { href: `${base}/template`, label: "Current version" },
       { href: `${base}/template?tab=versions`, label: "Version history" },
+      { href: `${base}/template/rules`, label: "Rules" },
       { href: `${base}/template?tab=quality`, label: "Quality" },
       ...(sees("template.publish") ? [{ href: `${base}/setup`, label: "Refine with samples" }] : []),
     ] }],
