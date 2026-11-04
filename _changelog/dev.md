@@ -12,6 +12,11 @@
 
 ## [2026-11-04] - Release via dev
 
+### server (0.3.4-dev.1)
+- Release commits no longer carry [skip ci], so checks run on promotion pull requests
+
+## [2026-11-04] - Release via dev
+
 ### server (0.3.3-dev.1)
 - Test environment: the deploy hook pulls and starts one service at a time, waiting for each to be ready, so a small server is not overloaded
 
