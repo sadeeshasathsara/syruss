@@ -192,31 +192,55 @@ def _service_sections(text: str) -> List[Tuple[str, str, List[str]]]:
     return found
 
 
-def get_current_env_versions() -> Dict[str, Dict[str, Optional[str]]]:
-    """Latest version per service in dev, test and main: what the three changelog files list, merged with git tags."""
-    env_map: Dict[str, Dict[str, Optional[str]]] = {s: {"dev": None, "test": None, "main": None} for s in SERVICES}
-
-    # 1. Each environment's own file: its newest entry per service
+def versions_from_files() -> Dict[str, Dict[str, Optional[str]]]:
+    """Newest version per service that each environment's changelog file lists."""
+    found: Dict[str, Dict[str, Optional[str]]] = {s: {"dev": None, "test": None, "main": None} for s in SERVICES}
     for branch in CHANGELOG_BRANCHES:
         for svc, version, _ in _service_sections(read_changelog(branch)):
-            if svc in env_map and not env_map[svc][branch]:
-                env_map[svc][branch] = version
+            if svc in found and not found[svc][branch]:
+                found[svc][branch] = version
+    return found
 
-    # 2. Merge with git tags (keeping highest SemVer)
+
+def versions_from_tags() -> Dict[str, Dict[str, Optional[str]]]:
+    """Highest version per service and environment among the git tags."""
+    found: Dict[str, Dict[str, Optional[str]]] = {s: {"dev": None, "test": None, "main": None} for s in SERVICES}
     try:
         res = subprocess.run(["git", "tag", "-l"], cwd=REPO_ROOT, capture_output=True, text=True, check=True)
-        tags = [t.strip() for t in res.stdout.splitlines() if t.strip()]
-        for s in SERVICES:
-            for t in tags:
-                for env, pattern in (("dev", r"\d+\.\d+\.\d+-dev\.\d+"), ("test", r"\d+\.\d+\.\d+-rc\.\d+"), ("main", r"\d+\.\d+\.\d+")):
-                    m = re.match(rf"^{s}-v({pattern})$", t)
-                    if m:
-                        cur = env_map[s][env]
-                        if not cur or parse_ver_tuple(m.group(1)) > parse_ver_tuple(cur):
-                            env_map[s][env] = m.group(1)
     except Exception:
-        pass
-    return env_map
+        return found
+    tags = [t.strip() for t in res.stdout.splitlines() if t.strip()]
+    for s in SERVICES:
+        for t in tags:
+            for env, pattern in (("dev", r"\d+\.\d+\.\d+-dev\.\d+"), ("test", r"\d+\.\d+\.\d+-rc\.\d+"), ("main", r"\d+\.\d+\.\d+")):
+                m = re.match(rf"^{s}-v({pattern})$", t)
+                if m:
+                    cur = found[s][env]
+                    if not cur or parse_ver_tuple(m.group(1)) > parse_ver_tuple(cur):
+                        found[s][env] = m.group(1)
+    return found
+
+
+def get_current_env_versions() -> Dict[str, Dict[str, Optional[str]]]:
+    """Latest version per service in dev, test and main: the changelog files merged with git tags (highest wins)."""
+    files, tags = versions_from_files(), versions_from_tags()
+    merged: Dict[str, Dict[str, Optional[str]]] = {}
+    for s in SERVICES:
+        merged[s] = {}
+        for env in CHANGELOG_BRANCHES:
+            candidates = [v for v in (files[s][env], tags[s][env]) if v]
+            merged[s][env] = max(candidates, key=parse_ver_tuple) if candidates else None
+    return merged
+
+
+def find_version_mismatches() -> List[str]:
+    """Where the changelog files and the git tags disagree about a service's latest version."""
+    files, tags = versions_from_files(), versions_from_tags()
+    return [
+        f"{s} ({env}): changelog says {files[s][env] or 'nothing'}, tags say {tags[s][env] or 'nothing'}"
+        for s in sorted(SERVICES) for env in CHANGELOG_BRANCHES
+        if files[s][env] != tags[s][env]
+    ]
 
 
 def format_env_table(env_map: Dict[str, Dict[str, Optional[str]]]) -> str:
@@ -635,6 +659,13 @@ def cmd_apply(args: argparse.Namespace) -> int:
 def cmd_table(args: argparse.Namespace) -> int:
     """Prints the current version of every service in dev, test and main. Writes nothing."""
     print(format_env_table(get_current_env_versions()))
+    mismatches = find_version_mismatches()
+    if mismatches:
+        print("\nThe changelog files and the git tags disagree (the table shows the higher version):")
+        print("\n".join(f"  - {m}" for m in mismatches))
+        print("Fetch tags first (`git fetch --tags`); if they still differ, a release did not finish.")
+        return 1 if getattr(args, "strict", False) else 0
+    print("\nThe changelog files and the git tags agree.")
     return 0
 
 
@@ -726,7 +757,8 @@ def build_changeset_parser(subparsers=None):
     p_apply.add_argument("--branch", choices=["dev", "test", "main"], default="dev", help="Target branch for version naming")
 
     # table
-    sub.add_parser("table", help="Show the version of every service in dev, test and main")
+    p_table = sub.add_parser("table", help="Show the version of every service in dev, test and main")
+    p_table.add_argument("--strict", action="store_true", help="Exit with an error when the changelog files and git tags disagree")
 
     # guard (CI)
     p_guard = sub.add_parser("guard", help="Fail when a commit changed _changelog/ by hand (used in CI)")
