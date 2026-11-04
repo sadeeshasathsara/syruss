@@ -35,7 +35,7 @@ WORK_CORE = (
     "flag", "open_conversation", "propose_system_lesson", "list_screens", "run_screen",
 )
 TOOLSETS: Dict[str, Sequence[str]] = {
-    "document.submitted": WORK_CORE + ("validate_record", "submit_record", "mark_document_failed", "create_entity",
+    "document.submitted": WORK_CORE + ("identify_document", "validate_record", "submit_record", "mark_document_failed", "create_entity",
                                        "update_entity", "add_entity_alias", "propose_entity_merge", "propose_template_change"),
     "template.samples_added": WORK_CORE + ("list_documents", "validate_record", "propose_template_change"),
     "knowledge.source_added": WORK_CORE + ("list_documents", "inspect_source", "propose_source_mapping", "propose_template_change"),

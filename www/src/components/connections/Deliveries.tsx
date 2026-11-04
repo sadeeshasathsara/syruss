@@ -48,7 +48,7 @@ function DeliveryDrawer({ id, onClose }: { id: string | null; onClose: () => voi
         {d && meta && (
           <>
             <div>
-              <h2 className="break-words text-section font-semibold text-ink">{d.document?.filename ?? "Document"}</h2>
+              <h2 className="break-words text-section font-semibold text-ink">{d.document?.display_name ?? d.document?.filename ?? "Document"}</h2>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <Pill tone={meta.tone}>{meta.label}</Pill>
                 {d.document?.is_test && <Pill tone="info">Test document</Pill>}
@@ -148,7 +148,7 @@ function Row({ d, onOpen }: { d: DeliveryRow; onOpen: () => void }) {
       <button type="button" onClick={onOpen} className="flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-raised @2xl:flex-row @2xl:items-center @2xl:gap-4">
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <span className="truncate text-body font-medium text-ink">{d.document?.filename ?? "Document"}</span>
+            <span className="truncate text-body font-medium text-ink">{d.document?.display_name ?? d.document?.filename ?? "Document"}</span>
             {d.document?.is_test && <Pill tone="info">Test</Pill>}
             {d.event === "document.corrected" && <Pill>Correction</Pill>}
           </span>

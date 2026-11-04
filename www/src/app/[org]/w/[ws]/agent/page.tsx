@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/Field";
 import { Markdown } from "@/components/ui/Markdown";
 import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
-import { ago, cn, dateTime } from "@/lib/format";
+import { ago, cn, dateTime, docName } from "@/lib/format";
 import type { ConversationSummary, Proposal } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -28,7 +28,7 @@ const PROPOSAL_KIND: Record<Proposal["proposal_type"], string> = {
 function useDocumentNames() {
   const { workspace } = useWorkspace();
   const docs = useQuery({ queryKey: ["documents", workspace.id], queryFn: () => api.documents.list(workspace.id, undefined, 500) });
-  return (id: string) => docs.data?.find((d) => d.id === id)?.original_filename ?? "Document";
+  return (id: string) => (() => { const d = docs.data?.find((x) => x.id === id); return d ? docName(d) : "Document"; })();
 }
 
 /** The documents an item is about: the first one to look at, the rest as links. */

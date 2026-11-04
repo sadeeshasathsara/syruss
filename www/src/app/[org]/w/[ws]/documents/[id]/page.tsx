@@ -11,7 +11,7 @@ import { Bar, ErrorNote, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/Pill";
 import { ApiError, api } from "@/lib/api";
-import { ago, percent } from "@/lib/format";
+import { ago, docName, percent } from "@/lib/format";
 import type { Extraction } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -48,7 +48,7 @@ export default function DocumentDetail() {
   const reread = useMutation({
     mutationFn: () => api.documents.reprocess(wid, id),
     onSuccess: () => {
-      announce(`You asked the agent to read ${doc.data?.original_filename ?? "a document"} again`, { href: href(`documents/${id}`), openChat: true });
+      announce(`You asked the agent to read ${doc.data ? docName(doc.data) : "a document"} again`, { href: href(`documents/${id}`), openChat: true });
       queryClient.invalidateQueries({ queryKey: ["documents", wid] });
     },
   });
@@ -84,8 +84,8 @@ export default function DocumentDetail() {
     <div className="flex flex-col gap-5">
       <PageHeader
         back={{ href: href("documents"), label: "Documents" }}
-        title={d.original_filename}
-        subtitle={<span className="flex flex-wrap items-center gap-2"><StatusPill status={d.status} />{subtitle}</span>}
+        title={docName(d)}
+        subtitle={<span className="flex flex-wrap items-center gap-2"><StatusPill status={d.status} />{subtitle}{d.display_name && <span className="text-muted">File: {d.original_filename}</span>}</span>}
         actions={
           <>
             {review && (
