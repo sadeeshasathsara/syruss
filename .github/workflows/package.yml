@@ -6,6 +6,11 @@ on:
       - dev
       - test
       - main
+    # The release job's own commit only touches these paths. Ignoring them stops it from starting another run,
+    # so its message needs no [skip ci] (which would also stop checks from running on a pull request whose head it is).
+    paths-ignore:
+      - "_changelog/**"
+      - ".changeset/**"
 
 concurrency:
   group: package-${{ github.ref }}
@@ -63,7 +68,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add _changelog/ .changeset/
-          git commit -m "chore(release): update _changelog and apply changesets [skip ci]" || echo "No changes to commit"
+          git commit -m "chore(release): update _changelog and apply changesets" || echo "No changes to commit"
           git push origin "${{ github.ref_name }}"
 
   # ----------------------------------------------------------------------------
