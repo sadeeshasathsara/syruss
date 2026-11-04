@@ -21,13 +21,16 @@ Supported rules (all take "object": "<ObjectType>"):
   regex          field, pattern
   unique         field
   expression     expression over field names (per record), e.g. "hours <= 16"
+
+These come with the template version. Rules people and the agent add later live in their own table
+(models/rule.py), are written in the rule language (services/rule_lang.py) and are passed in as `rules`.
 """
 import ast
-import math
-import operator
 import re
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
+
+import re2
 
 
 # ---------------------------------------------------------------------------
@@ -118,59 +121,6 @@ def _check_type(field_type: str, value: Any) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Safe expression evaluation (no attribute access, calls limited to math helpers)
-# ---------------------------------------------------------------------------
-
-_BIN_OPS = {
-    ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
-    ast.Div: operator.truediv, ast.Mod: operator.mod, ast.Pow: operator.pow,
-    ast.FloorDiv: operator.floordiv,
-}
-_CMP_OPS = {
-    ast.Eq: operator.eq, ast.NotEq: operator.ne, ast.Lt: operator.lt,
-    ast.LtE: operator.le, ast.Gt: operator.gt, ast.GtE: operator.ge,
-}
-_FUNCS = {"abs": abs, "min": min, "max": max, "round": round, "sqrt": math.sqrt}
-
-
-def safe_eval(expression: str, variables: Optional[Dict[str, Any]] = None) -> Any:
-    variables = variables or {}
-
-    def ev(node: ast.AST) -> Any:
-        if isinstance(node, ast.Expression):
-            return ev(node.body)
-        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float, str, bool)):
-            return node.value
-        if isinstance(node, ast.Name):
-            if node.id not in variables:
-                raise ValueError(f"unknown name '{node.id}'")
-            return variables[node.id]
-        if isinstance(node, ast.BinOp) and type(node.op) in _BIN_OPS:
-            return _BIN_OPS[type(node.op)](ev(node.left), ev(node.right))
-        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd, ast.Not)):
-            v = ev(node.operand)
-            return -v if isinstance(node.op, ast.USub) else (+v if isinstance(node.op, ast.UAdd) else not v)
-        if isinstance(node, ast.BoolOp):
-            vals = [ev(v) for v in node.values]
-            return all(vals) if isinstance(node.op, ast.And) else any(vals)
-        if isinstance(node, ast.Compare):
-            left = ev(node.left)
-            for op, comp in zip(node.ops, node.comparators):
-                if type(op) not in _CMP_OPS:
-                    raise ValueError("unsupported comparison")
-                right = ev(comp)
-                if not _CMP_OPS[type(op)](left, right):
-                    return False
-                left = right
-            return True
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _FUNCS and not node.keywords:
-            return _FUNCS[node.func.id](*[ev(a) for a in node.args])
-        raise ValueError(f"unsupported expression element: {type(node).__name__}")
-
-    return ev(ast.parse(expression, mode="eval"))
-
-
-# ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
 
@@ -252,7 +202,7 @@ def _check_references(objects: Dict[str, Dict[str, Any]], data: Dict[str, Any]) 
     return errors
 
 
-def _check_rule(rule: Dict[str, Any], data: Dict[str, Any]) -> List[Dict[str, str]]:
+def _check_rule(rule: Dict[str, Any], data: Dict[str, Any], schema: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
     rtype = rule.get("rule_type") or rule.get("type")
     obj = rule.get("object") or rule.get("target_object")
     rid = rule.get("id") or rtype or "rule"
@@ -296,7 +246,10 @@ def _check_rule(rule: Dict[str, Any], data: Dict[str, Any]) -> List[Dict[str, st
                 errors.append(_error(rid, f"{label}: '{v}' is not one of {sorted(rule.get('values', []))}.", f"{obj}[{i}].{rule.get('field')}"))
 
     elif rtype == "regex":
-        pattern = re.compile(rule.get("pattern", ".*"))
+        try:
+            pattern = re2.compile(rule.get("pattern", ".*"))  # RE2: linear time, a pattern can't hang the server
+        except re2.error:
+            return errors
         for i, r in enumerate(records):
             v = r.get(rule.get("field"))
             if v not in (None, "") and not pattern.fullmatch(str(v)):
@@ -314,28 +267,49 @@ def _check_rule(rule: Dict[str, Any], data: Dict[str, Any]) -> List[Dict[str, st
             seen[k] = i
 
     elif rtype == "expression":
-        for i, r in enumerate(records):
-            variables = {k: (parse_number(v) if parse_number(v) is not None else v) for k, v in r.items()}
-            try:
-                ok = safe_eval(rule.get("expression", "True"), variables)
-            except Exception:
-                continue  # fields missing in this record; structure checks report required fields
-            if not ok:
-                errors.append(_error(rid, f"{label}: '{rule.get('expression')}' is false.", f"{obj}[{i}]"))
+        from app.services.rule_lang import RuleError, compile_rule
+        try:
+            compiled = compile_rule({"scope": obj, "check": rule.get("expression", "")}, schema)
+        except RuleError:
+            return errors  # rejected when the template is saved
+        for failure in compiled.run(data)["failed"]:
+            errors.append(_error(rid, f"{label}: '{rule.get('expression')}' is false.", failure["path"]))
 
     return errors
 
 
-def validate_record(schema: Optional[Dict[str, Any]], data: Dict[str, Any]) -> Dict[str, Any]:
-    """Returns {"valid": bool, "errors": [...], "rules_checked": int}."""
+def run_rule(rule: Dict[str, Any], schema: Optional[Dict[str, Any]], data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """One rule-language rule (a dict with id, name, scope, check, when, message) on a record: an entry per failing row."""
+    from app.services.rule_lang import RuleError, compile_rule
+    try:
+        compiled = compile_rule(rule, schema)
+    except RuleError:
+        return []  # a rule that no longer fits the template is marked broken and is not run
+    name = rule.get("name") or rule.get("id") or "rule"
+    message = (rule.get("message") or "").strip() or f"{name}: {rule.get('check')} is false."
+    return [{"code": "rule_failed", "rule_id": rule.get("id"), "rule": name, "path": f["path"],
+             "message": message if not f["path"] else f"{message} ({f['path']})"} for f in compiled.run(data)["failed"]]
+
+
+def validate_record(schema: Optional[Dict[str, Any]], data: Dict[str, Any],
+                    rules: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Returns {"valid": bool, "errors": [...], "warnings": [...], "rules_checked": int, "rules": [ids]}.
+    `rules` are the workspace's active rule-language rules: failures of an "error" rule make the record invalid,
+    failures of a "warning" rule are reported without blocking."""
     if not isinstance(data, dict):
-        return {"valid": False, "errors": [_error("bad_shape", "Record must be an object keyed by object type.")], "rules_checked": 0}
+        return {"valid": False, "errors": [_error("bad_shape", "Record must be an object keyed by object type.")],
+                "warnings": [], "rules_checked": 0, "rules": []}
     objects = normalize_schema(schema)
     errors = _check_structure(objects, data) + _check_references(objects, data)
-    rules = schema_rules(schema)
-    for rule in rules:
-        errors.extend(_check_rule(rule, data))
-    return {"valid": not errors, "errors": errors, "rules_checked": len(rules)}
+    legacy = schema_rules(schema)
+    for rule in legacy:
+        errors.extend(_check_rule(rule, data, schema))
+    warnings: List[Dict[str, Any]] = []
+    for rule in rules or []:
+        failures = run_rule(rule, schema, data)
+        (warnings if rule.get("severity") == "warning" else errors).extend(failures)
+    return {"valid": not errors, "errors": errors, "warnings": warnings, "rules_checked": len(legacy) + len(rules or []),
+            "rules": [r.get("id") for r in rules or []]}
 
 
 def check_rule_definitions(schema: Dict[str, Any]) -> List[str]:
@@ -380,7 +354,7 @@ def check_rule_definitions(schema: Dict[str, Any]) -> List[str]:
                 problems.append(f"Rule '{rule.get('id')}' has an invalid expression.")
         if rtype == "regex":
             try:
-                re.compile(rule.get("pattern", ""))
-            except re.error:
+                re2.compile(rule.get("pattern", ""))
+            except re2.error:
                 problems.append(f"Rule '{rule.get('id')}' has an invalid regex.")
     return problems

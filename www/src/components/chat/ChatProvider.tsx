@@ -26,6 +26,8 @@ interface ChatContextValue {
   ensureSession: () => Promise<string>;
   /** `context` rides along with the message (for example { mode: "screens" } asks Syruss to work as the analyst). */
   send: (text: string, context?: Record<string, unknown>) => Promise<void>;
+  /** Starts a new chat, opens it in the panel and sends the text there (for a request made from a page, like a new rule). */
+  sendInNewChat: (text: string, context?: Record<string, unknown>) => Promise<void>;
   busy: boolean;
   /** Syruss is answering your last message (or it is queued): the composer offers Stop. */
   replying: boolean;
@@ -165,6 +167,26 @@ export function ChatProvider({ workspaceId, children }: { workspaceId: string; c
     [ensureSession, workspaceId, pathname, queryClient, refreshSessions],
   );
 
+  const sendInNewChat = useCallback(
+    async (text: string, context?: Record<string, unknown>) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      const conv = await create.mutateAsync(undefined);
+      selectSession(conv.id);
+      setActiveConversation(conv.id);
+      setChatOpen(true, "chat");
+      const local = { id: `pending_${Date.now()}`, text: trimmed, at: new Date().toISOString() };
+      setPending((p) => [...p, local]);
+      try {
+        await api.chat.send(workspaceId, conv.id, trimmed, { current_page: pathname, ...context });
+        await Promise.all([queryClient.invalidateQueries({ queryKey: ["conversation", workspaceId, conv.id] }), refreshSessions()]);
+      } finally {
+        setPending((p) => p.filter((x) => x.id !== local.id));
+      }
+    },
+    [create, selectSession, setChatOpen, workspaceId, pathname, queryClient, refreshSessions],
+  );
+
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     messages,
     convertMessage: (m) => m,
@@ -185,7 +207,7 @@ export function ChatProvider({ workspaceId, children }: { workspaceId: string; c
       value={{
         activeId, active: conversation.data, selectSession, openConversation, newSession: () => selectSession(undefined),
         renameSession, deleteSession,
-        ensureSession, send, busy, latestRunId, replying, stop, stopping,
+        ensureSession, send, sendInNewChat, busy, latestRunId, replying, stop, stopping,
       }}
     >
       <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>

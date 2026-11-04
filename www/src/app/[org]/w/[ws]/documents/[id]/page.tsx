@@ -69,6 +69,7 @@ export default function DocumentDetail() {
   const e = extraction.data;
   const working = d.status === "QUEUED" || d.status === "PROCESSING";
   const errors = e?.validation?.errors ?? [];
+  const warnings = e?.validation?.warnings ?? [];
   const signals = e?.validation?.signals ?? [];
   const subtitle = working
     ? "The agent is reading this document. Follow it in the chat."
@@ -129,6 +130,13 @@ export default function DocumentDetail() {
                 <Panel title="Checks that failed">
                   <ul className="flex flex-col gap-1">
                     {errors.map((err, i) => <li key={i} className="text-body text-ink">{err.message}</li>)}
+                  </ul>
+                </Panel>
+              )}
+              {warnings.length > 0 && (
+                <Panel title="Rule warnings">
+                  <ul className="flex flex-col gap-1">
+                    {warnings.map((w, i) => <li key={i} className="text-body text-ink">{w.message}</li>)}
                   </ul>
                 </Panel>
               )}

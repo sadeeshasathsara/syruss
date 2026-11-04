@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { RuleCard, suggestedRuleId } from "@/components/rules/RuleCard";
 import { ImageViewer, type ViewerImage } from "@/components/ui/ImageViewer";
 import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
@@ -116,6 +117,25 @@ export function StepDetail({ step }: { step: RunStep }) {
   if (step.result?.startsWith("REFUSED") || step.result?.startsWith("ERROR")) return <Summary value={undefined} raw={step.result} />;
 
   switch (step.tool) {
+    case "suggest_rule": {
+      const id = suggestedRuleId(step.result);
+      return id ? <RuleCard ruleId={id} /> : <Summary value={result} raw={step.result} />;
+    }
+    case "check_rule": {
+      if (!isObj(result)) return <Summary value={result} raw={step.result} />;
+      const problem = Array.isArray(result.problems) && isObj(result.problems[0]) ? result.problems[0] : undefined;
+      const run = isObj(result.dry_run) ? result.dry_run : undefined;
+      return (
+        <div className="flex flex-col gap-1">
+          <p className="break-all font-mono text-meta text-ink">{arg("check")}</p>
+          {problem ? <p className="text-body text-negative">{text(problem.message)}</p> : run && (
+            <p className="text-body text-ink">
+              Passes on {text(run.passed)}, fails on {text(run.failed)}, doesn&apos;t apply to {text(run.not_applicable)} of {text(run.records)} saved records.
+            </p>
+          )}
+        </div>
+      );
+    }
     case "save_screen":
     case "update_screen": {
       const saved = isObj(result) ? result : undefined;

@@ -37,6 +37,8 @@ class RunContext:
     previewed_screens: set = field(default_factory=set)
     # The workspace's screens as list_screens showed them (None until it has been called this run)
     screens_seen: Optional[List[Dict[str, Any]]] = None
+    # Rules this run has checked and that compiled (scope, check, when): one is suggested only after it was tried
+    checked_rules: set = field(default_factory=set)
 
     @property
     def tenant_id(self) -> str:
