@@ -25,6 +25,6 @@ Commit the generated file (e.g. `.changeset/bold-fox-123.md`) along with your pu
 
 When your PR is merged, the release pipeline automatically:
 1. Reads these files
-2. Updates `CHANGELOG.md`
+2. Updates `_changelog/dev.md` (each environment has its own generated file in `_changelog/`; never edit them, CI fails a pull request that does)
 3. Tags the release
 4. Deletes the processed changeset files

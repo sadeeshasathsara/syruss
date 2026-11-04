@@ -54,14 +54,16 @@ jobs:
         id: apply
         run: |
           python scripts/changeset.py apply --branch "${{ github.ref_name }}"
+          # Versions of every service in dev, test and main, shown on the run's summary page
+          python scripts/changeset.py table >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Commit CHANGELOG and push
+      - name: Commit _changelog and push
         if: steps.apply.outputs.has_releases == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md .changeset/
-          git commit -m "chore(release): update CHANGELOG and apply changesets [skip ci]" || echo "No changes to commit"
+          git add _changelog/ .changeset/
+          git commit -m "chore(release): update _changelog and apply changesets [skip ci]" || echo "No changes to commit"
           git push origin "${{ github.ref_name }}"
 
   # ----------------------------------------------------------------------------
