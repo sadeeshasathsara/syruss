@@ -20,6 +20,7 @@ GUIDES: Dict[str, str] = {
     "asking-people": "flags and conversations: when to use which, and how",
     "reflection": "looking back over recent work and corrections",
     "screens": "analytics screens (the Analytics tab): tables, calculated columns and analytics over the saved records",
+    "rules": "rules: checks in the rule language that run on every record, writing one from plain words, and when to suggest one",
 }
 
 # Guides a task always needs, attached to its briefing so the agent doesn't spend a step reading them.

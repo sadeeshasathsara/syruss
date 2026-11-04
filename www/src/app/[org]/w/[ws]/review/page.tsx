@@ -92,6 +92,7 @@ function WhatHappened({ documentId }: { documentId: string }) {
   const v = extraction.data?.validation;
   const notes = [
     ...(v?.errors ?? []).map((e) => e.message),
+    ...(v?.warnings ?? []).map((w) => w.message),
     ...(v?.signals ?? []).map((s) => s.message.split(" Look at the page again")[0]),
   ];
   if (!extraction.data?.agent_notes && notes.length === 0) return null;

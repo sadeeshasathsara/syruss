@@ -71,13 +71,14 @@ function TemplateVersions() {
 
       {!showHistory && schema && <DocumentKeyEditor key={template.data?.active_version_id ?? "none"} schema={schema} />}
 
-      {!showHistory && (schema?.validation_rules?.length ?? 0) > 0 && (
-        <Panel title="Checks">
-          <ul className="flex flex-col gap-1">
-            {schema!.validation_rules!.map((r, i) => (
-              <li key={r.id ?? i} className="text-body text-ink">{r.description ?? `${humanize(r.rule_type)} on ${r.object}`}</li>
-            ))}
-          </ul>
+      {!showHistory && schema && (
+        <Panel title="Rules" aside={<Link href={href("template/rules")} className="font-medium text-ink underline-offset-2 hover:underline">Manage rules</Link>}>
+          <p className="text-body text-muted">
+            {(schema.validation_rules?.length ?? 0) > 0
+              ? `${schema.validation_rules!.length} check${schema.validation_rules!.length === 1 ? "" : "s"} come with this version. `
+              : ""}
+            Rules check every record after its document is read: totals that add up, shifts that aren&apos;t too long, IDs in the right format.
+          </p>
         </Panel>
       )}
 

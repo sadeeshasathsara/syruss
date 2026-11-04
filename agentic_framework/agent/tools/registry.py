@@ -10,6 +10,7 @@ CHAT_TOOLS = (
     "review_history", "recall", "remember", "update_memory", "calculate", "process_documents", "reply_to_user",
     "related", "query_records", "read_guide",
     "list_screens", "run_screen", "screen_catalogue", "preview_screen", "save_screen", "update_screen", "remove_screen",
+    "list_rules", "check_rule", "suggest_rule",
 )
 
 # What the analyst may use (custom screens, "what stands out?"): the chat's lookups, plus trying, saving and changing screens.
@@ -34,15 +35,16 @@ WORK_CORE = (
     "search_entities", "related", "recall", "remember", "update_memory", "update_note", "calculate", "read_guide",
     "flag", "open_conversation", "propose_system_lesson", "list_screens", "run_screen",
 )
+RULE_TOOLS = ("list_rules", "check_rule", "suggest_rule")
 TOOLSETS: Dict[str, Sequence[str]] = {
     "document.submitted": WORK_CORE + ("identify_document", "validate_record", "submit_record", "mark_document_failed", "create_entity",
-                                       "update_entity", "add_entity_alias", "propose_entity_merge", "propose_template_change"),
-    "template.samples_added": WORK_CORE + ("list_documents", "validate_record", "propose_template_change"),
+                                       "update_entity", "add_entity_alias", "propose_entity_merge", "propose_template_change") + RULE_TOOLS,
+    "template.samples_added": WORK_CORE + ("list_documents", "validate_record", "propose_template_change") + RULE_TOOLS,
     "knowledge.source_added": WORK_CORE + ("list_documents", "inspect_source", "propose_source_mapping", "propose_template_change"),
     "schedule.insights": ("get_workspace", "list_documents", "get_document", "query_records", "search_past_records", "review_history", "recall",
                           "calculate", "read_guide", "list_screens", "screen_catalogue", "preview_screen", "run_screen", "save_screen"),
     "schedule.reflect": WORK_CORE + ("list_documents", "validate_record", "propose_template_change", "propose_entity_merge",
-                                     "update_entity", "add_entity_alias"),
+                                     "update_entity", "add_entity_alias") + RULE_TOOLS,
 }
 
 

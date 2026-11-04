@@ -7,6 +7,7 @@ import type {
   ConnectionsOverview, DeliveryDetail, DeliveryPage, DeliveryStats, DeliveryStatus, DestinationInfo, DestinationKind, MappingPreview, MappingSources, MappingSpec,
   NewDestination, TryResult,
   WorkspaceJobInfo, LiveQuality, GoldenDocument, EvalRunInfo, FlagAnswer, ConversationPage, SystemLesson,
+  Rule, RuleCheckResult, RuleDraft, RuleInput, RuleLanguage, ValidationRule,
 } from "./types";
 
 /**
@@ -26,8 +27,9 @@ export class ApiError extends Error {
 function messageFrom(detail: unknown, fallback: string): string {
   if (typeof detail === "string") return detail;
   if (detail && typeof detail === "object") {
-    const d = detail as { message?: string; errors?: { message: string }[]; problems?: string[] };
-    const first = d.errors?.[0]?.message ?? d.problems?.[0];
+    const d = detail as { message?: string; errors?: { message: string }[]; problems?: unknown[] };
+    const problem = d.problems?.[0];
+    const first = d.errors?.[0]?.message ?? (typeof problem === "string" ? problem : undefined);
     if (d.message && first) return `${d.message} ${first}`;
     if (d.message) return d.message;
     if (first) return first;
@@ -115,6 +117,20 @@ export const api = {
     /** A download link can't send headers, so the workspace and organization ride in the address. */
     exportUrl: (workspaceId: string, slug: string) =>
       `${API}/screens/${encodeURIComponent(slug)}/export.csv?template_id=${workspaceId}${activeOrg ? `&org=${encodeURIComponent(activeOrg)}` : ""}`,
+  },
+  /** Checks that run on every record after a document is read (Template > Rules). */
+  rules: {
+    list: (workspaceId: string) => request<{ rules: Rule[]; template_checks: ValidationRule[] }>("/rules", { workspaceId }),
+    get: (workspaceId: string, id: string) => request<Rule>(`/rules/${encodeURIComponent(id)}`, { workspaceId }),
+    language: (workspaceId: string) => request<RuleLanguage>("/rules/language", { workspaceId }),
+    /** Compiles a rule and tries it on the saved records, without saving it. */
+    check: (workspaceId: string, draft: RuleDraft) => request<RuleCheckResult>("/rules/check", { method: "POST", body: json(draft), workspaceId }),
+    create: (workspaceId: string, body: RuleInput) => request<Rule>("/rules", { method: "POST", body: json(body), workspaceId }),
+    update: (workspaceId: string, id: string, body: Partial<RuleInput> & { status?: "active" | "disabled" }) =>
+      request<Rule>(`/rules/${encodeURIComponent(id)}`, { method: "PATCH", body: json(body), workspaceId }),
+    remove: (workspaceId: string, id: string) => request<void>(`/rules/${encodeURIComponent(id)}`, { method: "DELETE", workspaceId }),
+    accept: (workspaceId: string, id: string) => request<Rule>(`/rules/${encodeURIComponent(id)}/accept`, { method: "POST", workspaceId }),
+    dismiss: (workspaceId: string, id: string) => request<void>(`/rules/${encodeURIComponent(id)}/dismiss`, { method: "POST", workspaceId }),
   },
   organization: () => request<Organization>("/organization"),
 
