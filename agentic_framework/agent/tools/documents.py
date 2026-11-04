@@ -2,7 +2,7 @@
 import base64
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
-from agentic_framework.agent.tools.base import NoArgs, RunContext, ToolOutcome, dump, tool
+from agentic_framework.agent.tools.base import NoArgs, RunContext, ToolOutcome, dump, json_arg, tool
 from agentic_framework.core_api import ToolRefused
 
 
@@ -69,6 +69,21 @@ def budget_note(budget: Optional[Dict[str, Any]]) -> str:
     past = budget["already_read_this_run"]
     return (f"Page budget: {past['left']} of {past['limit']} already-read pages left in this run (the document you are "
             "working on, and documents not read yet, are free). Compare with past documents through their records.")
+
+
+class IdentifyArgs(BaseModel):
+    document_id: str
+    details_json: str = Field(..., description="What the page says for the template's identification key, shaped like a record, "
+                              'e.g. {"Roster": {"site": "S12", "date": "2026-07-22"}}. Only the fields the key uses.')
+
+
+@tool("identify_document", "Name the document the way people will recognize it: give the values the template's identification "
+      "key uses (see `identification` in get_workspace's template), as soon as you have read them and before anything else "
+      "(questions, review, commit). From then on every list, notification and question calls the document by that key, not "
+      "its file name. Refused when the template has no key.", IdentifyArgs)
+async def identify_document(ctx: RunContext, a: IdentifyArgs) -> ToolOutcome:
+    result = await ctx.api.post(f"/documents/{a.document_id}/identification", {"details": json_arg(a.details_json, "details_json", {})})
+    return ToolOutcome(dump(result), touched_document_ids=[a.document_id])
 
 
 class FailArgs(BaseModel):

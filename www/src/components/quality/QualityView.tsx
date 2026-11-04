@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Select } from "@/components/ui/Select";
 import { api } from "@/lib/api";
-import { ago, cn, humanize, percent } from "@/lib/format";
+import { ago, cn, docName, humanize, percent } from "@/lib/format";
 import type { EvalItem, EvalRunInfo, LiveQuality } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -199,7 +199,7 @@ function AddGolden({ existing, onClose }: { existing: Set<string>; onClose: () =
         <ul className="flex max-h-72 flex-col overflow-y-auto">
           {choices.map((d) => (
             <li key={d.id} className="flex items-center gap-3 border-b border-rule py-2 last:border-0">
-              <span className="min-w-0 flex-1 truncate text-body text-ink">{d.original_filename}</span>
+              <span className="min-w-0 flex-1 truncate text-body text-ink">{docName(d)}</span>
               <span className="text-meta text-muted">{ago(d.updated_at)}</span>
               <Button variant="secondary" size="sm" disabled={add.isPending} onClick={() => add.mutate(d.id)}>Add</Button>
             </li>

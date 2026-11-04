@@ -13,6 +13,7 @@ from app.core.auth import AuthContext, get_current_auth
 from app.core.database import get_db_session
 from app.core.permissions import Access, get_access, require
 from app.models.document import Document
+from app.services.document_key import labels_for
 from app.models.trace import AgentExecutionTrace as Run
 from app.models.workspace import Workspace
 
@@ -50,7 +51,7 @@ async def _with_names(db: AsyncSession, runs: List[Run]) -> Dict[str, str]:
     ids = {r.document_id for r in runs if r.document_id}
     if not ids:
         return {}
-    return dict((await db.execute(select(Document.id, Document.original_filename).where(Document.id.in_(ids)))).all())
+    return await labels_for(db, ids)
 
 
 @router.get("/runs", dependencies=[Depends(require("agent.chat"))])

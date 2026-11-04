@@ -11,7 +11,7 @@ import { Markdown, plainText } from "@/components/ui/Markdown";
 import { MappingSummary } from "@/components/knowledge/MappingSummary";
 import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
-import { cn, fieldName, humanize, percent, STATUS_LABEL, STATUS_TONE } from "@/lib/format";
+import { cn, docName, fieldName, humanize, percent, STATUS_LABEL, STATUS_TONE } from "@/lib/format";
 import type { AgentQuestion, DocumentStatus, FlagAnswer, MappingPreview, Proposal, SourceMapping, TemplateSchema } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 import { useAgentChat } from "./ChatProvider";
@@ -214,7 +214,8 @@ export function RunCard({ run }: { run: Run }) {
   // (its start event may have dropped out of the live replay).
   const isDocument = !!run.channel && (run.trigger === "document.submitted" || !!documents.data?.some((d) => d.id === run.channel));
   const outcome = run.outcome?.status as DocumentStatus | undefined;
-  const docName = isDocument ? documents.data?.find((d) => d.id === run.channel)?.original_filename : undefined;
+  const found = isDocument ? documents.data?.find((d) => d.id === run.channel) : undefined;
+  const documentName = found ? docName(found) : undefined;
 
   return (
     <div className="rounded-card bg-card [box-shadow:var(--shadow-card)]">
@@ -230,7 +231,7 @@ export function RunCard({ run }: { run: Run }) {
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="min-w-0 text-body font-medium text-ink">
-              {docName ? <>Reading <span className="break-all">{docName}</span></> : (TRIGGER[run.trigger] ?? "Working")}
+              {documentName ? <>Reading <span className="break-all">{documentName}</span></> : (TRIGGER[run.trigger] ?? "Working")}
             </span>
             {running && (
               <span className="flex items-center gap-1.5 text-meta text-accent">

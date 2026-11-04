@@ -248,7 +248,7 @@ export function NewDestinationPage() {
               <h2 className="text-body font-medium text-ink">2. See what would be sent</h2>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="w-64">
-                  <Select label="Document to try" value={docId} onChange={setDocId} options={[{ value: "none", label: "Choose an approved document…" }, ...sources.data!.documents.map((d) => ({ value: d.id, label: d.filename }))]} />
+                  <Select label="Document to try" value={docId} onChange={setDocId} options={[{ value: "none", label: "Choose an approved document…" }, ...sources.data!.documents.map((d) => ({ value: d.id, label: d.display_name ?? d.filename }))]} />
                 </div>
                 <Button variant="secondary" disabled={docId === "none" || preview.isPending} onClick={() => preview.mutate()}>Show it</Button>
               </div>
@@ -414,7 +414,7 @@ export function DestinationPage({ id }: { id: string }) {
               <Button variant="primary" disabled={save.isPending} onClick={() => save.mutate("mapping")}>Save</Button>
               {sources.data.documents.length > 0 && (
                 <>
-                  <div className="w-56"><Select label="Document to try" value={docId} onChange={setDocId} options={[{ value: "none", label: "Try it on…" }, ...sources.data.documents.map((x) => ({ value: x.id, label: x.filename }))]} /></div>
+                  <div className="w-56"><Select label="Document to try" value={docId} onChange={setDocId} options={[{ value: "none", label: "Try it on…" }, ...sources.data.documents.map((x) => ({ value: x.id, label: x.display_name ?? x.filename }))]} /></div>
                   <Button variant="secondary" disabled={docId === "none" || preview.isPending} onClick={() => preview.mutate()}>Show what is sent</Button>
                 </>
               )}
