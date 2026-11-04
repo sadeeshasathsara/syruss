@@ -8,13 +8,21 @@ All notable changes to Syruss services.
 | :--- | :---: | :---: | :---: |
 | **admin** | — | — | — |
 | **agent** | `0.3.0-dev.1` | `0.2.0-rc.1` | `0.2.0` |
-| **server** | `0.3.0-dev.1` | `0.2.0-rc.1` | `0.2.0` |
+| **server** | `0.3.1-dev.1` | `0.2.0-rc.1` | `0.2.0` |
 | **site** | `0.2.1-dev.1` | `0.2.0-rc.1` | `0.2.0` |
-| **www** | `0.3.0-dev.1` | `0.2.0-rc.1` | `0.2.0` |
+| **www** | `0.3.1-dev.1` | `0.2.0-rc.1` | `0.2.0` |
 
 ---
 
 ## Release History
+
+## [2026-11-04] - Release via dev
+
+### server (0.3.1-dev.1)
+- Test environment: a small deploy hook on the test server pulls only the images CI just published
+
+### www (0.3.1-dev.1)
+- Build the web app with the public site and account addresses of its environment
 
 ## [2026-11-03] - Release via dev
 
