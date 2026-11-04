@@ -12,6 +12,12 @@
 
 ## [2026-11-04] - Release via dev
 
+### server (0.3.2-dev.1)
+- Test environment: CI builds every image (Postgres, Keycloak, its database, Kafka and MinIO as well as the apps) and the server only pulls from ghcr
+- Test environment: serve every service over HTTPS on one DuckDNS domain behind Caddy, and start the whole stack on each deploy
+
+## [2026-11-04] - Release via dev
+
 ### server (0.3.1-dev.1)
 - Test environment: a small deploy hook on the test server pulls only the images CI just published
 
