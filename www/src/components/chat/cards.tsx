@@ -27,6 +27,7 @@ const TRIGGER: Record<string, string> = {
   "review.completed": "Learning from a review",
   "proposal.decided": "Applying your decision",
   "schedule.reflect": "Looking back over recent work",
+  "rules.ideas": "Thinking of rules for this template",
 };
 
 function toolLabel(step: RunStep): string {

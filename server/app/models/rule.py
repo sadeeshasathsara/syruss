@@ -12,9 +12,9 @@ def _now() -> datetime:
 
 class TemplateRule(Base):
     """
-    A check that runs on every record after a document is read, written in the rule language (services/rule_lang.py):
-    "the lines add up to the total", "a shift is at most 16 hours". People write them, or ask Syruss to; Syruss also
-    suggests them when it notices a relation that holds. A suggestion does nothing until a person adds it.
+    A check that runs on every record after a document is read, written in the rule language (services/rule_lang.py)
+    over the template's own objects and fields. People write them, or ask Syruss to; Syruss also suggests them when it
+    notices a relation that holds. A suggestion does nothing until a person adds it.
 
     status: suggested | active | disabled | broken. A rule that no longer compiles after the template changed is broken
     (`broken_reason` says why) and is not run until someone fixes it. severity "error" stops a record from being committed

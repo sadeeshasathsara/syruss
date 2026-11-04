@@ -3,16 +3,20 @@ Saving, checking and running template rules. Shared by the people's API (api/v1/
 so a rule means the same thing whoever wrote it: it is compiled against the active template before it is stored, and
 tried on the records already saved so the person (or Syruss) sees what it would have said about them.
 """
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.audit import AuditLog
 from app.models.document import Document, DocumentRole, DocumentStatus
 from app.models.extraction import ExtractionResult
+from app.models.jobs import WorkspaceJob
 from app.models.rule import TemplateRule
 from app.models.template import DocumentTemplate
+from app.services.agent_events import enqueue_agent_event
 from app.services.document_key import document_label
 from app.services.rule_lang import MAX_LENGTH, SEVERITIES, RuleError, compile_rule
 from app.services.ui_events import publish_ui_event
@@ -222,3 +226,63 @@ async def announce(r: TemplateRule, what: str) -> None:
     """Tells open workspaces so the Rules tab and chat cards refresh."""
     await publish_ui_event(f"template:{r.template_id}", "rule_changed", {"rule": r.id, "name": r.name, "what": what, "status": r.status,
                                                                        "by": r.created_by_kind}, tenant_id=r.tenant_id, template_id=r.template_id)
+
+
+# --- ideas for the new-rule page ---------------------------------------------------------------
+# Syruss thinks of rules worth having for this template once per template version; the page shows them as starting points.
+# Asking again while it is still thinking does nothing, so loading the page never costs a model call.
+
+IDEAS_JOB = "rule_ideas"
+IDEAS_RETRY = timedelta(minutes=10)   # a request that never got an answer (agent down) is made again after this
+MAX_IDEAS = 6
+
+
+async def _ideas_job(db: AsyncSession, template: DocumentTemplate) -> Optional[WorkspaceJob]:
+    await db.execute(insert(WorkspaceJob).values(
+        template_id=template.id, job=IDEAS_JOB, tenant_id=template.tenant_id, state={}, updated_at=datetime.now(timezone.utc),
+    ).on_conflict_do_nothing())
+    return (await db.execute(select(WorkspaceJob).where(
+        WorkspaceJob.template_id == template.id, WorkspaceJob.job == IDEAS_JOB).with_for_update(skip_locked=True))).scalar_one_or_none()
+
+
+async def ideas(db: AsyncSession, template: DocumentTemplate, *, may_ask: bool, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """{"status": ready | thinking | none | no_template, "ideas": [{"text"}]}. Wakes Syruss when this template version has no
+    ideas yet and the person may ask for them (writing rules takes template.publish)."""
+    if not template.active_version_id:
+        return {"status": "no_template", "ideas": []}
+    now = now or datetime.now(timezone.utc)
+    job = await _ideas_job(db, template)
+    if job is None:  # another request is updating it right now
+        return {"status": "thinking", "ideas": []}
+    state = dict(job.state or {})
+    current = state.get("version_id") == template.active_version_id
+    if current and state.get("status") == "ready":
+        return {"status": "ready", "ideas": state.get("ideas") or []}
+    asked = datetime.fromisoformat(state["requested_at"]) if state.get("requested_at") else None
+    if current and state.get("status") == "thinking" and asked and now - asked < IDEAS_RETRY:
+        return {"status": "thinking", "ideas": []}
+    if not may_ask:
+        return {"status": "none", "ideas": []}
+    enqueue_agent_event(db, event_type="rules.ideas", tenant_id=template.tenant_id, template_id=template.id,
+                        payload={"version_id": template.active_version_id, "channel_id": f"template:{template.id}"}, source="dashboard")
+    job.state = {"version_id": template.active_version_id, "status": "thinking", "requested_at": now.isoformat(), "ideas": []}
+    job.last_run_at, job.last_status = now, "thinking"
+    return {"status": "thinking", "ideas": []}
+
+
+async def store_ideas(db: AsyncSession, template: DocumentTemplate, version_id: str, texts: List[str]) -> Dict[str, Any]:
+    """What Syruss came up with, kept for the version it looked at."""
+    clean: List[Dict[str, str]] = []
+    for t in texts:
+        text = " ".join(str(t or "").split())[:200]
+        if text and text.lower() not in {i["text"].lower() for i in clean}:
+            clean.append({"text": text})
+    job = await _ideas_job(db, template)
+    if job is None:
+        raise HTTPException(status_code=409, detail="The ideas are being updated; try again.")
+    job.state = {"version_id": version_id, "status": "ready", "ideas": clean[:MAX_IDEAS],
+                 "requested_at": (job.state or {}).get("requested_at")}
+    job.last_status = "ready"
+    await publish_ui_event(f"template:{template.id}", "rule_ideas", {"count": len(clean[:MAX_IDEAS])},
+                           tenant_id=template.tenant_id, template_id=template.id)
+    return {"status": "ready", "ideas": clean[:MAX_IDEAS]}

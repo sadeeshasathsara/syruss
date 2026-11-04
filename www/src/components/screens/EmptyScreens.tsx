@@ -40,9 +40,9 @@ export function EmptyScreens() {
         <div className="flex items-start gap-3">
           <Table2 aria-hidden className="mt-0.5 size-5 flex-none text-muted" />
           <div className="flex flex-col gap-2 text-body text-ink">
-            <p>An analytics screen lists rows from your saved documents, such as every guard on every roster or every line of every invoice.</p>
+            <p>An analytics screen lists rows from your saved documents, such as every row of every table your template captures.</p>
             <p className="text-muted">
-              Show only what you need, add columns that work things out (hours worked, overtime, totals), and group rows to see sums by person or by month.
+              Show only what you need, add columns that work things out (differences, rates, totals), and group rows to see sums by any field or by month.
               Every row opens the document it came from.
             </p>
           </div>
@@ -77,8 +77,8 @@ export function EmptyScreens() {
       {manage && can("agent.chat") && (
         <Panel title="Or just ask Syruss">
           <AskForScreen
-            placeholder="Describe the table you want, for example hours worked by each guard this month"
-            examples={["Total hours by person", "Which sites had the most overtime?", "Show what looks unusual this month"]}
+            placeholder="Describe the table you want, in your own words"
+            examples={["A full table of everything", "Totals by month", "Show what looks unusual this month"]}
           />
         </Panel>
       )}

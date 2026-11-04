@@ -4,20 +4,20 @@ from pydantic import BaseModel, Field
 from agentic_framework.agent.tools.base import RunContext, ToolOutcome, dump, json_arg, tool
 
 # A compact inline example embedded in the field description so the model always sees
-# the correct shape without needing a separate read_guide call.
+# the correct shape without needing a separate read_guide call. Placeholder names only: no kind of document.
 _SCHEMA_EXAMPLE = (
-    '{"document_type":"invoice","objects":['
-    '{"type":"Supplier","identity":{"id_field":"tax_id","label_field":"name"},"multiple":false,'
-    '"fields":[{"name":"tax_id","type":"string","required":true},{"name":"name","type":"string","required":true}]},'
-    '{"type":"Invoice","multiple":false,'
+    '{"document_type":"<kind>","objects":['
+    '{"type":"Party","identity":{"id_field":"code","label_field":"name"},"multiple":false,'
+    '"fields":[{"name":"code","type":"string","required":true},{"name":"name","type":"string","required":true}]},'
+    '{"type":"Head","multiple":false,'
     '"fields":[{"name":"number","type":"string","required":true},{"name":"date","type":"date"},'
-    '{"name":"supplier","type":"string","resolves_to":"Supplier"},{"name":"total","type":"number"}]},'
-    '{"type":"Line","multiple":true,'
-    '"fields":[{"name":"description","type":"string"},{"name":"quantity","type":"number"},'
+    '{"name":"party","type":"string","resolves_to":"Party"},{"name":"total","type":"number"}]},'
+    '{"type":"Item","multiple":true,'
+    '"fields":[{"name":"label","type":"string"},{"name":"quantity","type":"number"},'
     '{"name":"amount","type":"number"}]}],'
-    '"identification":{"parts":[{"object":"Invoice","field":"number"},{"object":"Invoice","field":"date"}],"separator":"_"},'
-    '"validation_rules":[{"rule_type":"sum_match","object":"Line","field":"amount",'
-    '"total_object":"Invoice","total_field":"total","description":"Lines must sum to invoice total"}]}'
+    '"identification":{"parts":[{"object":"Head","field":"number"},{"object":"Head","field":"date"}],"separator":"_"},'
+    '"validation_rules":[{"rule_type":"sum_match","object":"Item","field":"amount",'
+    '"total_object":"Head","total_field":"total","description":"Items add up to the total"}]}'
 )
 
 
@@ -33,8 +33,8 @@ class ProposeTemplateArgs(BaseModel):
             "that hold the identifying value of a related entity. "
             "(3) Every resolves_to target must have an identity block. "
             "(4) Add \"identification\": parts are {object, field} pairs from objects with \"multiple\":false; "
-            "it names each document to people (e.g. site + date) instead of its file name. Choose "
-            "descriptive fields people understand (a site's name, a customer's name, a date), not IDs or codes: if "
+            "it names each document to people (e.g. a name + a date) instead of its file name. Choose "
+            "descriptive fields people understand (names, dates), not IDs or codes: if "
             "the page shows a name next to a code, put the name in a one-per-document field and use it. "
             f"Minimal example: {_SCHEMA_EXAMPLE}"
         ),

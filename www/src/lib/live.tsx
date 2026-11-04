@@ -29,6 +29,8 @@ function staleKeys(e: LiveEvent): string[][] {
       return [["screens"], ["screen"], ["screen-run"]];
     case "rule_changed":
       return [["rules"], ["rule"]];
+    case "rule_ideas":
+      return [["rules"]];
     case "agent_question":
       return [["questions"], ["workspace"]];
     case "agent_proposal":

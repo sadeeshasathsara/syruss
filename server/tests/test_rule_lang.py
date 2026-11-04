@@ -70,6 +70,13 @@ def test_blank_values_make_a_rule_not_applicable():
     assert run("amount != blank", scope="Line", data=data)["failed"] != []
 
 
+def test_a_condition_can_hold_for_some_rows_only_and_times_compare_as_times():
+    schema = {"objects": [{"type": "Item", "fields": [{"name": "kind", "type": "string"}, {"name": "at", "type": "time"}]}]}
+    data = {"Item": [{"kind": "X", "at": "19:00"}, {"kind": "x", "at": "7:00 am"}, {"kind": "Y", "at": "06:00"}]}
+    result = run('at >= "12:00"', scope="Item", schema=schema, data=data, when='upper(kind) == "X"')
+    assert result == {"checked": 2, "failed": [{"index": 1, "path": "Item[1]"}], "not_applicable": 1}   # 7:00 am is before noon
+
+
 def test_when_limits_which_rows_are_checked():
     result = run("amount >= 100", scope="Line", when="quantity > 15")
     assert result == {"checked": 1, "failed": [], "not_applicable": 1}

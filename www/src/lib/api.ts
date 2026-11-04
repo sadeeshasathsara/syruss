@@ -123,6 +123,9 @@ export const api = {
     list: (workspaceId: string) => request<{ rules: Rule[]; template_checks: ValidationRule[] }>("/rules", { workspaceId }),
     get: (workspaceId: string, id: string) => request<Rule>(`/rules/${encodeURIComponent(id)}`, { workspaceId }),
     language: (workspaceId: string) => request<RuleLanguage>("/rules/language", { workspaceId }),
+    /** Rules Syruss thinks are worth having here; the first request for a template version asks it. */
+    ideas: (workspaceId: string) =>
+      request<{ status: "ready" | "thinking" | "none" | "no_template"; ideas: { text: string }[] }>("/rules/ideas", { method: "POST", workspaceId }),
     /** Compiles a rule and tries it on the saved records, without saving it. */
     check: (workspaceId: string, draft: RuleDraft) => request<RuleCheckResult>("/rules/check", { method: "POST", body: json(draft), workspaceId }),
     create: (workspaceId: string, body: RuleInput) => request<Rule>("/rules", { method: "POST", body: json(body), workspaceId }),

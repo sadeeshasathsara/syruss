@@ -5,8 +5,8 @@ COMMIT until you deal with it; each signal's message says what it found.
 
 ## Identity signals (the workspace graph)
 
-Committed records build a graph of who and what appears together (a person on a site's roster, a
-customer with a branch).
+Committed records build a graph of who and what appears together on the same documents (a name with
+the place or party it is usually listed with).
 
 - `identity_lookalike` (blocking): what you read has never appeared in this context, while a regular
   there is one character or a letter or two away: the classic misread. Zoom into the page again. If the

@@ -97,6 +97,13 @@ export function RuleEditor({ initial }: { initial?: Rule }) {
   const scoped = objects.find((o) => o.type === rule.scope);
   const singles = objects.filter((o) => !o.multiple);
   const many = objects.filter((o) => o.multiple);
+  // Placeholders made from this template's own fields, so the example always fits the documents at hand.
+  const numeric = (o?: (typeof objects)[number]) => o?.fields.find((f) => f.type === "number" || f.type === "integer");
+  const singleWithNumber = singles.find((o) => numeric(o));
+  const checkExample = scoped
+    ? (numeric(scoped) ? `${numeric(scoped)!.name} >= 0` : scoped.fields[0] ? `not isempty(${scoped.fields[0].name})` : "")
+    : singleWithNumber ? `${singleWithNumber.type}.${numeric(singleWithNumber)!.name} >= 0` : many[0] ? `count(${many[0].type}) > 0` : "";
+  const whenExample = scoped?.fields[0] ? `not isempty(${scoped.fields[0].name})` : "";
   const result = check.data;
   const problem = result?.problems[0];
   const fresh = draft.check === rule.check && draft.scope === rule.scope;
@@ -125,7 +132,7 @@ export function RuleEditor({ initial }: { initial?: Rule }) {
     <div className="grid grid-cols-1 items-start gap-5 @4xl:grid-cols-[minmax(0,1fr)_18rem]">
       <form className="flex min-w-0 flex-col gap-5" onSubmit={(e) => { e.preventDefault(); if (ready) save.mutate(); }}>
         <Field label="Name" help="People see it when the rule fails, and in the list of rules.">
-          {(id) => <Input id={id} value={rule.name} maxLength={120} onChange={(e) => set({ name: e.target.value })} placeholder="Lines add up to the total" />}
+          {(id) => <Input id={id} value={rule.name} maxLength={120} onChange={(e) => set({ name: e.target.value })} placeholder="What the rule checks, in your words" />}
         </Field>
 
         <Field label="What it checks" help={rule.scope === "document" ? "Once per document." : `Each ${humanize(rule.scope).toLowerCase()} row on its own: its fields are written by name.`}>
@@ -137,13 +144,13 @@ export function RuleEditor({ initial }: { initial?: Rule }) {
           )}
         </Field>
 
-        <Field label="The check" help="True when the record is right. For example: abs(sum(Line.amount) - Invoice.total) <= 0.01">
+        <Field label="The check" help="True when the record is right. Pick fields and functions from the list to add them.">
           {(id) => (
             <Textarea
               id={id} ref={checkRef} value={rule.check} rows={3} spellCheck={false} maxLength={600}
               onChange={(e) => set({ check: e.target.value })}
               className={cn("font-mono", problem?.part === "check" && fresh && "border-negative")}
-              placeholder={rule.scope === "document" ? "count(Guard) == Roster.guard_count" : "hours <= 16"}
+              placeholder={checkExample}
             />
           )}
         </Field>
@@ -153,7 +160,7 @@ export function RuleEditor({ initial }: { initial?: Rule }) {
             {(id) => (
               <div className="flex gap-2">
                 <Input id={id} value={rule.when} spellCheck={false} maxLength={600} className="font-mono" onChange={(e) => set({ when: e.target.value })}
-                       placeholder="not isempty(out_time)" />
+                       placeholder={whenExample} />
                 <Button type="button" variant="ghost" onClick={() => { setShowWhen(false); set({ when: "" }); }}>Remove</Button>
               </div>
             )}
@@ -172,7 +179,7 @@ export function RuleEditor({ initial }: { initial?: Rule }) {
             )}
           </Field>
           <Field label="Message" help="What people read when it fails.">
-            {(id) => <Input id={id} value={rule.message} maxLength={500} onChange={(e) => set({ message: e.target.value })} placeholder="The lines don't add up to the total." />}
+            {(id) => <Input id={id} value={rule.message} maxLength={500} onChange={(e) => set({ message: e.target.value })} placeholder="What is wrong, in your words" />}
           </Field>
         </div>
 

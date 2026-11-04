@@ -71,8 +71,8 @@ export default function AnalyticsIndex() {
       {can("agent.chat") && (
         <Panel title="Ask Syruss for another">
           <AskForScreen
-            placeholder="Describe the table you want, for example hours worked by each guard this month"
-            examples={["A full table of everything", "Total hours by person", "Show what looks unusual this month"]}
+            placeholder="Describe the table you want, in your own words"
+            examples={["A full table of everything", "Totals by month", "Show what looks unusual this month"]}
           />
         </Panel>
       )}

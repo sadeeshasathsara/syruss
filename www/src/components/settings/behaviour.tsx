@@ -114,7 +114,7 @@ export function InstructionsSettings() {
               maxLength={4000}
               disabled={!editable}
               className="min-h-48"
-              placeholder={"For example:\n- Site codes start with S and three digits.\n- Night shifts run from 19:00 to 07:00."}
+              placeholder={"For example:\n- Codes on these documents are a letter and three digits.\n- A blank in a column means the same as the row above."}
             />
             <div className="flex items-center gap-3">
               <Button type="submit" variant="primary" disabled={!editable || draft === null || save.isPending}>Save instructions</Button>

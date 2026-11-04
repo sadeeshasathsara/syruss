@@ -456,7 +456,7 @@ class DocumentStatusUpdate(BaseModel):
 
 
 class IdentifyBody(BaseModel):
-    details: Dict[str, Any] = Field(..., description='What the page says, shaped like a record: {"Roster": {"site": "S12", "date": "2026-07-22"}}')
+    details: Dict[str, Any] = Field(..., description='What the page says, shaped like a record: {"Head": {"name": "...", "date": "2026-07-22"}}')
 
 
 @router.post("/documents/{document_id}/identification")
@@ -773,7 +773,7 @@ async def validate_draft_record(body: RecordDraft, ws: Workspace = Depends(get_w
 @router.post("/records/query")
 async def query_records(body: record_query.RecordQuery, ws: Workspace = Depends(get_workspace)):
     """Rows of one template object across every saved record, filtered and grouped in one call
-    (e.g. the unique people who worked a day shift). The answer to list, count and filter questions."""
+    (e.g. the unique names on rows that match a condition). The answer to list, count and filter questions."""
     return await record_query.query(ws.db, template_id=ws.template_id, schema=ws.template.schema_definition,
                                     q=body, hidden=ws.hidden)
 
@@ -961,7 +961,7 @@ async def add_alias(entity_id: str, body: AliasBody, ws: Workspace = Depends(get
 
 @router.get("/graph/related")
 async def related(
-    object_type: str = Query(..., alias="object", description="The object type, e.g. Guard"),
+    object_type: str = Query(..., alias="object", description="The object type, as the template names it"),
     identifier: str = Query(..., alias="id", description="Its ID as written"),
     ws: Workspace = Depends(get_workspace),
 ):
@@ -1781,3 +1781,19 @@ async def agent_suggest_rule(body: RuleSuggestion, ws: Workspace = Depends(get_w
     await rule_service.announce(r, "suggested")
     await workspace_events.dispatch(ws.db)
     return rule_service.detail(r)
+
+
+class RuleIdeas(BaseModel):
+    ideas: List[str] = Field(..., min_length=1, max_length=rule_service.MAX_IDEAS,
+                             description="Rules worth having, each one sentence the way a person would say it")
+
+
+@router.post("/rules/ideas")
+async def agent_rule_ideas(body: RuleIdeas, ws: Workspace = Depends(get_workspace)):
+    """The ideas a rules.ideas run came up with: shown on the new-rule page as starting points (nothing is created)."""
+    event = await ws.db.get(AgentEventOutbox, ws.event_id)
+    if not event or event.event_type != "rules.ideas":
+        raise HTTPException(status_code=403, detail="Rule ideas are given only when you were asked for them.")
+    result = await rule_service.store_ideas(ws.db, ws.template, event.payload.get("version_id") or ws.template.active_version_id, body.ideas)
+    await ws.db.commit()
+    return result

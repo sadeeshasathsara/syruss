@@ -145,3 +145,33 @@ async def test_the_agent_only_suggests_rules_and_a_person_adds_them(client):
         "name": "Short shifts", "scope": "Guard", "check": "hours <= 14", "rationale": "Eddie asked for it."})).json()
     assert asked["status"] == "suggested" and asked["source_conversation_id"]
     assert (await client.post(f"{API}/rules/{asked['id']}/dismiss", headers=ws(tpl))).status_code == 204
+
+
+async def test_rule_ideas_are_thought_of_once_per_template_version(client):
+    from app.core.agent_token import mint_agent_token
+    from tests.conftest import outbox_events
+    tpl = await create_template(client)
+    viewer = person("usr_ideas_viewer", "Vera Viewer")
+    await join(client, tpl, viewer, "viewer")
+    # Someone who can only look doesn't wake Syruss.
+    assert (await client.post(f"{API}/rules/ideas", headers={**ws(tpl), **viewer})).json() == {"status": "none", "ideas": []}
+    assert await outbox_events(tpl, "rules.ideas") == []
+
+    # The first look by someone who writes rules asks Syruss; looking again while it thinks asks nothing more.
+    assert (await client.post(f"{API}/rules/ideas", headers=ws(tpl))).json()["status"] == "thinking"
+    assert (await client.post(f"{API}/rules/ideas", headers=ws(tpl))).json()["status"] == "thinking"
+    [event] = await outbox_events(tpl, "rules.ideas")
+
+    # Only that run may give ideas; they are cleaned and kept for the version it looked at.
+    assert (await client.post(f"{AGENT}/rules/ideas", headers=agent(tpl), json={"ideas": ["x"]})).status_code == 403
+    token = {"Authorization": f"Bearer {mint_agent_token(TENANT, tpl, event.id)}"}
+    given = await client.post(f"{AGENT}/rules/ideas", headers=token, json={"ideas": ["  Values  never repeat ", "values never repeat", "A total matches its parts"]})
+    assert given.status_code == 200, given.text
+    ready = (await client.post(f"{API}/rules/ideas", headers={**ws(tpl), **viewer})).json()
+    assert ready == {"status": "ready", "ideas": [{"text": "Values never repeat"}, {"text": "A total matches its parts"}]}
+
+    # A new template version asks again.
+    v2 = (await client.post(f"{API}/templates/{tpl}/versions", headers=ws(tpl), json={"schema_definition": SCHEMA, "version": "2"})).json()
+    await client.post(f"{API}/templates/{tpl}/versions/{v2['id']}/promote", headers=ws(tpl), json={"target_status": "ACTIVE"})
+    assert (await client.post(f"{API}/rules/ideas", headers=ws(tpl))).json()["status"] == "thinking"
+    assert len(await outbox_events(tpl, "rules.ideas")) == 2

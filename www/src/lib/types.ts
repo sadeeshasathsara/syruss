@@ -101,7 +101,7 @@ export interface DocumentItem {
   template_id: string;
   role: "DOCUMENT" | "SAMPLE";
   original_filename: string;
-  /** The identification key (e.g. "Colombo Port_2026-07-22") once the record has its values; show it before the file name. */
+  /** The identification key (e.g. "North Branch_2026-07-22") once the record has its values; show it before the file name. */
   display_name: string | null;
   content_type: string;
   file_size_bytes: number;

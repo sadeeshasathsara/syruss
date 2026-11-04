@@ -41,7 +41,7 @@ export default function RulesPage() {
       {rules.isLoading && <div className="flex flex-col gap-3">{[0, 1, 2].map((i) => <Bar key={i} className="h-16 w-full" />)}</div>}
       {rules.data && all.length === 0 && checks.length === 0 && (
         <Empty title="No rules yet" action={manage && <Button asChild variant="secondary"><Link href={href("template/rules/new")}>Add the first rule</Link></Button>}>
-          Rules catch misreads: lines that don&apos;t add up to the total, a shift longer than a day, an ID in the wrong format.
+          Rules catch misreads: values that should add up but don&apos;t, a written count that doesn&apos;t match, a value in the wrong format.
           Describe one in plain words and Syruss writes it, or write it yourself.
         </Empty>
       )}

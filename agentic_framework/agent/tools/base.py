@@ -39,6 +39,8 @@ class RunContext:
     screens_seen: Optional[List[Dict[str, Any]]] = None
     # Rules this run has checked and that compiled (scope, check, when): one is suggested only after it was tried
     checked_rules: set = field(default_factory=set)
+    # A rules.ideas run has given its ideas
+    ideas_given: bool = False
 
     @property
     def tenant_id(self) -> str:
