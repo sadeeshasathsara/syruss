@@ -2,4 +2,4 @@
 server: patch
 ---
 
-- Test environment: Keycloak runs from a production-mode image built in CI, with the realm and theme included
+- Test environment: CI builds every image (Postgres, Keycloak, its database, Kafka and MinIO as well as the apps) and the server only pulls from ghcr

@@ -31,9 +31,7 @@ services:
 
   minio:
     <<: *app
-    image: alpine/minio:latest-release
-    user: "0:0"
-    command: server /data --console-address ":9001"
+    image: ghcr.io/sadeeshasathsara/syruss/minio:test
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -45,22 +43,9 @@ services:
 
   kafka:
     <<: *app
-    image: apache/kafka:3.7.0
+    # Single-node KRaft broker built by CI from bridge/kafka (settings baked in)
+    image: ghcr.io/sadeeshasathsara/syruss/kafka:test
     environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_NUM_PARTITIONS: 3
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_HEAP_OPTS: "-Xms96m -Xmx256m"
       CLUSTER_ID: ${KAFKA_CLUSTER_ID}
     volumes:
       - kafka_data:/tmp/kraft-combined-logs
@@ -68,12 +53,11 @@ services:
 
   keycloak-db:
     <<: *app
-    image: postgres:16-alpine
+    image: ghcr.io/sadeeshasathsara/syruss/keycloak-db:test
     environment:
       POSTGRES_USER: ${KEYCLOAK_DB_USER}
       POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       POSTGRES_DB: keycloak
-    command: ["postgres", "-c", "shared_buffers=16MB", "-c", "max_connections=20"]
     volumes:
       - keycloak_db_data:/var/lib/postgresql/data
     mem_limit: 96m
