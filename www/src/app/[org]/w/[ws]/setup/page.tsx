@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, Textarea } from "@/components/ui/Field";
 import { ImageViewer, type ViewerImage } from "@/components/ui/ImageViewer";
 import { Dialog } from "@/components/ui/Sheet";
+import { DocumentKeyEditor } from "@/components/workspace/DocumentKeyEditor";
 import { normalizeSchema, SchemaEditor } from "@/components/workspace/SchemaEditor";
 import { api } from "@/lib/api";
 import type { TemplateSchema } from "@/lib/types";
@@ -34,6 +35,7 @@ export default function TemplateSetup() {
 
   const samples = useQuery({ queryKey: ["samples", wid], queryFn: () => api.documents.samples(wid) });
   const proposals = useQuery({ queryKey: ["proposals", wid, "PENDING"], queryFn: () => api.proposals.list(wid) });
+  const published = useQuery({ queryKey: ["template", wid], queryFn: () => api.template.get(wid), enabled: workspace.status !== "draft" });
   const questions = useQuery({ queryKey: ["questions", wid, "OPEN"], queryFn: () => api.questions.list(wid) });
   const history = useQuery({ queryKey: ["proposals", wid, "ALL"], queryFn: () => api.proposals.list(wid, "ALL") });
   const proposal = proposals.data?.find((p) => p.proposal_type === "TEMPLATE_CHANGE");
@@ -190,6 +192,9 @@ export default function TemplateSetup() {
           </div>
           {publish.error && <p className="text-body text-negative">{publish.error.message}</p>}
         </div>
+      ) : !awaiting && published.data?.active_version_id ? (
+        // No proposal pending: the published template's document key can still be changed here.
+        <DocumentKeyEditor key={published.data.active_version_id} schema={published.data.schema_definition} />
       ) : awaiting ? (
         // The proposal's own layout, with bars where its objects and fields will be.
         <div className="flex flex-col gap-4 rounded-sheet bg-well p-2 sm:p-3" aria-busy>

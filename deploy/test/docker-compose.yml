@@ -1,0 +1,165 @@
+# The test environment. Only pulls: every Syruss image is built by CI and published to ghcr
+# (see .github/workflows/package.yml), nothing is built on the server.
+#
+# Secrets are in env/*.env on the server (never in git). Run from this folder:
+#   docker compose --env-file env/stack.env pull && docker compose --env-file env/stack.env up -d
+# The limits below keep the whole stack inside a 1 GB machine with swap.
+name: syruss-test
+
+x-app: &app
+  restart: unless-stopped
+  pull_policy: always
+
+services:
+  postgres:
+    <<: *app
+    # Postgres 16 with pgvector and Apache AGE, built by CI from bridge/postgres
+    image: ghcr.io/sadeeshasathsara/syruss/postgres:test
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    command: ["postgres", "-c", "shared_preload_libraries=age", "-c", "shared_buffers=48MB", "-c", "max_connections=40", "-c", "work_mem=4MB"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    <<: *app
+    image: alpine/minio:latest-release
+    user: "0:0"
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"
+    volumes:
+      - minio_data:/data
+    mem_limit: 160m
+
+  kafka:
+    <<: *app
+    image: apache/kafka:3.7.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_HEAP_OPTS: "-Xms96m -Xmx256m"
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID}
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+    mem_limit: 448m
+
+  keycloak-db:
+    <<: *app
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${KEYCLOAK_DB_USER}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      POSTGRES_DB: keycloak
+    command: ["postgres", "-c", "shared_buffers=16MB", "-c", "max_connections=20"]
+    volumes:
+      - keycloak_db_data:/var/lib/postgresql/data
+    mem_limit: 96m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    <<: *app
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm", "--http-port=8080"]
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_HOSTNAME: ${KC_HOSTNAME}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HEALTH_ENABLED: "true"
+      JAVA_OPTS_KC_HEAP: "-Xms64m -Xmx320m"
+      SYRUSS_SITE_URL: ${SYRUSS_SITE_URL}
+      SYRUSS_APP_URL: ${SYRUSS_APP_URL}
+      SYRUSS_SITE_CLIENT_SECRET: ${SYRUSS_SITE_CLIENT_SECRET}
+      SYRUSS_APP_CLIENT_SECRET: ${SYRUSS_APP_CLIENT_SECRET}
+      GOOGLE_CLIENT_ID: unset
+      GOOGLE_CLIENT_SECRET: unset
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak/realm-syruss.json:/opt/keycloak/data/import/realm-syruss.json:ro
+      - ./keycloak/themes/syruss:/opt/keycloak/themes/syruss:ro
+    mem_limit: 512m
+
+  server:
+    <<: *app
+    image: ghcr.io/sadeeshasathsara/syruss/server:test
+    env_file: env/server.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      minio:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    mem_limit: 256m
+
+  agent:
+    <<: *app
+    image: ghcr.io/sadeeshasathsara/syruss/agent:test
+    env_file: env/agent.env
+    depends_on:
+      - server
+      - kafka
+    mem_limit: 256m
+
+  www:
+    <<: *app
+    image: ghcr.io/sadeeshasathsara/syruss/www:test
+    env_file: env/www.env
+    environment:
+      NODE_OPTIONS: --max-old-space-size=128
+    ports:
+      - "3000:3000"
+    mem_limit: 192m
+
+  site:
+    <<: *app
+    image: ghcr.io/sadeeshasathsara/syruss/site:test
+    env_file: env/site.env
+    environment:
+      NODE_OPTIONS: --max-old-space-size=128
+    ports:
+      - "3100:3100"
+    mem_limit: 160m
+
+volumes:
+  postgres_data:
+  minio_data:
+  kafka_data:
+  keycloak_db_data:

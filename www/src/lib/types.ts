@@ -59,10 +59,17 @@ export interface ValidationRule {
   [key: string]: unknown;
 }
 
+export interface DocumentIdentification {
+  parts: { object: string; field: string }[];
+  separator?: string;
+}
+
 export interface TemplateSchema {
   document_type?: string;
   description?: string;
   objects: TemplateObject[];
+  /** Which one-per-document fields name a document to people. */
+  identification?: DocumentIdentification;
   validation_rules?: ValidationRule[];
 }
 
@@ -94,6 +101,8 @@ export interface DocumentItem {
   template_id: string;
   role: "DOCUMENT" | "SAMPLE";
   original_filename: string;
+  /** The identification key (e.g. "Colombo Port_2026-07-22") once the record has its values; show it before the file name. */
+  display_name: string | null;
   content_type: string;
   file_size_bytes: number;
   status: DocumentStatus;
@@ -1122,7 +1131,7 @@ export interface DestinationInfo {
 
 export interface MappingSources {
   objects: { type: string; multiple: boolean; fields: { name: string; type: string }[] }[];
-  documents: { id: string; filename: string; external_id: string | null }[];
+  documents: { id: string; filename: string; display_name?: string | null; external_id: string | null }[];
   functions: { name: string; usage: string }[];
 }
 
@@ -1143,7 +1152,7 @@ export interface DeliveryRow {
   created_at: string;
   updated_at: string;
   destination: { id: string; name: string; kind: string; status: string } | null;
-  document: { id: string; filename: string; external_id: string | null; is_test: boolean } | null;
+  document: { id: string; filename: string; display_name?: string | null; external_id: string | null; is_test: boolean } | null;
 }
 
 export interface DeliveryDetail extends DeliveryRow {
@@ -1168,7 +1177,7 @@ export interface ConnectionsOverview {
   state: "ok" | "attention" | "problem";
   receive: { channels: number; active: number; accepted_24h: number; rejected_24h: number };
   publish: { destinations: number; active: number; paused: number; delivered_24h: number; waiting: number; held: number; dead: number };
-  held: { delivery_id: string; reason: string | null; destination: string; document: { id: string; filename: string; external_id: string | null }; since: string }[];
+  held: { delivery_id: string; reason: string | null; destination: string; document: { id: string; filename: string; display_name?: string | null; external_id: string | null }; since: string }[];
   held_reasons: { reason: string; count: number }[];
   problems: { kind: string; title: string; detail: string | null; destination_id?: string; delivery_id?: string; channel_id?: string; slug?: string; automatic?: boolean }[];
   failing: number;

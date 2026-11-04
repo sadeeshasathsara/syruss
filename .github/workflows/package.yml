@@ -54,14 +54,16 @@ jobs:
         id: apply
         run: |
           python scripts/changeset.py apply --branch "${{ github.ref_name }}"
+          # Versions of every service in dev, test and main, shown on the run's summary page
+          python scripts/changeset.py table >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Commit CHANGELOG and push
+      - name: Commit _changelog and push
         if: steps.apply.outputs.has_releases == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md .changeset/
-          git commit -m "chore(release): update CHANGELOG and apply changesets [skip ci]" || echo "No changes to commit"
+          git add _changelog/ .changeset/
+          git commit -m "chore(release): update _changelog and apply changesets [skip ci]" || echo "No changes to commit"
           git push origin "${{ github.ref_name }}"
 
   # ----------------------------------------------------------------------------
@@ -232,6 +234,8 @@ jobs:
           push: true
           build-args: |
             NEXT_PUBLIC_APP_VERSION=${{ env.VERSION }}
+            NEXT_PUBLIC_SITE_URL=${{ github.ref_name == 'test' && vars.TEST_SITE_URL || 'http://localhost:3100' }}
+            NEXT_PUBLIC_ACCOUNT_URL=${{ github.ref_name == 'test' && vars.TEST_ACCOUNT_URL || 'http://localhost:8080/realms/syruss/account' }}
           tags: |
             ghcr.io/${{ github.repository }}/www:${{ env.ENV_TAG }}
             ghcr.io/${{ github.repository }}/www:v${{ env.VERSION }}
@@ -353,3 +357,70 @@ jobs:
             ghcr.io/${{ github.repository }}/admin:v${{ env.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ----------------------------------------------------------------------------
+  # Database image (Postgres + pgvector + Apache AGE), built here so servers only pull it
+  # ----------------------------------------------------------------------------
+  release-postgres:
+    name: Package Postgres (pgvector + AGE)
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./bridge/postgres
+          push: true
+          tags: ghcr.io/${{ github.repository }}/postgres:${{ github.ref_name == 'main' && 'latest' || github.ref_name }}
+          cache-from: type=gha,scope=postgres
+          cache-to: type=gha,mode=max,scope=postgres
+
+  # ----------------------------------------------------------------------------
+  # Test environment: after the images are published, tell the server (deploy/test/hook.py) to pull them.
+  # Only the services released in this run are pulled. Nothing is built there.
+  # Needs the repository secrets TEST_DEPLOY_URL (http://<server>:9100/deploy) and TEST_DEPLOY_SECRET.
+  # ----------------------------------------------------------------------------
+  deploy-test:
+    name: Tell the test server to pull
+    needs: [prepare-release, release-server, release-agent, release-www, release-site, release-postgres]
+    # Runs even when some services had no release (their jobs are skipped), but not when one failed.
+    if: ${{ !cancelled() && github.ref_name == 'test' && !contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-test
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Call the deploy hook
+        env:
+          URL: ${{ secrets.TEST_DEPLOY_URL }}
+          SECRET: ${{ secrets.TEST_DEPLOY_SECRET }}
+          SERVER: ${{ needs.release-server.result }}
+          AGENT: ${{ needs.release-agent.result }}
+          WWW: ${{ needs.release-www.result }}
+          SITE: ${{ needs.release-site.result }}
+          POSTGRES: ${{ needs.release-postgres.result }}
+        run: |
+          services=""
+          [ "$SERVER" = success ] && services="$services server"
+          [ "$AGENT" = success ] && services="$services agent"
+          [ "$WWW" = success ] && services="$services www"
+          [ "$SITE" = success ] && services="$services site"
+          [ "$POSTGRES" = success ] && services="$services postgres"
+          list=$(printf '%s\n' $services | jq -R . | jq -sc .)
+          body=$(jq -nc --argjson services "$list" --arg compose "$(base64 -w0 deploy/test/docker-compose.yml)" '{services: $services, compose: $compose}')
+          stamp=$(date +%s)
+          sig=$(printf '%s.%s' "$stamp" "$body" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')
+          curl --fail --show-error --silent --max-time 30 -X POST "$URL" \
+            -H "X-Syruss-Timestamp: $stamp" -H "X-Syruss-Signature: $sig" -H "Content-Type: application/json" \
+            --data "$body"
+          echo " asked the server to pull:$services"

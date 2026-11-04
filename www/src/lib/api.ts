@@ -168,6 +168,9 @@ export const api = {
     /** Sets the agent's pending proposal aside to start the design over. */
     withdrawProposal: (workspaceId: string) =>
       request<{ proposals: number; questions_closed: number }>(`/templates/${workspaceId}/proposal/withdraw`, { method: "POST", workspaceId }),
+    /** Changes which one-per-document fields name a document (no parts clears it). Every document is renamed at once. */
+    setIdentification: (workspaceId: string, parts: { object: string; field: string }[], separator: string) =>
+      request<Template>(`/templates/${workspaceId}/identification`, { method: "PUT", body: json({ parts, separator }), workspaceId }),
     /** Publishes the schema as the active version (first publish or a direct edit). */
     publish: (workspaceId: string, name: string, schema: TemplateSchema, isFirst: boolean) =>
       isFirst

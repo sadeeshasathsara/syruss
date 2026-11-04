@@ -12,6 +12,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
 from app.models.extraction_log import ExtractionLogEntry
+from app.services.document_key import labels_for
 from app.services.ui_events import publish_ui_event
 
 logger = logging.getLogger("core.extraction_log")
@@ -64,6 +65,9 @@ async def page(
         stmt = stmt.where(ExtractionLogEntry.document_id == document_id)
     rows: List[ExtractionLogEntry] = list((await db.execute(stmt.order_by(ExtractionLogEntry.seq.desc()).limit(limit + 1))).scalars().all())
     items = [entry_dict(e) for e in rows[:limit]]
+    labels = await labels_for(db, (i["document_id"] for i in items))
+    for i in items:  # the document's current name, so a changed identification key shows on older entries too
+        i["document_name"] = labels.get(i["document_id"]) or i["document_name"]
     return {"items": items, "next_before": items[-1]["seq"] if len(rows) > limit and items else None}
 
 
