@@ -1,8 +1,9 @@
 # Template rules
 
-Rules are checks that run on every record after a document is read: "the lines add up to the total", "a shift is at most
-16 hours", "an invoice number looks like INV-000123". They live beside the template (Template → Rules), not in its
-versions, so adding or changing one does not need a new version.
+Rules are checks that run on every record after a document is read, whatever the documents are: values that must add
+up or follow from each other, a written count that must match, a format every value follows. They are written over the
+template's own objects and fields, and live beside the template (Template → Rules), not in its versions, so adding or
+changing one does not need a new version.
 
 | Where | What |
 |---|---|
@@ -30,14 +31,15 @@ are listed read-only on the Rules tab.
 
 ## The language
 
-Python's expression syntax, with names that are template paths:
+Python's expression syntax, with names that are template paths. The object and field names below are placeholders:
 
 ```
-scope Line       amount == quantity * price
-scope document   abs(sum(Line.amount) - Invoice.total) <= 0.01
-scope document   count(Guard) == Roster.guard_count
-scope Shift      when: not isempty(guard)    check: guard.employee_no == guard_no
-scope Invoice    matches(number, "INV-[0-9]{6}") and date <= today()
+scope Item        a == b * c                              a row's value follows from its other values
+scope document    abs(sum(Item.a) - Head.total) <= 0.01   rows add up to a total written once
+scope document    count(Item) == Head.count               the number of rows matches a written count
+scope Item        when: b == "X"    check: a >= "12:00"   a condition that holds for some rows only
+scope Item        party.a == a                            a row agrees with the thing it refers to
+scope Head        matches(a, "[A-Z]{3}-[0-9]{6}")         every value follows a format
 ```
 
 In a row scope, bare names are that row's fields; `Object.field` reads a one-per-document object, or (inside an

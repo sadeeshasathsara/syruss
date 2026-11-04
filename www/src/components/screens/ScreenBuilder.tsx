@@ -160,7 +160,7 @@ function BuilderForm({ catalogue, starters, initial }: { catalogue: ScreenCatalo
         <div className="flex min-w-0 flex-col gap-4">
           <Panel title="About this screen">
             <div className="flex flex-col gap-3">
-              <Field label="Name">{(id) => <Input id={id} value={name} maxLength={120} onChange={(e) => setName(e.target.value)} placeholder="Overtime by guard" />}</Field>
+              <Field label="Name">{(id) => <Input id={id} value={name} maxLength={120} onChange={(e) => setName(e.target.value)} placeholder="What a colleague would call it" />}</Field>
               <Field label="What it is for (optional)">{(id) => <Textarea id={id} rows={2} maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} />}</Field>
               <Field label="Rows are" help={initial ? "Fixed once a screen is saved; build a new one for different rows." : "Each row of this kind, from every saved document."}>
                 {(id) => (

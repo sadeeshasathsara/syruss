@@ -41,6 +41,8 @@ TOOLSETS: Dict[str, Sequence[str]] = {
                                        "update_entity", "add_entity_alias", "propose_entity_merge", "propose_template_change") + RULE_TOOLS,
     "template.samples_added": WORK_CORE + ("list_documents", "validate_record", "propose_template_change") + RULE_TOOLS,
     "knowledge.source_added": WORK_CORE + ("list_documents", "inspect_source", "propose_source_mapping", "propose_template_change"),
+    # Ideas for the new-rule page: look at the template and the records, nothing else.
+    "rules.ideas": ("get_workspace", "query_records", "list_rules", "propose_rule_ideas"),
     "schedule.insights": ("get_workspace", "list_documents", "get_document", "query_records", "search_past_records", "review_history", "recall",
                           "calculate", "read_guide", "list_screens", "screen_catalogue", "preview_screen", "run_screen", "save_screen"),
     "schedule.reflect": WORK_CORE + ("list_documents", "validate_record", "propose_template_change", "propose_entity_merge",

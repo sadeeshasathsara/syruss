@@ -3,11 +3,14 @@ The rule language: checks that run on a record after the agent has read a docume
 
 A rule is a yes/no question about one record, written like a spreadsheet formula:
 
-    scope Shift       hours_between(start, end) <= 16
-    scope document    abs(sum(Line.amount) - Invoice.total) <= 0.01
-    scope document    count(Guard) == Roster.guard_count
-    scope Shift       when: not isempty(guard)    check: guard.employee_no == guard_no
-    scope Invoice     matches(number, "INV-[0-9]{6}") and date <= today()
+    scope Item        a == b * c                              a row's value follows from its other values
+    scope document    abs(sum(Item.a) - Head.total) <= 0.01   rows add up to a total written once
+    scope document    count(Item) == Head.count               the number of rows matches a written count
+    scope Item        when: b == "X"    check: a >= "12:00"   a condition that holds for some rows only
+    scope Item        party.a == a                            a row agrees with the thing it refers to
+    scope Head        matches(a, "[A-Z]{3}-[0-9]{6}")         every value follows a format
+
+The names are placeholders: a rule uses the template's own objects and fields, whatever the documents are.
 
 The syntax is Python's expression syntax, so it is parsed by Python's own parser (`ast`), but it is never run by Python.
 Only the elements below are accepted; anything else (attribute access that is not a template path, subscripts, lambdas,
@@ -18,7 +21,7 @@ exponents, string sizes) and `matches` uses RE2, which runs in linear time, so a
 
 Names
   scope <Object>    a bare name is a field of the row being checked (each row of <Object> is checked on its own)
-  Object.field      a field of a one-per-document object; of a many-object only inside an aggregate: sum(Line.amount)
+  Object.field      a field of a one-per-document object; of a many-object only inside an aggregate: sum(Item.a)
   ref.field         follows a field that `resolves_to` another object to that row in the same record
   Object            all rows of an object, for count(Object), all(Object, condition), any(...), count_if(...)
   true, false, blank
@@ -117,16 +120,16 @@ SCALAR: Dict[str, Signature] = {
 # Aggregates read many rows. Their first argument is `Object.field` (values) or `Object` (rows).
 AGGREGATES: Dict[str, Tuple[str, str, str]] = {
     # name: (what the first argument is, result type, usage)
-    "sum": ("values", NUMBER, "sum(Line.amount)"),
-    "avg": ("values", NUMBER, "avg(Line.amount)"),
-    "min_of": ("values", ANY, "min_of(Shift.start) the smallest value"),
-    "max_of": ("values", ANY, "max_of(Shift.end) the largest value"),
-    "count": ("rows_or_values", NUMBER, "count(Line) rows, or count(Line.amount) values that are not blank"),
-    "count_distinct": ("values", NUMBER, "count_distinct(Guard.employee_no)"),
-    "unique": ("values", BOOL, "unique(Guard.employee_no) no value appears twice"),
-    "count_if": ("rows_cond", NUMBER, "count_if(Line, amount > 0) rows where the condition holds"),
-    "all": ("rows_cond", BOOL, "all(Line, amount > 0) every row"),
-    "any": ("rows_cond", BOOL, "any(Line, amount > 1000) at least one row"),
+    "sum": ("values", NUMBER, "sum(Object.field) the total of a field over the rows"),
+    "avg": ("values", NUMBER, "avg(Object.field) the average"),
+    "min_of": ("values", ANY, "min_of(Object.field) the smallest value"),
+    "max_of": ("values", ANY, "max_of(Object.field) the largest value"),
+    "count": ("rows_or_values", NUMBER, "count(Object) rows, or count(Object.field) values that are not blank"),
+    "count_distinct": ("values", NUMBER, "count_distinct(Object.field) how many different values"),
+    "unique": ("values", BOOL, "unique(Object.field) no value appears twice"),
+    "count_if": ("rows_cond", NUMBER, "count_if(Object, condition) rows where the condition holds"),
+    "all": ("rows_cond", BOOL, "all(Object, condition) true for every row"),
+    "any": ("rows_cond", BOOL, "any(Object, condition) true for at least one row"),
 }
 
 
@@ -337,7 +340,7 @@ def _single_row(obj: str) -> Callable[[Env], Optional[Dict[str, Any]]]:
 
 
 def _reference(scope: Scope, base: Node, spec: Dict[str, Any], attr: str, node: ast.Attribute) -> Node:
-    """`guard.name`: the row of the referenced object whose identity is the value of `guard`."""
+    """`ref.field`: the row of the referenced object whose identity is the value of `ref`."""
     target = spec["resolves_to"]
     ident = scope.objects[target]["identity"] or {}
     id_field = ident.get("id_field")
@@ -808,7 +811,7 @@ def compile_rule(rule: Dict[str, Any], schema: Optional[Dict[str, Any]]) -> Comp
             raise RuleError(f"The {part} must be a yes/no question, but this gives {TYPE_WORDS.get(node.type, node.type)}.",
                             code="not_boolean", part=part,
                             explanation="A rule passes when its check is true and fails when it is false.",
-                            hint="Compare it with something, for example: ... <= 16, or ... == Invoice.total.")
+                            hint="Compare it with something, for example: ... >= 0, or ... == Object.field.")
         return node
 
     check = build("check", rule.get("check") or "")

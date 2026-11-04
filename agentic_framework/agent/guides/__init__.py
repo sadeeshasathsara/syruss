@@ -29,6 +29,7 @@ FOR_TASK: Dict[str, str] = {
     "knowledge.source_added": "reference-data",
     "schedule.reflect": "reflection",
     "schedule.insights": "screens",
+    "rules.ideas": "rules",
 }
 
 

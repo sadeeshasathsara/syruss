@@ -44,22 +44,24 @@ function TemplateVersions() {
       {showHistory ? null : !schema ? (
         <div className="flex flex-col gap-3">{[0, 1, 2].map((i) => <Bar key={i} className="h-5 w-full" />)}</div>
       ) : (
-        <div className="grid grid-cols-1 items-start gap-5 @4xl:grid-cols-2">
+        // Each object takes the full width (cards side by side left gaps under the shorter one); on wide screens its
+        // fields flow into columns instead.
+        <div className="flex flex-col gap-5">
           {schema.objects.map((o) => (
             <Panel key={o.type} title={o.type} aside={o.multiple === false ? "One per document" : "Many per document"}>
               {o.description && <p className="mb-3 text-body text-muted">{o.description}</p>}
-              <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4">
+              <dl className="grid grid-cols-1 gap-x-8 @3xl:grid-cols-2 @6xl:grid-cols-3">
                 {o.fields.map((f) => {
                   const field: TemplateField = typeof f === "string" ? { name: f } : f;
                   const isIdentity = o.identity && [o.identity.id_field, o.identity.label_field].includes(field.name);
                   return (
-                    <div key={fieldName(f)} className="contents">
-                      <dt className="flex items-center gap-2 border-t border-rule py-2 text-body text-ink">
+                    <div key={fieldName(f)} className="flex min-w-0 items-center justify-between gap-4 border-t border-rule py-2">
+                      <dt className="flex min-w-0 flex-wrap items-center gap-2 text-body text-ink">
                         {humanize(field.name)}
                         {field.required && <span className="text-meta text-muted">required</span>}
                         {isIdentity && <Pill tone="accent">identity</Pill>}
                       </dt>
-                      <dd className="border-t border-rule py-2 text-right text-body text-muted">{TYPE_LABEL[field.type ?? "string"] ?? field.type}</dd>
+                      <dd className="flex-none text-right text-body text-muted">{TYPE_LABEL[field.type ?? "string"] ?? field.type}</dd>
                     </div>
                   );
                 })}
@@ -77,7 +79,7 @@ function TemplateVersions() {
             {(schema.validation_rules?.length ?? 0) > 0
               ? `${schema.validation_rules!.length} check${schema.validation_rules!.length === 1 ? "" : "s"} come with this version. `
               : ""}
-            Rules check every record after its document is read: totals that add up, shifts that aren&apos;t too long, IDs in the right format.
+            Rules check every record after its document is read, so misreads are caught before a record is saved.
           </p>
         </Panel>
       )}

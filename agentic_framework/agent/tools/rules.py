@@ -1,9 +1,9 @@
 """
-Rules: checks in the rule language that run on every record after a document is read ("the lines add up to the total").
+Rules: checks in the rule language that run on every record after a document is read.
 You can list them, try one on the saved records, and suggest one; a person adds it. The platform compiles every rule
 against the template and runs it, so a rule says the same thing whoever wrote it.
 """
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, Field
 from agentic_framework.agent.tools.base import NoArgs, RunContext, ToolOutcome, dump, tool
 
@@ -23,7 +23,7 @@ async def list_rules(ctx: RunContext, _: NoArgs) -> ToolOutcome:
 
 class RuleArgs(BaseModel):
     scope: str = Field("document", description='"document" for a rule about the whole record, or an object type to check each of its rows')
-    check: str = Field(..., description="A yes/no expression in the rule language, e.g. abs(sum(Line.amount) - Invoice.total) <= 0.01")
+    check: str = Field(..., description="A yes/no expression in the rule language over this template's objects and fields (see the rules guide)")
     when: str = Field("", description="Optional: check only rows (or records) where this is true")
     severity: str = Field("error", description="error: a failing record can't be committed; warning: it is only reported")
 
@@ -39,9 +39,9 @@ async def check_rule(ctx: RunContext, a: RuleArgs) -> ToolOutcome:
 
 
 class SuggestArgs(RuleArgs):
-    name: str = Field(..., description="A short name people recognise, e.g. 'Lines add up to the total'")
+    name: str = Field(..., description="A short name people recognise, in their words")
     description: str = Field("", description="What the rule checks, in a sentence")
-    message: str = Field("", description="What people are told when it fails, e.g. 'The lines don't add up to the invoice total.'")
+    message: str = Field("", description="What people are told when it fails: what is wrong, in their words")
     rationale: str = Field(..., description="Why it is worth having: what you saw, on how many documents, and what it did on check_rule")
     source_document_id: Optional[str] = Field(None, description="The document that made you think of it, if any")
 
@@ -53,4 +53,16 @@ async def suggest_rule(ctx: RunContext, a: SuggestArgs) -> ToolOutcome:
     if _key(a.scope, a.check, a.when) not in ctx.checked_rules:
         return ToolOutcome(UNCHECKED)
     result = await ctx.api.post("/rules/suggest", a.model_dump())
+    return ToolOutcome(dump(result))
+
+
+class IdeasArgs(BaseModel):
+    ideas: List[str] = Field(..., description="Up to five rule ideas, each one plain-English sentence specific to this template")
+
+
+@tool("propose_rule_ideas", "Give your ideas for rules worth having in this workspace. They are shown on the new-rule page as "
+      "starting points a person can pick; nothing is created.", IdeasArgs)
+async def propose_rule_ideas(ctx: RunContext, a: IdeasArgs) -> ToolOutcome:
+    result = await ctx.api.post("/rules/ideas", {"ideas": [i for i in a.ideas if i.strip()][:6]})
+    ctx.ideas_given = True
     return ToolOutcome(dump(result))

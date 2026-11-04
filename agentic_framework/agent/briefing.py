@@ -124,6 +124,14 @@ async def _what_happened(ctx: RunContext, workspace: Dict[str, Any]) -> str:
                 f"\nNotes: {p.get('notes') or '(none)'}\nDetails: {_j({k: v for k, v in p.items() if k not in ('proposal_id', 'proposal_type', 'decision', 'notes')})}")
     if t == "schedule.reflect":
         return await _reflection(ctx, p)
+    if t == "rules.ideas":
+        return ("Someone opened the new-rule page. Give up to five ideas for rules worth having in THIS workspace, as starting points "
+                "they can click: look at the template (get_workspace) and the values the saved records really use (query_records with "
+                "distinct), and skip what list_rules already has. Each idea is one plain-English sentence the way a person here would "
+                "say it: fields named as people know them and the values the records really use, never an expression or an object "
+                "name. Every idea must come from this template and its records: values that must add up or follow from each other, "
+                "a count written on the page, a format every value follows, a value that can't repeat, a limit no value goes past. "
+                "Then call propose_rule_ideas once. Write no rules and change nothing.")
     if t == "schedule.insights":
         return ("Scheduled look at the records, nobody asked a question. Study what has been saved (query_records, preview_screen) and the "
                 "screens that already exist (list_screens), and suggest up to three NEW analytics screens worth having with save_screen, each "

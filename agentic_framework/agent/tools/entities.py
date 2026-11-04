@@ -83,7 +83,7 @@ class RelatedArgs(BaseModel):
 
 
 @tool("related", "The workspace graph around one thing, from committed records: what it appears with, most often first "
-      "(where someone usually works, who is usually on a site), and others of its kind that share those contexts. "
+      "(what it is usually listed with, on which documents), and others of its kind that share those contexts. "
       "Use it to judge an unfamiliar or doubtful identity.", RelatedArgs)
 async def related(ctx: RunContext, a: RelatedArgs) -> ToolOutcome:
     return ToolOutcome(dump(await ctx.api.get("/graph/related", object=a.object_type, id=a.id)))

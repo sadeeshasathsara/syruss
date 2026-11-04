@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
-from app.core.permissions import Access, require
+from app.core.permissions import Access, get_access, require
 from app.core.scope import TemplateScope, get_template_scope
 from app.services import rule_service
 from app.services.rule_engine import schema_rules
@@ -36,6 +36,16 @@ async def list_rules(db: AsyncSession = Depends(get_db_session), scope: Template
 async def language(scope: TemplateScope = Depends(get_template_scope)):
     """What a rule can be written with: the template's objects and fields, functions, aggregates and operators."""
     return {**language_help(), **catalogue(scope.template.schema_definition)}
+
+
+@router.post("/ideas")
+async def rule_ideas(db: AsyncSession = Depends(get_db_session), scope: TemplateScope = Depends(get_template_scope),
+                     access: Access = Depends(get_access)):
+    """Rules worth having for this template, thought of by Syruss once per template version (the new-rule page's starting points).
+    The first request for a version wakes Syruss (for people who can write rules); until it answers the status is "thinking"."""
+    result = await rule_service.ideas(db, scope.template, may_ask=access.can("template.publish"))
+    await db.commit()
+    return result
 
 
 @router.post("/check")

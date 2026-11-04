@@ -6,12 +6,12 @@ from agentic_framework.agent.tools.memory import save_memory
 
 
 class QueryRecordsArgs(BaseModel):
-    object_type: str = Field(..., description="The template object whose rows you want (e.g. the people on a roster)")
+    object_type: str = Field(..., description="The template object whose rows you want")
     where_json: str = Field("[]", description='JSON list of conditions: {"field", "op", "value"}. field is a field of the '
-                            'rows, or "Object.field" of a one-per-document object (e.g. the roster date). op: eq, ne, '
+                            'rows, or "Object.field" of a one-per-document object (e.g. the document\'s date). op: eq, ne, '
                             'contains, in (value is a list), gte, lte, empty, not_empty. Case-insensitive.')
     distinct: List[str] = Field(default_factory=list, description="Group by these fields: unique combinations with counts "
-                                "(e.g. the employee number and name, for a list of people)")
+                                "(e.g. an identifying field and a name field, for a list of who or what appears)")
     fields: List[str] = Field(default_factory=list, description="Only these fields in the returned rows (default: all)")
     limit: int = 100
     include_pending_review: bool = False
@@ -19,7 +19,7 @@ class QueryRecordsArgs(BaseModel):
 
 @tool("query_records", "Answer list, count and filter questions across every saved record in one call: rows of one "
       "template object matching conditions, optionally grouped into unique combinations. Use this, not get_document one "
-      "by one and never page images, for questions like 'who worked the day shift' or 'which documents mention S12'. If "
+      "by one and never page images, for questions like 'which rows have this value' or 'which documents mention X'. If "
       "nothing matches it shows the values the documents actually use, so you can adjust the filter.", QueryRecordsArgs)
 async def query_records(ctx: RunContext, a: QueryRecordsArgs) -> ToolOutcome:
     body = {"object": a.object_type, "where": json_arg(a.where_json, "where_json", []), "distinct": a.distinct,
@@ -28,7 +28,7 @@ async def query_records(ctx: RunContext, a: QueryRecordsArgs) -> ToolOutcome:
 
 
 class SearchRecordsArgs(BaseModel):
-    text: str = Field(..., description="A value to look for, e.g. a name, an ID, a site number")
+    text: str = Field(..., description="A value to look for, e.g. a name, an ID, a code")
     limit: int = 10
 
 
