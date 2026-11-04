@@ -12,6 +12,11 @@
 
 ## [2026-11-04] - Release via dev
 
+### server (0.3.5-dev.1)
+- Test environment: give the server container a healthcheck that tolerates a busy small server
+
+## [2026-11-04] - Release via dev
+
 ### server (0.3.4-dev.1)
 - Release commits no longer carry [skip ci], so checks run on promotion pull requests
 
