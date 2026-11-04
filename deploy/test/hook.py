@@ -22,7 +22,8 @@ from pathlib import Path
 SECRET = os.environ["HOOK_SECRET"].encode()
 FOLDER = Path(os.environ.get("DEPLOY_DIR", str(Path.home() / "syruss-deploy")))
 PORT = int(os.environ.get("HOOK_PORT", "9100"))
-SERVICES = {"postgres", "server", "agent", "www", "site"}
+HOST = os.environ.get("HOOK_HOST", "127.0.0.1")  # the reverse proxy (Caddy) is the only way in
+SERVICES = {"postgres", "keycloak", "keycloak-db", "kafka", "minio", "server", "agent", "www", "site"}
 MAX_BODY = 64 * 1024
 MAX_SKEW_SECONDS = 300
 
@@ -46,21 +47,20 @@ def compose(*args: str) -> int:
 
 def deploy(services: list, compose_file: bytes | None) -> None:
     with lock:
-        changed = False
         if compose_file:
             target = FOLDER / "docker-compose.yml"
             if not target.exists() or target.read_bytes() != compose_file:
                 target.write_bytes(compose_file)
-                changed = True
                 log("compose file updated")
         names = services or sorted(SERVICES)
         log(f"deploying: {', '.join(names)}")
         if compose("pull", *names) != 0:
             log("pull failed; nothing restarted")
             return
-        # Compose recreates only containers whose image or configuration changed.
-        code = compose("up", "-d", "--remove-orphans", *([] if changed else names))
-        compose("image", "prune", "-f")
+        # The whole stack, so infrastructure containers (Keycloak, Kafka, MinIO) start too. Compose recreates
+        # only containers whose image or configuration changed.
+        code = compose("up", "-d", "--remove-orphans")
+        subprocess.run(["docker", "image", "prune", "-f"], capture_output=True, timeout=300)
         log("done" if code == 0 else f"up failed ({code})")
 
 
@@ -101,5 +101,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    log(f"listening on :{PORT}, deploying from {FOLDER}")
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    log(f"listening on {HOST}:{PORT}, deploying from {FOLDER}")
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
