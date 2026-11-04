@@ -12,6 +12,13 @@
 
 ## [2026-11-04] - Release Candidate (test)
 
+### server (0.3.5-rc.1)
+- Test environment: give the server container a healthcheck that tolerates a busy small server
+- Release commits no longer carry [skip ci], so checks run on promotion pull requests
+- Test environment: the deploy hook pulls and starts one service at a time, waiting for each to be ready, so a small server is not overloaded
+
+## [2026-11-04] - Release Candidate (test)
+
 ### server (0.3.2-rc.1)
 - Test environment: CI builds every image (Postgres, Keycloak, its database, Kafka and MinIO as well as the apps) and the server only pulls from ghcr
 - Test environment: serve every service over HTTPS on one DuckDNS domain behind Caddy, and start the whole stack on each deploy
