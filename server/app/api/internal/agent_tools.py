@@ -58,9 +58,10 @@ from app.services.agent_events import agent_event_relay, enqueue_agent_event
 from app.services.document_key import document_label, identification_key, identification_spec, label_for
 from app.services.identity_check import normalize_id
 from app.services.record_service import record_service
+from app.models.rule import TemplateRule
 from app.models.screen import WorkspaceScreen
-from app.services import formula, screen_engine, screen_service
-from app.services.rule_engine import check_rule_definitions, normalize_schema, validate_record
+from app.services import formula, rule_service, screen_engine, screen_service
+from app.services.rule_engine import check_rule_definitions, normalize_schema, schema_rules, validate_record
 from app.services.storage_service import storage_service
 from app.services.template_service import template_service
 from app.services.source_data import record_sets
@@ -97,6 +98,7 @@ CHAT_POLICY = [
     (re.compile(r"^/documents/[^/]+/record$"), {"POST"}, "documents.review"),
     (re.compile(r"^/documents/[^/]+/status$"), {"POST"}, "documents.upload"),
     (re.compile(r"^/screens(/|$)"), {"GET"}, "documents.view"),
+    (re.compile(r"^/rules(/check)?$"), {"GET", "POST"}, "documents.view"),
     (re.compile(r"^/screens/(preview|[^/]+/run)$"), {"POST"}, "documents.view"),
     (re.compile(r"^/screens(?:/(?!preview$)[^/]+)?$"), {"POST", "PATCH", "DELETE"}, "screens.manage"),
     (re.compile(r"^/(entities/search|graph/|sources/[^/]+$|proposals$)"), {"GET"}, "knowledge.view"),
@@ -237,6 +239,8 @@ async def get_workspace_overview(ws: Workspace = Depends(get_workspace)):
         "pending_proposals": [_proposal_dict(p) for p in pending],
         "open_conversations": [_conversation_dict(c) for c in conversations],
         "knowledge_sources": [{"id": s.id, "name": s.name, "kind": s.kind, "status": s.status} for s in sources],
+        "rules": [{k: v for k, v in rule_service.detail(r).items() if k in ("id", "name", "scope", "check", "when", "severity", "status")}
+                  for r in await rule_service.list_rules(db, ws.template_id, ["active", "suggested", "broken"])],
         "workspace_policy": await _policy(ws),
     }
 
@@ -452,7 +456,7 @@ class DocumentStatusUpdate(BaseModel):
 
 
 class IdentifyBody(BaseModel):
-    details: Dict[str, Any] = Field(..., description='What the page says, shaped like a record: {"Roster": {"site": "S12", "date": "2026-07-22"}}')
+    details: Dict[str, Any] = Field(..., description='What the page says, shaped like a record: {"Head": {"name": "...", "date": "2026-07-22"}}')
 
 
 @router.post("/documents/{document_id}/identification")
@@ -700,7 +704,7 @@ async def _evaluate_record(ws: Workspace, doc: Document, body: RecordSubmission,
     decision = body.decision.upper()
     if decision not in ("COMMIT", "REVIEW"):
         raise HTTPException(status_code=400, detail="decision must be COMMIT or REVIEW")
-    validation = validate_record(ws.template.schema_definition, body.data)
+    validation = validate_record(ws.template.schema_definition, body.data, await rule_service.active_rules(ws.db, ws.template_id))
     signals = await graph_service.identity_signals(
         ws.db, template_id=ws.template_id, schema=ws.template.schema_definition, data=body.data, document_id=doc.id,
     ) + await duplicate_check.duplicate_signals(
@@ -753,7 +757,8 @@ class RecordDraft(BaseModel):
 async def validate_draft_record(body: RecordDraft, ws: Workspace = Depends(get_workspace)):
     """Dry run: checks a draft against the active (or a proposed) template without storing anything.
     Against the active template it also returns the workspace graph's identity signals."""
-    result = validate_record(body.schema_definition or ws.template.schema_definition, body.data)
+    rules = [] if body.schema_definition else await rule_service.active_rules(ws.db, ws.template_id)
+    result = validate_record(body.schema_definition or ws.template.schema_definition, body.data, rules)
     if not body.schema_definition:
         document = await _document(ws, body.document_id) if body.document_id else None
         result["signals"] = await graph_service.identity_signals(
@@ -768,7 +773,7 @@ async def validate_draft_record(body: RecordDraft, ws: Workspace = Depends(get_w
 @router.post("/records/query")
 async def query_records(body: record_query.RecordQuery, ws: Workspace = Depends(get_workspace)):
     """Rows of one template object across every saved record, filtered and grouped in one call
-    (e.g. the unique people who worked a day shift). The answer to list, count and filter questions."""
+    (e.g. the unique names on rows that match a condition). The answer to list, count and filter questions."""
     return await record_query.query(ws.db, template_id=ws.template_id, schema=ws.template.schema_definition,
                                     q=body, hidden=ws.hidden)
 
@@ -956,7 +961,7 @@ async def add_alias(entity_id: str, body: AliasBody, ws: Workspace = Depends(get
 
 @router.get("/graph/related")
 async def related(
-    object_type: str = Query(..., alias="object", description="The object type, e.g. Guard"),
+    object_type: str = Query(..., alias="object", description="The object type, as the template names it"),
     identifier: str = Query(..., alias="id", description="Its ID as written"),
     ws: Workspace = Depends(get_workspace),
 ):
@@ -1715,3 +1720,80 @@ async def report_trace(body: TraceBody, ws: Workspace = Depends(get_workspace)):
     await workspace_events.dispatch(ws.db)
     budget_service.forget(ws.template_id)
     return {"id": trace.id}
+
+
+# ---------------------------------------------------------------------------
+# Rules (checks in the rule language that run on every record; people add them)
+# ---------------------------------------------------------------------------
+
+MAX_PENDING_RULES = 10
+
+
+class RuleDraft(BaseModel):
+    scope: str = Field("document", max_length=100, description='"document", or an object type to check each of its rows')
+    check: str = Field(..., max_length=600)
+    when: str = Field("", max_length=600)
+    severity: str = "error"
+    name: Optional[str] = Field(None, max_length=120)
+
+
+class RuleSuggestion(rule_service.RuleIn):
+    rationale: str = Field(..., min_length=1, max_length=1000, description="Why the rule is worth having: what you saw, on how many documents")
+    source_document_id: Optional[str] = None
+
+
+@router.get("/rules")
+async def agent_list_rules(ws: Workspace = Depends(get_workspace)):
+    """The workspace's rules (suggested, active, disabled, broken) and the checks that come with the template version."""
+    return {"rules": [rule_service.detail(r) for r in await rule_service.list_rules(ws.db, ws.template_id)],
+            "template_checks": schema_rules(ws.template.schema_definition)}
+
+
+@router.post("/rules/check")
+async def agent_check_rule(body: RuleDraft, ws: Workspace = Depends(get_workspace)):
+    """Compiles a rule without saving it and tries it on the committed records: problems come back with where and why."""
+    return await rule_service.check(ws.db, ws.template, body.model_dump(), hidden=ws.hidden)
+
+
+@router.post("/rules/suggest", status_code=201)
+async def agent_suggest_rule(body: RuleSuggestion, ws: Workspace = Depends(get_workspace)):
+    """
+    Suggests a rule. It does nothing until a person adds it (in the chat card or the Rules tab), whether you thought of it
+    or a person asked for it in their chat.
+    """
+    pending = (await ws.db.execute(select(func.count()).select_from(TemplateRule).where(
+        TemplateRule.template_id == ws.template_id, TemplateRule.status == "suggested"))).scalar_one()
+    if pending >= MAX_PENDING_RULES:
+        raise HTTPException(status_code=409, detail=f"{pending} rule suggestions are already waiting for a person. Wait for them to be added or dismissed.")
+    if body.source_document_id:
+        await _document(ws, body.source_document_id)
+    actor = await _on_a_persons_request(ws)
+    event = await ws.db.get(AgentEventOutbox, ws.event_id) if actor else None
+    r = await rule_service.create(
+        ws.db, ws.template, rule_service.RuleIn(**body.model_dump(include=set(rule_service.RuleIn.model_fields))),
+        actor="agent", actor_kind="agent", status="suggested", rationale=body.rationale, source_document_id=body.source_document_id,
+        source_conversation_id=event.payload.get("conversation_id") if event else None)
+    if actor is None:
+        await workspace_events.emit(
+            ws.db, tenant_id=ws.tenant_id, template_id=ws.template_id, type="agent.rule", title="Syruss suggests a rule", body=r.name,
+            path="template/rules", data={"rule": r.id})
+    await ws.db.commit()
+    await rule_service.announce(r, "suggested")
+    await workspace_events.dispatch(ws.db)
+    return rule_service.detail(r)
+
+
+class RuleIdeas(BaseModel):
+    ideas: List[str] = Field(..., min_length=1, max_length=rule_service.MAX_IDEAS,
+                             description="Rules worth having, each one sentence the way a person would say it")
+
+
+@router.post("/rules/ideas")
+async def agent_rule_ideas(body: RuleIdeas, ws: Workspace = Depends(get_workspace)):
+    """The ideas a rules.ideas run came up with: shown on the new-rule page as starting points (nothing is created)."""
+    event = await ws.db.get(AgentEventOutbox, ws.event_id)
+    if not event or event.event_type != "rules.ideas":
+        raise HTTPException(status_code=403, detail="Rule ideas are given only when you were asked for them.")
+    result = await rule_service.store_ideas(ws.db, ws.template, event.payload.get("version_id") or ws.template.active_version_id, body.ideas)
+    await ws.db.commit()
+    return result

@@ -160,6 +160,8 @@ class TemplateService:
             template.document_type = version.schema_definition["document_type"]
         if version.schema_definition.get("description"):
             template.description = version.schema_definition["description"]
+        from app.services import rule_service  # rules check the new fields from now on; ones that no longer fit are broken
+        await rule_service.recheck_all(db, template)
 
     @staticmethod
     async def get_active_version(db: AsyncSession, template: DocumentTemplate) -> Optional[DocumentTemplateVersion]:

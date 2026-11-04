@@ -5,7 +5,7 @@ from agentic_framework.agent.tools.base import RunContext, ToolOutcome, dump, to
 
 
 class DataTableArgs(BaseModel):
-    title: Optional[str] = Field(None, description="What the table shows, e.g. 'Employees on this sheet'")
+    title: Optional[str] = Field(None, description="What the table shows, e.g. 'Rows on this page'")
     columns: List[str] = Field(..., description="Column names")
     rows: List[List[str]] = Field(..., description="One list of cell values per row, in column order")
 
@@ -18,7 +18,7 @@ class FlagArgs(BaseModel):
                                "answer) is always added for them")
     evidence_document_ids: List[str] = Field(default_factory=list)
     data_table: Optional[DataTableArgs] = Field(None, description="The data you read that the question is about, as a table "
-                                                "(for example the rows of a roster): a few short columns and one list "
+                                                "(for example the rows of a table on the page): a few short columns and one list "
                                                 "of cells per row. Always include it when the question is about what "
                                                 "you extracted, so the person sees rows, not a paragraph")
     target_role: str = Field("admin", description="admin (business meaning, template) or reviewer (reading/identity)")
@@ -54,7 +54,7 @@ async def flag(ctx: RunContext, a: FlagArgs) -> ToolOutcome:
 
 
 class OpenConversationArgs(BaseModel):
-    title: str = Field(..., description="The issue in a few words, e.g. 'Overtime column on night rosters'")
+    title: str = Field(..., description="The issue in a few words, e.g. 'Unlabelled column on some pages'")
     message: str = Field(..., description="Your opening message: what you found (with document names), why it matters, "
                          "what you need from them. Markdown allowed")
     audience: str = Field("admin", description="admin (business meaning, template) or reviewer (reading, identities)")

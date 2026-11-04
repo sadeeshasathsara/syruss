@@ -18,21 +18,20 @@ A template is a model of the business, not a copy of the page. Work out three th
 People can't tell documents apart by file name (`94771079086_20260722_223851.jpeg`). Every notification, list
 and log line names a document by its **identification key**, so choose one in the template: the one or few
 fields of the one-per-document objects (`"multiple": false`) that tell this document from the others the
-way the team would say it, such as where and when (a site and a date), or who and which period. Prefer values
-that are on every page and short; two fields usually beat one (a date alone repeats every day, a site alone
-every week). Never use a field of a repeating object.
+way the team would say it, such as where and when, or who and which period. Prefer values that are on every
+page and short; two fields usually beat one (a date alone can repeat across documents, and so can a name
+alone). Never use a field of a repeating object.
 
-Use details people understand, not codes. People know names, not IDs: a site's name ("Colombo Port") beats its
-code ("S12"), a customer's name beats their account number, a branch name beats a branch ID. Whenever the page
-shows both a code and a name for the same thing, put the name in a field of a one-per-document object and use
-that one in the key (keep the code as its own field too). Use a code only when the page gives nothing
-descriptive; a date or period is always fine to combine with a name. This is about the thing the document is
-about (the site, customer, branch, period), not the person who filled it in. Say your choice in the proposal's observation so the
+Use details people understand, not codes. People know names, not IDs: a thing's name beats its code or
+number. Whenever the page shows both a code and a name for the same thing, put the name in a field of a
+one-per-document object and use that one in the key (keep the code as its own field too). Use a code only when
+the page gives nothing descriptive; a date or period is always fine to combine with a name. This is about the
+thing the document is about, not the person who filled it in. Say your choice in the proposal's observation so the
 admin can change it, and ask when the samples leave it open. The admin can change it at any time.
 
 Headers, tables and footers are layout, not the model: one row can mention several things, and one
 thing appears in many rows and on many pages. Ask of every field whether it describes the thing or this
-occurrence. Getting this wrong (a row that is both a person and that person's shift) means the
+occurrence. Getting this wrong (a row that is both a thing and what happened to it on this document) means the
 platform cannot recognize the same thing on the next document.
 
 Then check the model against every sample: each value on each page has exactly one place to go. Ask
@@ -48,41 +47,43 @@ pages), and report what you found in the evidence: how many past records still f
 
 ## Template format
 
-An illustration of the format only; model each workspace from its own documents.
+An illustration of the format only, with placeholder names: `Party` and `Thing` are things with an identity,
+`Head` is the document itself, `Item` is a repeating fact. Model each workspace from its own documents and
+name objects and fields the way its pages and people do.
 
 ```json
-{"document_type": "supplier_invoice", "description": "...",
+{"document_type": "<kind>", "description": "...",
  "objects": [
-  {"type": "Supplier", "description": "...", "multiple": false,
-   "identity": {"id_field": "tax_id", "label_field": "name"},
-   "fields": [{"name": "tax_id", "type": "string", "required": true, "description": "..."},
+  {"type": "Party", "description": "...", "multiple": false,
+   "identity": {"id_field": "code", "label_field": "name"},
+   "fields": [{"name": "code", "type": "string", "required": true, "description": "..."},
               {"name": "name", "type": "string", "required": true}]},
-  {"type": "Product", "multiple": true, "identity": {"id_field": "sku", "label_field": "description"},
-   "fields": [{"name": "sku", "type": "string", "required": true}, {"name": "description", "type": "string"},
-              {"name": "unit", "type": "string"}]},
-  {"type": "Invoice", "multiple": false,
+  {"type": "Thing", "multiple": true, "identity": {"id_field": "code", "label_field": "label"},
+   "fields": [{"name": "code", "type": "string", "required": true}, {"name": "label", "type": "string"},
+              {"name": "kind", "type": "string"}]},
+  {"type": "Head", "multiple": false,
    "fields": [{"name": "number", "type": "string", "required": true}, {"name": "date", "type": "date"},
-              {"name": "supplier", "type": "string", "resolves_to": "Supplier"},
-              {"name": "line_count", "type": "integer"}, {"name": "total", "type": "number"}]},
-  {"type": "Line", "multiple": true,
-   "fields": [{"name": "product", "type": "string", "resolves_to": "Product"},
-              {"name": "quantity", "type": "number"}, {"name": "unit_price", "type": "number"},
-              {"name": "amount", "type": "number"}]}],
- "identification": {"parts": [{"object": "Invoice", "field": "number"}, {"object": "Invoice", "field": "date"}], "separator": "_"},
+              {"name": "party", "type": "string", "resolves_to": "Party"},
+              {"name": "item_count", "type": "integer"}, {"name": "total", "type": "number"}]},
+  {"type": "Item", "multiple": true,
+   "fields": [{"name": "thing", "type": "string", "resolves_to": "Thing"},
+              {"name": "quantity", "type": "number"}, {"name": "rate", "type": "number"},
+              {"name": "amount", "type": "number"}, {"name": "start", "type": "time"}, {"name": "end", "type": "time"}]}],
+ "identification": {"parts": [{"object": "Head", "field": "number"}, {"object": "Head", "field": "date"}], "separator": "_"},
  "validation_rules": [
-   {"id": "...", "rule_type": "sum_match", "object": "Line", "field": "amount", "total_object": "Invoice",
+   {"id": "...", "rule_type": "sum_match", "object": "Item", "field": "amount", "total_object": "Head",
     "total_field": "total", "description": "..."},
-   {"rule_type": "count_equals", "object": "Line", "expected_count": 5 | "count_object": "Invoice", "count_field": "line_count"},
-   {"rule_type": "expression", "object": "Line", "expression": "abs(amount - quantity * unit_price) < 0.01"},
-   {"rule_type": "allowed_values", "object": "Product", "field": "unit", "values": ["kg", "pcs"]},
-   {"rule_type": "regex", "object": "Supplier", "field": "tax_id", "pattern": "\\d{9}"},
-   {"rule_type": "unique", "object": "Product", "field": "sku"},
-   {"rule_type": "time_diff", "object": "<fact>", "start_field": "start", "end_field": "end",
-    "hours_field": "hours" | "expected_hours": 8, "tolerance_hours": 0.25}]}
+   {"rule_type": "count_equals", "object": "Item", "expected_count": 5 | "count_object": "Head", "count_field": "item_count"},
+   {"rule_type": "expression", "object": "Item", "expression": "abs(amount - quantity * rate) < 0.01"},
+   {"rule_type": "allowed_values", "object": "Thing", "field": "kind", "values": ["A", "B"]},
+   {"rule_type": "regex", "object": "Party", "field": "code", "pattern": "\\d{9}"},
+   {"rule_type": "unique", "object": "Thing", "field": "code"},
+   {"rule_type": "time_diff", "object": "Item", "start_field": "start", "end_field": "end",
+    "hours_field": "<a number field>" | "expected_hours": 8, "tolerance_hours": 0.25}]}
 ```
 
 `identification.parts` are `{"object", "field"}` pairs, each a field of an object with `"multiple": false`; the key
-joins their values in order with the separator ("INV-1001_2026-07-22"). Leave `identification` out only when no
+joins their values in order with the separator ("1001_2026-07-22"). Leave `identification` out only when no
 one-per-document field identifies a document.
 
 Field types: string, number, integer, boolean, date, time. `resolves_to` names another object that has

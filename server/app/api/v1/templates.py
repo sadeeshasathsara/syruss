@@ -40,6 +40,7 @@ from app.schemas.template import (
 from app.services.benchmark_service import run_benchmark
 from app.services.conversation_service import conversation_service
 from app.services.template_service import template_service
+from app.services import workspace_events
 from app.core.permissions import Access, require
 from app.core.permissions import check_permission
 
@@ -345,6 +346,7 @@ async def promote_template_version(
         details={"status": target.value, "approval_notes": payload.approval_notes},
     ))
     await db.commit()
+    await workspace_events.dispatch(db)  # rules that broke with the new version are announced
     await db.refresh(version)
     return version
 

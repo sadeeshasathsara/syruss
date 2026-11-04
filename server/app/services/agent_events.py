@@ -16,6 +16,7 @@ Event types (payload keys):
   proposal.decided        proposal_id, proposal_type, decision, notes
   schedule.reflect        since, consolidated, activity
   schedule.insights       since, activity, records
+  rules.ideas             version_id, channel_id
   eval.item               eval_run_id, item_id, document_id, name, channel_id
 
 A workspace whose agent budget is reached and set to pause has its events held here (they stay
@@ -50,6 +51,7 @@ EVENT_TYPES = {
     "proposal.decided",
     "schedule.reflect",
     "schedule.insights",
+    "rules.ideas",
     "eval.item",
 }
 

@@ -99,6 +99,10 @@ async def _what_happened(ctx: RunContext, workspace: Dict[str, Any]) -> str:
                 f"Conversation so far, oldest first:\n{transcript}\n\n"
                 f"Their new message:\n\"{p['text']}\"\n"
                 f"They were on this page when they wrote it (a hint, not a request): {p.get('page') or 'unknown'}"
+                + ("\nThey wrote it from the new-rule page: they want a rule. Turn what they describe into a rule, try it with "
+                   "check_rule, and suggest it with suggest_rule so they can add it from the chat. Ask one short question first "
+                   "only if the meaning is unclear (which object, a tolerance, what counts as a failure)."
+                   if (p.get("context") or {}).get("mode") == "rules" else "")
                 + (f"\nThey wrote it from the analytics screen '{(p.get('context') or {}).get('screen')}': changes they ask for are to that "
                    "screen (list_screens has its definition)." if (p.get("context") or {}).get("screen") else ""))
     if t == "human.answered":
@@ -120,6 +124,14 @@ async def _what_happened(ctx: RunContext, workspace: Dict[str, Any]) -> str:
                 f"\nNotes: {p.get('notes') or '(none)'}\nDetails: {_j({k: v for k, v in p.items() if k not in ('proposal_id', 'proposal_type', 'decision', 'notes')})}")
     if t == "schedule.reflect":
         return await _reflection(ctx, p)
+    if t == "rules.ideas":
+        return ("Someone opened the new-rule page. Give up to five ideas for rules worth having in THIS workspace, as starting points "
+                "they can click: look at the template (get_workspace) and the values the saved records really use (query_records with "
+                "distinct), and skip what list_rules already has. Each idea is one plain-English sentence the way a person here would "
+                "say it: fields named as people know them and the values the records really use, never an expression or an object "
+                "name. Every idea must come from this template and its records: values that must add up or follow from each other, "
+                "a count written on the page, a format every value follows, a value that can't repeat, a limit no value goes past. "
+                "Then call propose_rule_ideas once. Write no rules and change nothing.")
     if t == "schedule.insights":
         return ("Scheduled look at the records, nobody asked a question. Study what has been saved (query_records, preview_screen) and the "
                 "screens that already exist (list_screens), and suggest up to three NEW analytics screens worth having with save_screen, each "
@@ -179,7 +191,7 @@ Every document that was read is in the database: search_past_records and get_doc
 was read and checked. Answer from them. A page image costs far more than a lookup, and it is not \
 needed to report what a document says, count, list or compare records.
 {pages}
-"""
+{_task_guide(ctx)}"""
 
 
 async def build_briefing(ctx: RunContext) -> str:
@@ -233,6 +245,8 @@ Open work items:
 def _task_guide(ctx: RunContext) -> str:
     """The guide this kind of task always needs, so the agent doesn't spend a step reading it."""
     name = guides.FOR_TASK.get(ctx.event.type)
+    if ctx.event.type == "human.message" and (ctx.event.payload.get("context") or {}).get("mode") == "rules":
+        name = "rules"  # written from Template > Rules > New: they want a rule made
     if not name:
         return ""
     ctx.guides_read.add(name)

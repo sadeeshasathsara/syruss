@@ -244,7 +244,7 @@ export function RecordView({
                   id={`why-${object}`}
                   value={correcting.reason}
                   onChange={(e) => setCorrecting({ ...correcting, reason: e.target.value })}
-                  placeholder="Tell Syruss what it got wrong, so it reads the next ones right. For example: the surname was misread, the D in the shift column means day."
+                  placeholder="Tell Syruss what it got wrong, so it reads the next ones right. For example: the name was misread, or a code on the page means something specific."
                   maxLength={2000}
                   className="min-h-20"
                 />

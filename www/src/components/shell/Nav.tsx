@@ -33,17 +33,26 @@ export interface NavItem {
   children?: NavChild[];
 }
 
-/** The sub tab that best matches where you are: same path, and every query value it names. */
+/**
+ * The sub tab that best matches where you are: same path, and every query value it names. When none is on this exact
+ * path, the deepest one that contains it (Rules for template/rules/new).
+ */
 function activeChild(children: NavChild[], pathname: string, search: URLSearchParams): string | undefined {
   let best: { href: string; score: number } | undefined;
+  let within: { href: string; depth: number } | undefined;
   for (const c of children) {
     const url = new URL(c.href, "http://x");
-    if (url.pathname !== pathname) continue;
+    if (url.pathname !== pathname) {
+      if (!url.search && pathname.startsWith(`${url.pathname}/`) && (!within || url.pathname.length > within.depth)) {
+        within = { href: c.href, depth: url.pathname.length };
+      }
+      continue;
+    }
     const wanted = [...url.searchParams];
     if (!wanted.every(([k, v]) => search.get(k) === v)) continue;
     if (!best || wanted.length > best.score) best = { href: c.href, score: wanted.length };
   }
-  return best?.href;
+  return best?.href ?? within?.href;
 }
 
 export function NavList({ items, label }: { items: NavItem[]; label: string }) {

@@ -57,11 +57,12 @@ async def screen_catalogue(ctx: RunContext, a: NoArgs) -> ToolOutcome:
 
 
 DEFINITION_HELP = (
-    'JSON: {"source": {"object": "Guard"}, "columns": [{"id": "name", "label": "Guard", "field": "name"}, '
-    '{"id": "hours", "label": "Hours", "field": "hours", "format": {"type": "number", "decimals": 1}, "aggregate": "sum"}, '
-    '{"id": "overtime", "label": "Overtime", "kind": "formula", "formula": "max(hours - 8, 0)", "aggregate": "sum"}], '
-    '"filters": [{"field": "site", "op": "eq", "value": "S12"}], "sort": [{"column": "hours", "dir": "desc"}], '
-    '"group_by": ["name"], "totals": true}. Column ids are lowercase letters, digits and _. Formulas use column ids and field '
+    'JSON (placeholder names; use the template\'s own from screen_catalogue): {"source": {"object": "Item"}, '
+    '"columns": [{"id": "who", "label": "Who", "field": "party"}, '
+    '{"id": "qty", "label": "Quantity", "field": "quantity", "format": {"type": "number", "decimals": 1}, "aggregate": "sum"}, '
+    '{"id": "above", "label": "Above 8", "kind": "formula", "formula": "max(qty - 8, 0)", "aggregate": "sum"}], '
+    '"filters": [{"field": "place", "op": "eq", "value": "P1"}], "sort": [{"column": "qty", "dir": "desc"}], '
+    '"group_by": ["who"], "totals": true}. Column ids are lowercase letters, digits and _. Formulas use column ids and field '
     "variables from screen_catalogue. Read the screens guide for the rest."
 )
 
@@ -101,7 +102,7 @@ async def run_screen(ctx: RunContext, a: RunArgs) -> ToolOutcome:
 
 
 class SaveArgs(BaseModel):
-    name: str = Field(..., description="A plain name a colleague would recognise, e.g. 'Overtime by guard'")
+    name: str = Field(..., description="A plain name a colleague would recognise, in this workspace's own words")
     description: str = Field("", description="One sentence: what the screen is for")
     definition_json: str = Field(..., description=DEFINITION_HELP)
     rationale: str = Field("", description="Why this screen is worth having, for the people who decide whether to keep it")
