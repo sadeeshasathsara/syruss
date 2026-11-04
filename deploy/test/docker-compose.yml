@@ -38,7 +38,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
-      - "9000:9000"
+      - "127.0.0.1:9000:9000"
     volumes:
       - minio_data:/data
     mem_limit: 160m
@@ -99,6 +99,8 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_HOSTNAME: ${KC_HOSTNAME}
       KC_HOSTNAME_STRICT: "false"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       JAVA_OPTS_KC_HEAP: "-Xms64m -Xmx320m"
       SYRUSS_SITE_URL: ${SYRUSS_SITE_URL}
@@ -108,7 +110,7 @@ services:
       GOOGLE_CLIENT_ID: unset
       GOOGLE_CLIENT_SECRET: unset
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./keycloak/realm-syruss.json:/opt/keycloak/data/import/realm-syruss.json:ro
       - ./keycloak/themes/syruss:/opt/keycloak/themes/syruss:ro
@@ -126,7 +128,7 @@ services:
       minio:
         condition: service_started
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     mem_limit: 256m
 
   agent:
@@ -145,7 +147,7 @@ services:
     environment:
       NODE_OPTIONS: --max-old-space-size=128
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     mem_limit: 192m
 
   site:
@@ -155,7 +157,7 @@ services:
     environment:
       NODE_OPTIONS: --max-old-space-size=128
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     mem_limit: 160m
 
 volumes:
