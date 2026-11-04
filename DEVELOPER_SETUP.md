@@ -397,7 +397,7 @@ syruss changeset status
 ```
 
 ### What Happens on Merge
-- **Merge to `dev`**: Changesets are consumed, `CHANGELOG.md` is updated, and dev prerelease tags (e.g. `www-v0.2.0-dev.1`) are published.
+- **Merge to `dev`**: Changesets are consumed, `_changelog/dev.md` is updated, and dev prerelease tags (e.g. `www-v0.2.0-dev.1`) are published.
 - **Merge to `test`**: Dev entries are automatically promoted to release candidates (e.g. `www-v0.2.0-rc.1`).
 - **Merge to `main`**: Roll-up into official production releases (e.g. `www-v0.2.0`).
-- The top table in `CHANGELOG.md` automatically reflects live versions across all three environments.
+- `_changelog/` holds one generated file per environment (`dev.md`, `test.md`, `main.md`), each written only by the release job on its own branch. Never edit them by hand: CI fails any pull request with a commit that does. Run `syruss changeset table` to see every service's version in dev, test and main.

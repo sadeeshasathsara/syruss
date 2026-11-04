@@ -28,6 +28,23 @@ jobs:
         run: |
           python scripts/changeset.py check --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.event.pull_request.head.sha }}"
 
+  guard-changelog:
+    name: Guard _changelog (generated, do not edit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Only the release job writes _changelog/. Any other commit that changes it fails here.
+      - name: Check that _changelog was not edited by hand
+        run: |
+          python scripts/changeset.py guard --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.event.pull_request.head.sha }}"
+
   detect-changes:
     name: Detect Changed Components
     runs-on: ubuntu-latest
