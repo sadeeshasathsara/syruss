@@ -94,7 +94,7 @@ You do **not** need different commit formats for each branch. The GitHub Actions
 ### On `main` branch:
 - When `test` is verified and merged into `main`, CI promotes the release candidate to **Stable**:
   - Example: `v1.2.0`
-  - Generates release notes in `CHANGELOG.md`.
+  - Generates release notes in `_changelog/<branch>.md` (one generated file per environment; never edited by hand).
   - Creates the official GitHub Release with artifacts.
   - Promotes the tested `:v1.2.0-rc.N` container to `:latest` and `:v1.2.0`.
 
@@ -131,7 +131,7 @@ You do **not** need different commit formats for each branch. The GitHub Actions
 1. When staging passes all checks, open a PR from **`test` -> `main`**.
 2. PR title: `chore(release): release v1.2.0`.
 3. Once approved, merge to `main`.
-4. CI generates `v1.2.0` tag, updates `CHANGELOG.md`, and triggers production deployment.
+4. CI generates `v1.2.0` tag, updates `_changelog/main.md`, and triggers production deployment.
 
 ### Hotfix Workflow (Emergency Bug in Production)
 1. Branch directly from `main`:

@@ -136,7 +136,7 @@ async def sources(access: Access = Depends(require("integrations.manage")), db: 
     return {
         "objects": [{"type": o["type"], "multiple": bool(o.get("multiple")), "fields": [{"name": f["name"], "type": f.get("type", "string")} for f in o.get("fields", [])]}
                     for o in schema.get("objects", [])],
-        "documents": [{"id": d.id, "filename": d.original_filename, "external_id": d.external_id} for d in docs],
+        "documents": [{"id": d.id, "filename": d.original_filename, "display_name": d.display_name, "external_id": d.external_id} for d in docs],
         "functions": formula.functions_help(),
     }
 
