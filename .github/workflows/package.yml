@@ -6,6 +6,11 @@ on:
       - dev
       - test
       - main
+    # The release job's own commit only touches these paths. Ignoring them stops it from starting another run,
+    # so its message needs no [skip ci] (which would also stop checks from running on a pull request whose head it is).
+    paths-ignore:
+      - "_changelog/**"
+      - ".changeset/**"
 
 concurrency:
   group: package-${{ github.ref }}
@@ -63,7 +68,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add _changelog/ .changeset/
-          git commit -m "chore(release): update _changelog and apply changesets [skip ci]" || echo "No changes to commit"
+          git commit -m "chore(release): update _changelog and apply changesets" || echo "No changes to commit"
           git push origin "${{ github.ref_name }}"
 
   # ----------------------------------------------------------------------------
@@ -362,14 +367,54 @@ jobs:
   # Infrastructure images (Postgres with pgvector and AGE, Keycloak in production mode, Keycloak's database,
   # Kafka, MinIO), built here so servers only pull from ghcr: nothing is built or fetched from Docker Hub there.
   # ----------------------------------------------------------------------------
+  # Only images whose folder under bridge/ changed in this push are rebuilt (or ones that were never published
+  # for this branch), so an unrelated change never makes the server pull or restart them.
+  detect-infra:
+    name: Find infrastructure images to rebuild
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.pick.outputs.images }}
+      names: ${{ steps.pick.outputs.names }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pick the images
+        id: pick
+        env:
+          BEFORE: ${{ github.event.before }}
+          TAG: ${{ github.ref_name == 'main' && 'latest' || github.ref_name }}
+        run: |
+          changed=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" 2>/dev/null || echo "ALL")
+          picked=""
+          for image in postgres keycloak keycloak-db kafka minio; do
+            if [ "$changed" = "ALL" ] || echo "$changed" | grep -q "^bridge/$image/"; then
+              picked="$picked $image"
+            elif ! docker manifest inspect "ghcr.io/${GITHUB_REPOSITORY}/$image:$TAG" >/dev/null 2>&1; then
+              picked="$picked $image"   # never published for this branch yet
+            fi
+          done
+          echo "images=$(printf '%s\n' $picked | jq -R . | jq -sc 'map(select(length>0))')" >> "$GITHUB_OUTPUT"
+          echo "names=$(echo $picked)" >> "$GITHUB_OUTPUT"
+          echo "Rebuilding:${picked:- nothing}"
+
   release-infra:
     name: Package ${{ matrix.image }}
-    needs: prepare-release
+    needs: detect-infra
+    if: ${{ needs.detect-infra.outputs.images != '[]' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        image: [postgres, keycloak, keycloak-db, kafka, minio]
+        image: ${{ fromJSON(needs.detect-infra.outputs.images) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -395,7 +440,7 @@ jobs:
   # ----------------------------------------------------------------------------
   deploy-test:
     name: Tell the test server to pull
-    needs: [prepare-release, release-server, release-agent, release-www, release-site, release-infra]
+    needs: [prepare-release, release-server, release-agent, release-www, release-site, detect-infra, release-infra]
     # Runs even when some services had no release (their jobs are skipped), but not when one failed.
     if: ${{ !cancelled() && github.ref_name == 'test' && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
@@ -414,13 +459,14 @@ jobs:
           WWW: ${{ needs.release-www.result }}
           SITE: ${{ needs.release-site.result }}
           INFRA: ${{ needs.release-infra.result }}
+          INFRA_NAMES: ${{ needs.detect-infra.outputs.names }}
         run: |
           services=""
           [ "$SERVER" = success ] && services="$services server"
           [ "$AGENT" = success ] && services="$services agent"
           [ "$WWW" = success ] && services="$services www"
           [ "$SITE" = success ] && services="$services site"
-          [ "$INFRA" = success ] && services="$services postgres keycloak keycloak-db kafka minio"
+          [ "$INFRA" = success ] && services="$services $INFRA_NAMES"
           list=$(printf '%s\n' $services | jq -R . | jq -sc .)
           body=$(jq -nc --argjson services "$list" --arg compose "$(base64 -w0 deploy/test/docker-compose.yml)" '{services: $services, compose: $compose}')
           stamp=$(date +%s)

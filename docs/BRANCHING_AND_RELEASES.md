@@ -76,6 +76,12 @@ You write the **exact same standard commit messages** regardless of what branch 
 
 ---
 
+> **Never write a skip marker in a commit message or a pull request title.** GitHub skips every workflow when the
+> text `[skip ci]` (or `[ci skip]`, `[no ci]`, `[skip actions]`) appears anywhere in the head commit's message,
+> even when it is only being talked about. A pull request whose head commit has it shows no checks, and a merge
+> commit that quotes such a title skips the push workflows too. The release job does not use a skip marker; it
+> relies on the path filter in `package.yml` instead.
+
 ## 3. Automated Versioning Across Branches
 
 You do **not** need different commit formats for each branch. The GitHub Actions workflows automate versioning per branch:
