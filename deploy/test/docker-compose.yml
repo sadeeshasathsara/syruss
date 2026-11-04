@@ -122,6 +122,13 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     mem_limit: 256m
+    healthcheck:
+      # The image's own check allows 5 seconds, which a busy small server misses even while /health answers
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 25s
+      retries: 5
+      start_period: 120s
 
   agent:
     <<: *app
