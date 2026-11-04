@@ -23,7 +23,7 @@ SECRET = os.environ["HOOK_SECRET"].encode()
 FOLDER = Path(os.environ.get("DEPLOY_DIR", str(Path.home() / "syruss-deploy")))
 PORT = int(os.environ.get("HOOK_PORT", "9100"))
 HOST = os.environ.get("HOOK_HOST", "127.0.0.1")  # the reverse proxy (Caddy) is the only way in
-SERVICES = {"postgres", "server", "agent", "www", "site"}
+SERVICES = {"postgres", "keycloak", "server", "agent", "www", "site"}
 MAX_BODY = 64 * 1024
 MAX_SKEW_SECONDS = 300
 

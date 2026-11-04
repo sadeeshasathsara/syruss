@@ -85,24 +85,19 @@ services:
 
   keycloak:
     <<: *app
-    image: quay.io/keycloak/keycloak:26.0
-    command: ["start-dev", "--import-realm", "--http-port=8080"]
+    # Production-mode build with the realm and theme inside, made by CI from bridge/keycloak
+    image: ghcr.io/sadeeshasathsara/syruss/keycloak:test
     depends_on:
       keycloak-db:
         condition: service_healthy
     environment:
-      KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
       KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_HOSTNAME: ${KC_HOSTNAME}
-      KC_HOSTNAME_STRICT: "false"
-      KC_PROXY_HEADERS: xforwarded
-      KC_HTTP_ENABLED: "true"
-      KC_HEALTH_ENABLED: "true"
-      JAVA_OPTS_KC_HEAP: "-Xms64m -Xmx320m"
+      JAVA_OPTS_KC_HEAP: "-Xms64m -Xmx256m"
       SYRUSS_SITE_URL: ${SYRUSS_SITE_URL}
       SYRUSS_APP_URL: ${SYRUSS_APP_URL}
       SYRUSS_SITE_CLIENT_SECRET: ${SYRUSS_SITE_CLIENT_SECRET}
@@ -111,10 +106,7 @@ services:
       GOOGLE_CLIENT_SECRET: unset
     ports:
       - "127.0.0.1:8080:8080"
-    volumes:
-      - ./keycloak/realm-syruss.json:/opt/keycloak/data/import/realm-syruss.json:ro
-      - ./keycloak/themes/syruss:/opt/keycloak/themes/syruss:ro
-    mem_limit: 512m
+    mem_limit: 384m
 
   server:
     <<: *app
