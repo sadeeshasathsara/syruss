@@ -1,0 +1,25 @@
+# TLS and routing for the test server (one DuckDNS name, one subdomain per service).
+# Caddy gets and renews the certificates itself. Installed as a system service, not a container.
+syruss.duckdns.org {
+	reverse_proxy 127.0.0.1:3100
+}
+
+app.syruss.duckdns.org {
+	reverse_proxy 127.0.0.1:3000
+}
+
+api.syruss.duckdns.org {
+	reverse_proxy 127.0.0.1:8000
+}
+
+auth.syruss.duckdns.org {
+	reverse_proxy 127.0.0.1:8080
+}
+
+files.syruss.duckdns.org {
+	reverse_proxy 127.0.0.1:9000
+}
+
+deploy.syruss.duckdns.org {
+	reverse_proxy 127.0.0.1:9100
+}

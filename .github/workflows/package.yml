@@ -359,12 +359,17 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ----------------------------------------------------------------------------
-  # Database image (Postgres + pgvector + Apache AGE), built here so servers only pull it
+  # Infrastructure images (Postgres with pgvector and AGE, Keycloak in production mode, Keycloak's database,
+  # Kafka, MinIO), built here so servers only pull from ghcr: nothing is built or fetched from Docker Hub there.
   # ----------------------------------------------------------------------------
-  release-postgres:
-    name: Package Postgres (pgvector + AGE)
+  release-infra:
+    name: Package ${{ matrix.image }}
     needs: prepare-release
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [postgres, keycloak, keycloak-db, kafka, minio]
     steps:
       - uses: actions/checkout@v4
 
@@ -377,11 +382,11 @@ jobs:
 
       - uses: docker/build-push-action@v5
         with:
-          context: ./bridge/postgres
+          context: ${{ format('./bridge/{0}', matrix.image) }}
           push: true
-          tags: ghcr.io/${{ github.repository }}/postgres:${{ github.ref_name == 'main' && 'latest' || github.ref_name }}
-          cache-from: type=gha,scope=postgres
-          cache-to: type=gha,mode=max,scope=postgres
+          tags: ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ github.ref_name == 'main' && 'latest' || github.ref_name }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
   # ----------------------------------------------------------------------------
   # Test environment: after the images are published, tell the server (deploy/test/hook.py) to pull them.
@@ -390,7 +395,7 @@ jobs:
   # ----------------------------------------------------------------------------
   deploy-test:
     name: Tell the test server to pull
-    needs: [prepare-release, release-server, release-agent, release-www, release-site, release-postgres]
+    needs: [prepare-release, release-server, release-agent, release-www, release-site, release-infra]
     # Runs even when some services had no release (their jobs are skipped), but not when one failed.
     if: ${{ !cancelled() && github.ref_name == 'test' && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
@@ -408,14 +413,14 @@ jobs:
           AGENT: ${{ needs.release-agent.result }}
           WWW: ${{ needs.release-www.result }}
           SITE: ${{ needs.release-site.result }}
-          POSTGRES: ${{ needs.release-postgres.result }}
+          INFRA: ${{ needs.release-infra.result }}
         run: |
           services=""
           [ "$SERVER" = success ] && services="$services server"
           [ "$AGENT" = success ] && services="$services agent"
           [ "$WWW" = success ] && services="$services www"
           [ "$SITE" = success ] && services="$services site"
-          [ "$POSTGRES" = success ] && services="$services postgres"
+          [ "$INFRA" = success ] && services="$services postgres keycloak keycloak-db kafka minio"
           list=$(printf '%s\n' $services | jq -R . | jq -sc .)
           body=$(jq -nc --argjson services "$list" --arg compose "$(base64 -w0 deploy/test/docker-compose.yml)" '{services: $services, compose: $compose}')
           stamp=$(date +%s)
