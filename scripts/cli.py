@@ -9,7 +9,7 @@ import difflib
 import sys
 from typing import List, Optional
 
-from scripts.changeset import build_changeset_parser, cmd_add, cmd_apply, cmd_check, cmd_status, cmd_table, cmd_write
+from scripts.changeset import build_changeset_parser, cmd_add, cmd_apply, cmd_check, cmd_guard, cmd_status, cmd_table, cmd_write
 from scripts.registry import get_all_services, get_service_names
 from scripts.runner import run_services
 
@@ -91,7 +91,7 @@ def build_cli_parser() -> SyrussArgumentParser:
     p_dev.add_argument("--console", action="store_true", help="Launch in independent console windows per service")
 
     # 3. changeset <subcommand>
-    p_cs = top_sub.add_parser("changeset", help="Manage changesets, versioning, and CHANGELOG.md")
+    p_cs = top_sub.add_parser("changeset", help="Manage changesets, versioning, and the _changelog/ files")
     cs_sub = p_cs.add_subparsers(dest="changeset_action")
     build_changeset_parser(cs_sub)
 
@@ -155,6 +155,7 @@ def main(custom_args: Optional[List[str]] = None) -> int:
             "status": cmd_status,
             "apply": cmd_apply,
             "table": cmd_table,
+            "guard": cmd_guard,
         }
         handler = dispatch.get(action)
         if handler:
