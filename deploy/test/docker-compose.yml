@@ -8,7 +8,7 @@ name: syruss-test
 
 x-app: &app
   restart: unless-stopped
-  pull_policy: always
+  pull_policy: missing  # updates come from the explicit `docker compose pull` the deploy hook runs
 
 services:
   postgres:
