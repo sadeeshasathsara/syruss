@@ -50,6 +50,12 @@ services:
     volumes:
       - kafka_data:/tmp/kraft-combined-logs
     mem_limit: 448m
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092 || /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 30s
+      retries: 20
+      start_period: 60s
 
   keycloak-db:
     <<: *app
@@ -91,6 +97,16 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     mem_limit: 384m
+    healthcheck:
+      # The management port answers /health/ready once the realm is imported and the server is accepting requests
+      test:
+        - CMD-SHELL
+        - |
+          exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q UP <&3
+      interval: 15s
+      timeout: 20s
+      retries: 40
+      start_period: 90s
 
   server:
     <<: *app

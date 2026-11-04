@@ -45,6 +45,57 @@ def compose(*args: str) -> int:
     return done.returncode
 
 
+# Start order: what others rely on comes first. Each service is pulled and started on its own, and the next one
+# waits until it is ready and the machine has calmed down, because starting everything at once starves a small server.
+ORDER = ["postgres", "keycloak-db", "kafka", "minio", "keycloak", "server", "agent", "www", "site"]
+# Services without a healthcheck: how long to let them settle after they start.
+SETTLE_SECONDS = {"minio": 10, "agent": 20, "www": 15, "site": 15}
+READY_TIMEOUT = 900   # per service, first start of Keycloak included
+CALM_LOAD = 3.0       # one-minute load average to wait for before starting the next service
+CALM_TIMEOUT = 240
+
+
+def compose_out(*args: str) -> str:
+    done = subprocess.run(
+        ["docker", "compose", "--env-file", "env/stack.env", *args], cwd=FOLDER, capture_output=True, text=True, timeout=120,
+    )
+    return done.stdout.strip()
+
+
+def container_state(name: str) -> tuple:
+    """(running, health) of a service's container; health is '' when the image has no healthcheck."""
+    cid = compose_out("ps", "-q", name)
+    if not cid:
+        return False, ""
+    done = subprocess.run(
+        ["docker", "inspect", "-f", "{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{end}}", cid],
+        capture_output=True, text=True, timeout=60,
+    )
+    parts = done.stdout.split()
+    return (bool(parts) and parts[0] == "true"), (parts[1] if len(parts) > 1 else "")
+
+
+def wait_ready(name: str) -> bool:
+    """Until the service is up: healthy when it has a healthcheck, otherwise running and settled."""
+    deadline = time.time() + READY_TIMEOUT
+    while time.time() < deadline:
+        running, health = container_state(name)
+        if health == "healthy":
+            return True
+        if running and not health:
+            time.sleep(SETTLE_SECONDS.get(name, 10))
+            return container_state(name)[0]
+        time.sleep(5)
+    return False
+
+
+def wait_calm() -> None:
+    """Hold the next start until the machine is no longer busy with the last one."""
+    deadline = time.time() + CALM_TIMEOUT
+    while time.time() < deadline and os.getloadavg()[0] > CALM_LOAD:
+        time.sleep(5)
+
+
 def deploy(services: list, compose_file: bytes | None) -> None:
     with lock:
         if compose_file:
@@ -52,16 +103,23 @@ def deploy(services: list, compose_file: bytes | None) -> None:
             if not target.exists() or target.read_bytes() != compose_file:
                 target.write_bytes(compose_file)
                 log("compose file updated")
-        names = services or sorted(SERVICES)
-        log(f"deploying: {', '.join(names)}")
-        if compose("pull", *names) != 0:
-            log("pull failed; nothing restarted")
-            return
-        # The whole stack, so infrastructure containers (Keycloak, Kafka, MinIO) start too. Compose recreates
-        # only containers whose image or configuration changed.
-        code = compose("up", "-d", "--remove-orphans")
+        wanted = set(services) if services else set(SERVICES)
+        queue = [name for name in ORDER if name in wanted or not container_state(name)[0]]
+        log(f"queue: {', '.join(queue)}")
+        for name in queue:
+            wait_calm()
+            if name in wanted:
+                log(f"pulling {name}")
+                if compose("pull", name) != 0:
+                    log(f"pull of {name} failed; leaving it as it is")
+                    continue
+            log(f"starting {name}")
+            if compose("up", "-d", "--no-deps", name) != 0:
+                log(f"could not start {name}; continuing with the next")
+                continue
+            log(f"{name} is up" if wait_ready(name) else f"{name} did not become ready in time; continuing")
         subprocess.run(["docker", "image", "prune", "-f"], capture_output=True, timeout=300)
-        log("done" if code == 0 else f"up failed ({code})")
+        log("done")
 
 
 class Handler(BaseHTTPRequestHandler):
