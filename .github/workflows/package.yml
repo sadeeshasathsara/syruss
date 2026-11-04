@@ -382,11 +382,12 @@ jobs:
           cache-to: type=gha,mode=max,scope=postgres
 
   # ----------------------------------------------------------------------------
-  # Test environment: tell the server to pull the new :test images. Nothing is built there.
-  # Needs the repository secrets VM_HOST, VM_USER and VM_SSH_KEY.
+  # Test environment: after the images are published, tell the server (deploy/test/hook.py) to pull them.
+  # Only the services released in this run are pulled. Nothing is built there.
+  # Needs the repository secrets TEST_DEPLOY_URL (http://<server>:9100/deploy) and TEST_DEPLOY_SECRET.
   # ----------------------------------------------------------------------------
   deploy-test:
-    name: Deploy to the test server
+    name: Tell the test server to pull
     needs: [prepare-release, release-server, release-agent, release-www, release-site, release-postgres]
     # Runs even when some services had no release (their jobs are skipped), but not when one failed.
     if: ${{ !cancelled() && github.ref_name == 'test' && !contains(needs.*.result, 'failure') }}
@@ -397,36 +398,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare SSH
+      - name: Call the deploy hook
+        env:
+          URL: ${{ secrets.TEST_DEPLOY_URL }}
+          SECRET: ${{ secrets.TEST_DEPLOY_SECRET }}
+          SERVER: ${{ needs.release-server.result }}
+          AGENT: ${{ needs.release-agent.result }}
+          WWW: ${{ needs.release-www.result }}
+          SITE: ${{ needs.release-site.result }}
+          POSTGRES: ${{ needs.release-postgres.result }}
         run: |
-          install -m 700 -d ~/.ssh
-          printf '%s\n' "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/deploy
-          chmod 600 ~/.ssh/deploy
-          ssh-keyscan -H "${{ secrets.VM_HOST }}" >> ~/.ssh/known_hosts
-
-      - name: Send the compose file and Keycloak realm
-        run: |
-          mkdir -p stage/keycloak
-          cp deploy/test/docker-compose.yml stage/
-          cp -r bridge/keycloak/realm-syruss.json bridge/keycloak/themes stage/keycloak/
-          tar -C stage -cf - . | ssh -i ~/.ssh/deploy "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}" \
-            'mkdir -p ~/syruss-deploy && tar -C ~/syruss-deploy -xf -'
-
-      - name: Let the server read the images
-        run: |
-          printf '%s' "${{ secrets.GITHUB_TOKEN }}" | ssh -i ~/.ssh/deploy "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}" \
-            'docker login ghcr.io -u "${{ github.actor }}" --password-stdin'
-
-      - name: Pull the new images and restart what changed
-        run: |
-          ssh -i ~/.ssh/deploy "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}" '
-            set -e
-            cd ~/syruss-deploy
-            docker compose --env-file env/stack.env pull
-            docker compose --env-file env/stack.env up -d --remove-orphans
-            docker image prune -f
-            docker compose --env-file env/stack.env ps'
-
-      - name: Remove the registry login from the server
-        if: ${{ always() }}
-        run: ssh -i ~/.ssh/deploy "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}" 'docker logout ghcr.io' || true
+          services=""
+          [ "$SERVER" = success ] && services="$services server"
+          [ "$AGENT" = success ] && services="$services agent"
+          [ "$WWW" = success ] && services="$services www"
+          [ "$SITE" = success ] && services="$services site"
+          [ "$POSTGRES" = success ] && services="$services postgres"
+          list=$(printf '%s\n' $services | jq -R . | jq -sc .)
+          body=$(jq -nc --argjson services "$list" --arg compose "$(base64 -w0 deploy/test/docker-compose.yml)" '{services: $services, compose: $compose}')
+          stamp=$(date +%s)
+          sig=$(printf '%s.%s' "$stamp" "$body" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')
+          curl --fail --show-error --silent --max-time 30 -X POST "$URL" \
+            -H "X-Syruss-Timestamp: $stamp" -H "X-Syruss-Signature: $sig" -H "Content-Type: application/json" \
+            --data "$body"
+          echo " asked the server to pull:$services"
