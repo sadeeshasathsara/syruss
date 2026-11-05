@@ -7,10 +7,14 @@ Checks the running Keycloak realm against the sign-in settings Syruss expects, a
                                                 # "forgot your password" emails (stores the SMTP password in Keycloak)
 
 The same settings are in realm-syruss.json, which a brand-new Keycloak imports; this script brings an existing one in line.
+It also adds any client the realm file has and the running realm lacks (such as syruss-admin), and gives the system admin
+app its own sign-in flow that always asks for a one-time code. A brand-new Keycloak needs this run once too: the import
+creates the client, but the flow is made here.
 Needs KEYCLOAK_URL / KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD in the environment, or the local defaults.
 """
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -91,6 +95,75 @@ def smtp_from_env() -> dict:
     }
 
 
+# The system admin app signs in through its own copy of the browser flow: no riding on an existing session, no
+# redirect to another provider, and a one-time code every time (someone without one is asked to set it up first).
+ADMIN_CLIENT = "syruss-admin"
+ADMIN_FLOW = "syruss admin browser"
+# Development values the compose file falls back to; a real deployment sets SYRUSS_* (see bridge/.env.example).
+DEFAULTS = {"SYRUSS_SITE_URL": "http://localhost:3100", "SYRUSS_APP_URL": "http://localhost:3000", "SYRUSS_ADMIN_URL": "http://localhost:3200",
+            "SYRUSS_SITE_CLIENT_SECRET": "dev-site-secret-change-me", "SYRUSS_APP_CLIENT_SECRET": "dev-app-secret-change-me",
+            "SYRUSS_ADMIN_CLIENT_SECRET": "dev-admin-secret-change-me"}
+
+
+def realm_clients() -> list:
+    """The clients realm-syruss.json defines, with ${SYRUSS_*} filled in as Keycloak's import would."""
+    def fill(value):
+        if isinstance(value, str):
+            return re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), DEFAULTS.get(m.group(1), m.group(0))), value)
+        if isinstance(value, list):
+            return [fill(v) for v in value]
+        if isinstance(value, dict):
+            return {k: fill(v) for k, v in value.items()}
+        return value
+    return [fill(c) for c in json.loads((Path(__file__).with_name("realm-syruss.json")).read_text(encoding="utf-8"))["clients"]]
+
+
+def wanted_requirement(execution: dict, parent: str):
+    """What each step of the admin flow must be (None: leave it as the copied browser flow has it)."""
+    provider, name, subflow = execution.get("providerId"), execution.get("displayName", ""), execution.get("authenticationFlow")
+    if provider in ("auth-cookie", "identity-provider-redirector") or (subflow and execution["level"] == 0 and name.endswith(" Organization")):
+        return "DISABLED"
+    if provider == "conditional-user-configured" and parent.endswith("Conditional OTP"):
+        return "DISABLED"   # the code is asked of everyone, not only of those who already set one up
+    if provider == "auth-otp-form" or (subflow and (name.endswith("Conditional OTP") or name.endswith(" forms"))):
+        return "REQUIRED"
+    return None
+
+
+def ensure_admin_sign_in(token: str, check_only: bool) -> list:
+    """Missing clients created, the admin flow in place and bound to the admin client. Returns what differed."""
+    differed = []
+    for wanted in realm_clients():
+        if not call("GET", f"/admin/realms/{REALM}/clients?clientId={urllib.parse.quote(wanted['clientId'])}", token):
+            differed.append(f"client {wanted['clientId']}: missing")
+            if not check_only:
+                call("POST", f"/admin/realms/{REALM}/clients", token, wanted)
+    flows = {f["alias"]: f for f in call("GET", f"/admin/realms/{REALM}/authentication/flows", token)}
+    if ADMIN_FLOW not in flows:
+        differed.append(f"flow '{ADMIN_FLOW}': missing")
+        if check_only:
+            return differed
+        call("POST", f"/admin/realms/{REALM}/authentication/flows/browser/copy", token, {"newName": ADMIN_FLOW})
+        flows = {f["alias"]: f for f in call("GET", f"/admin/realms/{REALM}/authentication/flows", token)}
+    path = f"/admin/realms/{REALM}/authentication/flows/{urllib.parse.quote(ADMIN_FLOW)}/executions"
+    parents = {}   # the sub-flow each level is inside, as the list walks the flow top to bottom
+    for execution in call("GET", path, token):
+        if execution.get("authenticationFlow"):
+            parents[execution["level"] + 1] = execution["displayName"]
+        want = wanted_requirement(execution, parents.get(execution["level"], ""))
+        if want and execution["requirement"] != want:
+            differed.append(f"flow step '{execution['displayName']}': {execution['requirement']} -> {want}")
+            if not check_only:
+                call("PUT", path, token, {**execution, "requirement": want})
+    [client] = call("GET", f"/admin/realms/{REALM}/clients?clientId={ADMIN_CLIENT}", token) or [None]
+    if client and (client.get("authenticationFlowBindingOverrides") or {}).get("browser") != flows[ADMIN_FLOW]["id"]:
+        differed.append(f"client {ADMIN_CLIENT}: signs in through the '{ADMIN_FLOW}' flow")
+        if not check_only:
+            client["authenticationFlowBindingOverrides"] = {**(client.get("authenticationFlowBindingOverrides") or {}), "browser": flows[ADMIN_FLOW]["id"]}
+            call("PUT", f"/admin/realms/{REALM}/clients/{client['id']}", token, client)
+    return differed
+
+
 def main() -> int:
     check_only = "--check" in sys.argv
     token = call("POST", "/realms/master/protocol/openid-connect/token",
@@ -102,8 +175,13 @@ def main() -> int:
 
     for name, (now, want) in {**changes, **{f"headers.{k}": v for k, v in header_changes.items()}}.items():
         print(f"  {name}: {now!r} -> {want!r}")
-    if not changes and not header_changes:
+    admin_sign_in = ensure_admin_sign_in(token, check_only)
+    for line in admin_sign_in:
+        print(f"  {line}")
+    if not changes and not header_changes and not admin_sign_in:
         print("The realm already matches.")
+    elif admin_sign_in and not check_only and not changes and not header_changes:
+        print("Updated.")
     if (changes or header_changes) and not check_only:
         realm.update({k: v for k, (_, v) in changes.items()})
         realm["browserSecurityHeaders"] = {**headers, **WANTED_HEADERS}
@@ -118,7 +196,7 @@ def main() -> int:
             realm["smtpServer"] = smtp
             call("PUT", f"/admin/realms/{REALM}", token, realm)
             print(f"Keycloak will send mail through {smtp['host']}:{smtp['port']}.")
-    return 1 if (changes or header_changes) and check_only else 0
+    return 1 if (changes or header_changes or admin_sign_in) and check_only else 0
 
 
 if __name__ == "__main__":

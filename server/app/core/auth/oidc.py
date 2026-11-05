@@ -61,4 +61,5 @@ class OidcProvider(BaseIAMProvider):
             family_name=claims.get("family_name"),
             picture=claims.get("picture"),
             auth_time=int(claims["auth_time"]) if isinstance(claims.get("auth_time"), (int, float)) else None,
+            client_id=claims.get("azp"),
         )
