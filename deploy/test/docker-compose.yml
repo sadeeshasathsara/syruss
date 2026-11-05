@@ -90,8 +90,10 @@ services:
       JAVA_OPTS_KC_HEAP: "-Xms64m -Xmx256m"
       SYRUSS_SITE_URL: ${SYRUSS_SITE_URL}
       SYRUSS_APP_URL: ${SYRUSS_APP_URL}
+      SYRUSS_ADMIN_URL: ${SYRUSS_ADMIN_URL:-}
       SYRUSS_SITE_CLIENT_SECRET: ${SYRUSS_SITE_CLIENT_SECRET}
       SYRUSS_APP_CLIENT_SECRET: ${SYRUSS_APP_CLIENT_SECRET}
+      SYRUSS_ADMIN_CLIENT_SECRET: ${SYRUSS_ADMIN_CLIENT_SECRET:-}
       GOOGLE_CLIENT_ID: unset
       GOOGLE_CLIENT_SECRET: unset
     ports:
@@ -157,6 +159,19 @@ services:
       NODE_OPTIONS: --max-old-space-size=128
     ports:
       - "127.0.0.1:3100:3100"
+    mem_limit: 160m
+
+  # The system admin app (platform staff only). Its settings are optional until the server has env/admin.env.
+  admin:
+    <<: *app
+    image: ghcr.io/sadeeshasathsara/syruss/admin:test
+    env_file:
+      - path: env/admin.env
+        required: false
+    environment:
+      NODE_OPTIONS: --max-old-space-size=128
+    ports:
+      - "127.0.0.1:3200:3200"
     mem_limit: 160m
 
 volumes:
