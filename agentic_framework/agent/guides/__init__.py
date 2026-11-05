@@ -32,6 +32,9 @@ FOR_TASK: Dict[str, str] = {
     "rules.ideas": "rules",
 }
 
+# A chat's mode (fixed when it starts, by the page it was started from) brings the guide its every message needs.
+FOR_CHAT_MODE: Dict[str, str] = {"rules": "rules", "screens": "screens"}
+
 
 @lru_cache(maxsize=None)
 def read(name: str) -> str:
