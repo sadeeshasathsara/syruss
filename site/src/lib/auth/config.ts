@@ -1,4 +1,4 @@
-// Shared by site/ and www/ (src/lib/auth is kept identical in both; `npm run check:auth-sync` in site/ verifies it).
+// Shared by site/, www/ and admin/ (src/lib/auth is kept identical in each; `npm run check:auth-sync` in site/ verifies it).
 // Everything here is read on the server only.
 
 export type AuthConfig = {

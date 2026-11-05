@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from app.api.v1.account import router as account_router
 from app.api.v1.admin import router as admin_router
+from app.api.v1.sysadmin import router as sysadmin_router
 from app.api.v1.audit import router as audit_router
 from app.api.v1.channels import router as channels_router
 from app.api.v1.connections import router as connections_router
@@ -51,6 +52,7 @@ api_router.include_router(system_lessons_router)
 api_router.include_router(quality_router)
 api_router.include_router(account_router)
 api_router.include_router(admin_router)
+api_router.include_router(sysadmin_router)
 api_router.include_router(ws_router)
 api_router.include_router(live_router)
 api_router.include_router(me_security_router)

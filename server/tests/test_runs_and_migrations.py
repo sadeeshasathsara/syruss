@@ -3,6 +3,7 @@ The run log (origins, cost, who may see what) and the database migrations.
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
+import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
@@ -81,6 +82,13 @@ async def test_migrations_build_the_same_schema_as_the_models():
         async with fresh.connect() as conn:
             diff = await conn.run_sync(lambda c: compare_metadata(
                 MigrationContext.configure(c, opts={"include_object": include_object}), Base.metadata))
+            # The platform audit log only grows: the database itself refuses to change or remove an entry.
+            await conn.execute(text("INSERT INTO platform_audit_log (id, actor_id, actor_name, action, target_type, target_id, details, created_at) "
+                                    "VALUES ('a1', 'u', 'U', 'staff.added', 'user', 'x', '{}', now())"))
+            for change in ("UPDATE platform_audit_log SET reason = 'edited'", "DELETE FROM platform_audit_log"):
+                with pytest.raises(Exception, match="append-only"):
+                    async with conn.begin_nested():
+                        await conn.execute(text(change))
         await fresh.dispose()
         assert diff == []
     finally:

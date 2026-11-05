@@ -33,10 +33,14 @@ class Settings(BaseSettings):
     OIDC_JWKS_URL: str = ""
     OIDC_AUDIENCE: str = "syruss-api"
     # Clients allowed to call the API (the token's authorized party)
-    OIDC_ALLOWED_CLIENTS: str = "syruss-site,syruss-app"
+    OIDC_ALLOWED_CLIENTS: str = "syruss-site,syruss-app,syruss-admin"
     OIDC_CLOCK_SKEW_SECONDS: int = 30
+    # The system admin app's client. The /sysadmin API takes only its tokens: that client signs in with a second factor,
+    # so a stolen session from the everyday app can't reach platform tools.
+    OIDC_ADMIN_CLIENT: str = "syruss-admin"
 
-    # People who run the platform itself (Keycloak subjects, comma-separated): platform-wide lessons, admin tools
+    # People who run the platform itself (Keycloak subjects, comma-separated). They are platform owners from the start;
+    # everyone else on the platform staff is added in the admin app (platform_staff).
     PLATFORM_ADMIN_USER_IDS: str = ""
 
     # Single-use tickets that let a browser open a WebSocket without a token in the URL
