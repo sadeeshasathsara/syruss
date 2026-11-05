@@ -7,7 +7,7 @@ from agentic_framework.config import settings
 def get_chat_model(purpose: str = "work") -> BaseChatModel:
     """
     The tool-calling model the agent reasons with. "work" (documents, templates) needs a strong
-    multimodal model; "chat" can use CHAT_MODEL, a cheaper one from the same provider; "analytics" (looking for what is
+    multimodal model; "chat" uses CHAT_MODEL when set (one that follows a conversation well); "analytics" (looking for what is
     worth showing in the records) is the same kind of model run warmer, so it comes up with new ideas.
     """
     provider = settings.LLM_PROVIDER.lower()

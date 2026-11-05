@@ -15,7 +15,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from agentic_framework.agent.briefing import build_briefing, build_chat_briefing
 from agentic_framework.agent import guides
 from agentic_framework.agent.charter import ANALYST_CHARTER, ASSISTANT_CHARTER, CHARTER
-from agentic_framework.agent.tools import ANALYST_TOOLS, CHAT_TOOLS, EVAL_TOOLS, RunContext, execute, tool_schemas, work_tools
+from agentic_framework.agent.tools import CHAT_TOOLS, EVAL_TOOLS, RunContext, execute, tool_schemas, work_tools
 from agentic_framework.config import settings
 from agentic_framework.telemetry import Telemetry
 
@@ -47,7 +47,6 @@ class RunResult:
     model_calls: int = 0
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    messages: List[BaseMessage] = field(default_factory=list)   # the whole run, for checkpoints
 
 
 def message_text(msg: BaseMessage) -> str:
@@ -135,14 +134,14 @@ class WorkspaceAgent:
     mode "work": documents, template design, data sources, reflection; the full charter and tools.
     mode "chat": talking with one person; a short charter and the chat tools.
     mode "eval": re-reading a golden document for a shadow evaluation; the work charter, read-only tools.
-    mode "analyst": custom screens and analytics, in a chat or on a schedule; the analyst charter (with the screens guide), the
-        screen tools, and a warmer model so it thinks of new things to look at.
+    mode "analyst": the scheduled look at the records (schedule.insights); the analyst charter (with the screens guide), the
+        screen tools, and a warmer model so it thinks of new things to look at. Chats about screens are "chat" runs.
     """
 
     def __init__(self, model: BaseChatModel, mode: str = "work"):
         self.base_model = model
         self.mode = mode
-        self.tools = CHAT_TOOLS if mode == "chat" else EVAL_TOOLS if mode == "eval" else ANALYST_TOOLS if mode == "analyst" else None
+        self.tools = CHAT_TOOLS if mode == "chat" else EVAL_TOOLS if mode == "eval" else None
         self.charter = ASSISTANT_CHARTER if mode == "chat" else CHARTER
         if mode == "analyst":
             self.charter = f"{ANALYST_CHARTER}\n\n# The screens guide\n{guides.read('screens')}"
@@ -157,18 +156,16 @@ class WorkspaceAgent:
             self._bound[key] = self.base_model.bind_tools(tool_schemas(key))
         return self._bound[key]
 
-    async def run(self, ctx: RunContext, telemetry: Telemetry, history: Optional[List[BaseMessage]] = None) -> RunResult:
-        """`history`: a saved checkpoint to continue from (a conversation the agent opened)."""
+    async def run(self, ctx: RunContext, telemetry: Telemetry) -> RunResult:
         result = RunResult(status="COMPLETED", final_thought="")
         tools = self.tools if self.tools is not None else work_tools(ctx.event)
         model = self._model_for(tools)
         deadline = time.monotonic() + settings.MAX_RUN_SECONDS
         reminders = 0
         last_thought = ""
-        chatting = ctx.event.type == "human.message" and self.mode in ("chat", "analyst")
+        chatting = ctx.event.type == "human.message" and self.mode == "chat"
         briefing = await (build_chat_briefing(ctx) if chatting else build_briefing(ctx))
-        messages: List[BaseMessage] = [SystemMessage(content=self.charter), *(history or []), HumanMessage(content=briefing)]
-        result.messages = messages
+        messages: List[BaseMessage] = [SystemMessage(content=self.charter), HumanMessage(content=briefing)]
         await telemetry.emit("processing_started", {"trigger": ctx.event.type, "status": "RUNNING", "origin": ctx.event.actor})
 
         max_steps = self.max_steps

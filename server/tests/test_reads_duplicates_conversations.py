@@ -1,6 +1,6 @@
 """
 Records first (page reads are capped), duplicate documents, flags with answer types, and the
-conversations Syruss opens (with their checkpoints), plus paged conversation lists.
+conversations Syruss opens (with the note it keeps of where it left off), plus paged conversation lists.
 """
 import copy
 import json
@@ -184,8 +184,8 @@ async def test_conversations_syruss_opens_keep_its_state_until_resolved(client):
     again = (await client.post(f"{AGENT}/conversations", headers=agent(tpl), json={
         "title": "overtime column on night rosters", "message": "again"})).json()
     assert again["already_open"] and again["id"] == opened["id"]
-    checkpoint = [{"type": "human", "data": {"content": "briefing"}}, {"type": "ai", "data": {"content": "I asked."}}]
-    assert (await client.put(f"{AGENT}/conversations/{opened['id']}/state", headers=agent(tpl), json={"messages": checkpoint})).json()["saved"]
+    note = {"note": "Asked what the OT column is; doc parked until then.", "document_ids": [doc]}
+    assert (await client.put(f"{AGENT}/conversations/{opened['id']}/state", headers=agent(tpl), json=note)).json()["saved"]
     assert (await client.get(f"{AGENT}/workspace", headers=agent(tpl))).json()["open_conversations"][0]["id"] == opened["id"]
 
     # It shows in the inbox of people who can settle it (admins), not reviewers.
@@ -197,21 +197,23 @@ async def test_conversations_syruss_opens_keep_its_state_until_resolved(client):
     assert opened["id"] not in {c["id"] for c in (await client.get(f"{API}/conversations", headers=ws(tpl))).json()["items"]}
     assert (await client.delete(f"{API}/conversations/{opened['id']}", headers=ws(tpl))).status_code == 404
 
-    # A reply wakes Syruss on that conversation, which resumes from its checkpoint.
+    # A reply wakes Syruss on that conversation, which resumes from the note it left there.
     conv = (await client.get(f"{API}/conversations/{opened['id']}", headers=ws(tpl))).json()
     assert conv["kind"] == "agent" and conv["messages"][0]["role"] == "assistant"
     await client.post(f"{API}/conversations/{opened['id']}/messages?wait=false", headers=ws(tpl), json={"content": "OT is overtime; capture it."})
     [event] = await outbox_events(tpl, "human.message")
     assert event.payload["conversation_kind"] == "agent" and event.payload["conversation_title"].startswith("Overtime")
     state = (await client.get(f"{AGENT}/conversations/{opened['id']}/state", headers=token_for(tpl, event.id))).json()
-    assert state["state"]["messages"] == checkpoint
+    assert {k: state["state"][k] for k in note} == note
 
-    # Resolving it drops the checkpoint.
+    # Answered, then resolved: resolving drops the note.
+    await client.post(f"{AGENT}/conversations/{opened['id']}/messages", headers=token_for(tpl, event.id),
+                      json={"content": "Thanks, I'll propose capturing it."})
     res = await client.post(f"{AGENT}/conversations/{opened['id']}/resolve", headers=token_for(tpl, event.id),
                             json={"resolution": "Proposed adding overtime hours to the template."})
     assert res.json()["status"] == "resolved"
     assert (await client.get(f"{AGENT}/conversations/{opened['id']}/state", headers=agent(tpl))).json()["state"] is None
-    assert not (await client.put(f"{AGENT}/conversations/{opened['id']}/state", headers=agent(tpl), json={"messages": checkpoint})).json()["saved"]
+    assert not (await client.put(f"{AGENT}/conversations/{opened['id']}/state", headers=agent(tpl), json=note)).json()["saved"]
     inbox = (await client.get(f"{API}/conversations", params={"kind": "agent"}, headers=ws(tpl))).json()
     assert inbox["items"][0]["status"] == "resolved" and inbox["open"] == 0
 
@@ -300,19 +302,19 @@ async def test_correcting_a_saved_record_tells_syruss_in_chat(client):
     res = await correct({"data": fixed, "reasons": [{"object": "Guard", "reason": "Names start with a capital"}]},
                         {"X-Conversation-ID": chat["id"]})
     assert res.status_code == 200, res.text
-    assert res.json()["conversation_id"] == chat["id"]  # the chat that was open
+    assert res.json()["conversation_id"] != chat["id"]  # its own chat, not the one that was open
     [event] = await outbox_events(tpl, "human.message")
     text = event.payload["text"]
-    assert "roster-22.png" in text and "Names start with a capital" in text and "“pereira” → “Pereira”" in text
+    name = event.payload["conversation_title"].removeprefix("Correction: ")   # the document by its name
+    assert name in text and "Names start with a capital" in text and "“pereira” → “Pereira”" in text
     assert event.payload["context"]["kind"] == "record_correction" and event.payload["context"]["document_id"] == doc
     saved = (await client.get(f"{API}/extractions/{doc}", headers=ws(tpl))).json()
     assert saved["extracted_data"]["Guard"][0]["name"] == "Pereira" and saved["overall_confidence"] == 1.0
 
-    # Without an open chat, a new one is started for it.
+    # Each correction is its own chat.
     again = copy.deepcopy(fixed)
     again["Roster"][0]["site_id"] = "S13"
-    res = (await correct({"data": again})).json()
-    assert res["conversation_id"] != chat["id"]
+    assert (await correct({"data": again})).json()["conversation_id"] != res.json()["conversation_id"]
     # A record that breaks the template's rules is refused with the reason.
     broken = copy.deepcopy(fixed)
     broken["Guard"][0]["hours"] = 3

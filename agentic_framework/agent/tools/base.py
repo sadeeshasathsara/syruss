@@ -41,6 +41,10 @@ class RunContext:
     checked_rules: set = field(default_factory=set)
     # A rules.ideas run has given its ideas
     ideas_given: bool = False
+    # What this run did that the conversation should remember ("built the screen 'X'"): sent with its reply
+    actions: List[str] = field(default_factory=list)
+    # In a thread Syruss opened: the note it left there last time (where it left off)
+    working_note: str = ""
 
     @property
     def tenant_id(self) -> str:

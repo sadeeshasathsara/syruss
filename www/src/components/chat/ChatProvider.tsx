@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useShell } from "@/components/shell/ShellContext";
-import { api, ApiError, setActiveConversation } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { storeValue, useStoredValue } from "@/lib/browser";
 import { useLive } from "@/lib/live";
 import type { Conversation } from "@/lib/types";
@@ -22,9 +22,7 @@ interface ChatContextValue {
   newSession: () => void;
   renameSession: (id: string, title: string) => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
-  /** The open chat, created now if it doesn't exist yet (for work started from a page). */
-  ensureSession: () => Promise<string>;
-  /** `context` rides along with the message (for example { mode: "screens" } asks Syruss to work as the analyst). */
+  /** `context` rides along with the message; a chat's first message can set its mode (for example { mode: "screens" }). */
   send: (text: string, context?: Record<string, unknown>) => Promise<void>;
   /** Starts a new chat, opens it in the panel and sends the text there (for a request made from a page, like a new rule). */
   sendInNewChat: (text: string, context?: Record<string, unknown>) => Promise<void>;
@@ -46,15 +44,15 @@ export function useAgentChat(): ChatContextValue {
 }
 
 /**
- * Your private chats with Syruss. A chat holds your messages and Syruss's replies, the work you
- * started while it was open (from the chat or from a page) and notes of what you did. Everything
- * else in the workspace is in Activity. Held above the frame so it survives docking and sliding.
+ * Your private chats with Syruss. A chat holds your messages, Syruss's replies and the work you asked
+ * for in it. Work started from a page, and everything else in the workspace, is in Activity. Held
+ * above the frame so it survives docking and sliding.
  */
 export function ChatProvider({ workspaceId, children }: { workspaceId: string; children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const pathname = usePathname();
   const { events, watch } = useLive();
-  const { notes, setChatOpen } = useShell();
+  const { setChatOpen } = useShell();
   const [pending, setPending] = useState<{ id: string; text: string; at: string }[]>([]);
   const storeKey = `chat-session:${workspaceId}`;
   const stored = useStoredValue(storeKey);
@@ -64,11 +62,6 @@ export function ChatProvider({ workspaceId, children }: { workspaceId: string; c
 
   // A private chat's replies and work arrive only on its own channel.
   useEffect(() => (activeId ? watch(activeId) : undefined), [activeId, watch]);
-
-  useEffect(() => {
-    setActiveConversation(activeId);
-    return () => setActiveConversation(undefined);
-  }, [activeId]);
 
   const conversation = useQuery({
     queryKey: ["conversation", workspaceId, activeId],
@@ -94,7 +87,6 @@ export function ChatProvider({ workspaceId, children }: { workspaceId: string; c
     if (activeId) return activeId;
     const conv = await create.mutateAsync(undefined);
     selectSession(conv.id);
-    setActiveConversation(conv.id);
     await refreshSessions();
     return conv.id;
   }, [activeId, create, selectSession, refreshSessions]);
@@ -110,7 +102,7 @@ export function ChatProvider({ workspaceId, children }: { workspaceId: string; c
     await refreshSessions();
   }, [workspaceId, activeId, selectSession, refreshSessions]);
 
-  // Only what belongs to this chat: its runs (answers, and work started from it), its replies, its notes.
+  // Only what belongs to this chat: its runs (answers, and work asked for in it) and its replies.
   const items = useMemo(() => {
     const mine = new Set(buildRuns(events).filter((r) => activeId && r.origin?.conversation_id === activeId).map((r) => r.id));
     const chatEvents = events.filter((e) =>
@@ -120,11 +112,11 @@ export function ChatProvider({ workspaceId, children }: { workspaceId: string; c
       thread: conversation.data?.messages ?? [],
       pending,
       events: chatEvents,
-      notes: notes.filter((n) => n.conversationId === activeId),
+      notes: [],
       questions: [],
       proposals: [],
     });
-  }, [events, activeId, conversation.data, pending, notes]);
+  }, [events, activeId, conversation.data, pending]);
 
   const messages = useMemo(() => toThreadMessages(items), [items]);
   const busy = items.some((i) => i.kind === "run" && !i.run.finished) || items.some((i) => i.kind === "user" && i.pending);
@@ -173,7 +165,6 @@ export function ChatProvider({ workspaceId, children }: { workspaceId: string; c
       if (!trimmed) return;
       const conv = await create.mutateAsync(undefined);
       selectSession(conv.id);
-      setActiveConversation(conv.id);
       setChatOpen(true, "chat");
       const local = { id: `pending_${Date.now()}`, text: trimmed, at: new Date().toISOString() };
       setPending((p) => [...p, local]);
@@ -207,7 +198,7 @@ export function ChatProvider({ workspaceId, children }: { workspaceId: string; c
       value={{
         activeId, active: conversation.data, selectSession, openConversation, newSession: () => selectSession(undefined),
         renameSession, deleteSession,
-        ensureSession, send, sendInNewChat, busy, latestRunId, replying, stop, stopping,
+        send, sendInNewChat, busy, latestRunId, replying, stop, stopping,
       }}
     >
       <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>

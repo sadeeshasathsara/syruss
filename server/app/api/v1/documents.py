@@ -22,7 +22,7 @@ from app.services.conversation_service import conversation_service
 from app.services.storage_service import storage_service
 from app.core.permissions import Access, require
 from app.core.permissions import check_permission
-from app.services import extraction_log, quality_service, settings_service, workspace_events
+from app.services import document_key, extraction_log, quality_service, settings_service, workspace_events
 from app.services.record_service import record_service
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -211,15 +211,14 @@ def _correction_message(filename: str, changes: List[Dict[str, Any]], reasons: D
 async def correct_record(
     document_id: str,
     body: CorrectionIn,
-    x_conversation_id: Optional[str] = Header(None, alias="X-Conversation-ID"),
     db: AsyncSession = Depends(get_db_session),
     scope: TemplateScope = Depends(get_template_scope),
     _access: Access = Depends(require("documents.review")),
 ):
     """
     A person corrects a saved record. The corrected record must pass the template like any other.
-    What they changed, and why, goes to Syruss as their message in the chat they have open (or a
-    new one), so it can learn from it and answer.
+    What they changed, and why, goes to Syruss as their message in a new chat about this document,
+    so it can learn from it and answer there.
     """
     doc = await document_service.get_document(db, scope.tenant_id, scope.template_id, document_id)
     if doc.status != DocumentStatus.COMPLETED or doc.extraction is None:
@@ -239,13 +238,11 @@ async def correct_record(
         entity_id=doc.id, actor=scope.user_id, details={"changes": changes, "reasons": reasons},
     ))
     await _log(scope, doc, "corrected", f"{scope.username} corrected {len(changes)} field{'s' if len(changes) != 1 else ''}.", actor=scope.username)
-    conv_id = await conversation_service.linked_conversation(db, scope, x_conversation_id)
-    if conv_id is None:
-        conv_id = (await conversation_service.create_conversation(
-            db, scope, ConversationCreate(title=f"Correction: {doc.original_filename}"[:120]))).id
-    conv = await conversation_service.get_conversation(db, scope, conv_id)
+    # Its own chat, about this document: never the chat that happened to be open.
+    name = document_key.label_for(doc, scope.template.schema_definition, body.data)
+    conv = await conversation_service.create_conversation(db, scope, ConversationCreate(title=f"Correction: {name}"[:120]))
     msg = await conversation_service.post_user_message(db, scope, conv, ChatMessageCreate(
-        content=_correction_message(doc.original_filename, changes, reasons),
+        content=_correction_message(name, changes, reasons),
         context={"current_page": f"documents/{doc.id}", "kind": "record_correction", "document_id": doc.id},
     ))
     return {"status": doc.status.value, "conversation_id": conv.id, "message_id": msg.id, "changes": changes}

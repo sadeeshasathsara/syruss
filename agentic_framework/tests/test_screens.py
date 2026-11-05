@@ -3,15 +3,14 @@ import json
 from agentic_framework import llm
 from agentic_framework.agent import guides
 from agentic_framework.agent.loop import WorkspaceAgent
-from agentic_framework.agent.tools import ANALYST_TOOLS, CHAT_TOOLS, RunContext, execute, work_tools
+from agentic_framework.agent.tools import CHAT_TOOLS, RunContext, execute, work_tools
 from agentic_framework.config import settings
 from agentic_framework.tests.conftest import call, make_event
 
 WRITES = {"save_screen", "update_screen", "remove_screen"}
 
 
-def test_the_analyst_and_a_chat_can_build_screens_but_document_work_only_looks():
-    assert WRITES <= set(ANALYST_TOOLS) and {"preview_screen", "screen_catalogue", "read_guide", "reply_to_user"} <= set(ANALYST_TOOLS)
+def test_a_chat_can_build_screens_but_document_work_only_looks():
     # A chat builds for the person it is talking to (the platform checks that person's role on every call).
     assert WRITES <= set(CHAT_TOOLS) and {"list_screens", "run_screen", "preview_screen", "screen_catalogue", "read_guide"} <= set(CHAT_TOOLS)
     document = set(work_tools(make_event("document.submitted", {"document_id": "d1"})))
@@ -24,7 +23,7 @@ def test_the_analyst_and_a_chat_can_build_screens_but_document_work_only_looks()
 
 def test_the_analyst_is_told_what_screens_are_and_how_to_build_them(monkeypatch):
     agent = WorkspaceAgent(object(), mode="analyst")  # type: ignore[arg-type]
-    assert agent.tools == ANALYST_TOOLS
+    assert agent.tools is None   # the scheduled look's own toolset (work_tools)
     assert "ANALYST" in agent.charter and "# The screens guide" in agent.charter and "group_by" in agent.charter
     assert guides.read("screens").startswith("# Analytics screens") and guides.for_task("schedule.insights") == guides.read("screens")
 
@@ -107,16 +106,19 @@ async def test_it_asks_whether_to_change_a_similar_screen_or_make_a_new_one(core
     assert "Do not repeat it" in (await execute(alone, "save_screen", {"name": "Another", "definition_json": json.dumps(wider), "person_chose_new": True})).text
 
 
-def test_chats_about_analytics_go_to_the_analyst():
-    from agentic_framework.worker import wants_analyst
+def test_a_chat_keeps_the_mode_it_started_with_whatever_its_messages_say(memory):
+    """Every message of a chat is answered by the chat agent; a chat started from Analytics gets the screens guide for each
+    of its messages, including follow-ups that never say "screen"."""
+    from agentic_framework.agent.briefing import _task_guide, chat_mode
 
-    def chat(text, page="/org/w/roasters/documents", context=None, kind="chat"):
-        return make_event("human.message", {"text": text, "page": page, "context": context or {}, "conversation_kind": kind, "conversation_id": "c1"})
+    def chat(text, mode="general", kind="chat", context=None):
+        return RunContext(event=make_event("human.message", {"text": text, "context": context or {}, "conversation_kind": kind,
+                                                             "conversation_id": "c1", "conversation_mode": mode}),
+                          api=None, memory=memory)  # type: ignore[arg-type]
 
-    assert wants_analyst(chat("hello", context={"mode": "screens"}))                    # asked from the analytics page's box
-    assert wants_analyst(chat("what changed?", page="/org/w/roasters/analytics/hours"))  # written from an Analytics page
-    assert wants_analyst(chat("I need a full analytics table"))                            # plainly about analytics
-    assert wants_analyst(chat("can you create a screen for overtime"))
-    assert not wants_analyst(chat("who worked the day shift at S12?"))
-    assert not wants_analyst(chat("screen", kind="agent"))                                # only a person's private chat
-    assert not wants_analyst(make_event("document.submitted", {"document_id": "d1", "text": "screen"}))
+    follow_up = chat("yes, by month please", mode="screens")
+    assert chat_mode(follow_up) == "screens" and "# Guide for this task (screens)" in _task_guide(follow_up)
+    assert chat_mode(chat("I need a full analytics table")) == "general"   # words don't switch a chat's mode
+    assert _task_guide(chat("I need a full analytics table")) == ""
+    assert chat_mode(chat("hello", kind="agent", mode="screens")) == "general"   # only a person's own chat has a mode
+    assert chat_mode(chat("a must exceed b", mode="rules")) == "rules"

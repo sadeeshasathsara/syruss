@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAgentChat } from "@/components/chat/ChatProvider";
 import { Dropzone } from "@/components/documents/Dropzone";
 import { useShell } from "@/components/shell/ShellContext";
 import { Bar, PageHeader, Panel } from "@/components/ui/Blocks";
@@ -21,12 +20,11 @@ import { useWorkspace } from "@/lib/workspace";
 
 /**
  * Designing the template, inside the draft workspace: upload samples, the agent studies them
- * (live in the chat), proposes what to capture and asks about anything unclear; the admin edits
+ * (live in Activity), proposes what to capture and asks about anything unclear; the admin edits
  * and publishes. Published workspaces come here to refine with new samples.
  */
 export default function TemplateSetup() {
   const { workspace, href } = useWorkspace();
-  const { ensureSession } = useAgentChat();
   const { announce, setChatOpen } = useShell();
   const { events } = useLive();
   const router = useRouter();
@@ -67,7 +65,7 @@ export default function TemplateSetup() {
   }, [events]);
 
   const upload = useMutation({
-    mutationFn: async () => api.template.discover(wid, files, notes, await ensureSession()),
+    mutationFn: () => api.template.discover(wid, files, notes),
     onSuccess: () => {
       if (files.length) {
         announce(`You uploaded ${files.length} sample${files.length === 1 ? "" : "s"} for the agent to study`, { openChat: true });
@@ -143,7 +141,7 @@ export default function TemplateSetup() {
           proposal
             ? `The agent proposes ${draft?.objects.length ?? 0} object${draft?.objects.length === 1 ? "" : "s"} with ${fieldCount} fields. Edit anything, then publish.`
             : studying
-              ? "The agent is studying your samples. Follow along in the chat."
+              ? "The agent is studying your samples. Follow along in Activity."
               : awaiting
                 ? "Waiting for the agent’s proposal."
                 : workspace.status === "draft" && hasSamples
@@ -155,8 +153,8 @@ export default function TemplateSetup() {
         actions={
           <>
             {draft && designActions}
-            <Button variant="secondary" className="xl:hidden" onClick={() => setChatOpen(true)}>
-              Open the chat
+            <Button variant="secondary" className="xl:hidden" onClick={() => setChatOpen(true, "activity")}>
+              Open Activity
             </Button>
           </>
         }
