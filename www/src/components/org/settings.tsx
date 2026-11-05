@@ -22,7 +22,7 @@ export function OrganizationGeneral() {
   const { org } = useParams<{ org: string }>();
   const { canOrg } = useMe();
   const queryClient = useQueryClient();
-  const overview = useQuery({ queryKey: ["org-overview"], queryFn: api.org.overview });
+  const overview = useQuery({ queryKey: ["org-overview", 30], queryFn: () => api.org.overview(30) });
   const [name, setName] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const current = overview.data?.organization.name ?? "";
@@ -67,7 +67,7 @@ export function OrganizationGeneral() {
 
 export function CloseOrganization() {
   const { me } = useMe();
-  const overview = useQuery({ queryKey: ["org-overview"], queryFn: api.org.overview });
+  const overview = useQuery({ queryKey: ["org-overview", 30], queryFn: () => api.org.overview(30) });
   const [typed, setTyped] = useState("");
   const name = overview.data?.organization.name ?? "";
   const close = useMutation({ mutationFn: () => api.org.close(typed.trim()), onSuccess: () => window.location.assign("/signed-out") });

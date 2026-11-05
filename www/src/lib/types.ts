@@ -802,13 +802,71 @@ export interface Overview {
   usage: { documents_this_month: number; documents_limit: number; members: number; members_limit: number; plan: string };
 }
 
+export type OrgPeriod = 7 | 30 | 90;
+
+/** How work went over a period, added up across workspaces. Rates are 0 to 1, null when there was nothing to rate. */
+export interface OrgPeriodTotals {
+  received: number;
+  saved: number;
+  review: number;
+  failed: number;
+  working: number;
+  hands_free_rate: number | null;
+  avg_seconds_to_save: number | null;
+  failure_rate: number | null;
+  runs: number;
+  /** Null when you may not see costs, or when the agent ran on a model with no price set (then `tokens` still counts). */
+  cost_usd: number | null;
+  tokens: number | null;
+}
+
+export interface OrgWorkspaceHealth {
+  id: string;
+  slug: string;
+  name: string;
+  status: "draft" | "active";
+  /** Null for an organization admin who manages the workspace without a role in it. */
+  my_role: string | null;
+  /** In the period. */
+  received: number;
+  saved: number;
+  failed: number;
+  hands_free_rate: number | null;
+  /** Now. */
+  needs_review: number;
+  open_questions: number;
+  open_threads: number;
+  failed_now: number;
+  last_activity_at: string | null;
+  documents_this_month: number;
+  documents_limit: number;
+  plan: string;
+  cost_usd: number | null;
+  tokens: number | null;
+  cost_this_month_usd: number | null;
+  budget_usd: number | null;
+}
+
 export interface OrgOverview {
   organization: { name: string; slug: string; created_at: string };
   workspaces: { total: number; draft: number; mine: number; reachable: number };
   people: { total: number; owners: number; admins: number; members: number };
   /** Only for people who manage members. */
   pending_invitations: number | null;
-  attention: { needs_review: number; questions: number; drafts: number };
+  /** Across the workspaces you hold a role in. */
+  attention: { needs_review: number; questions: number; threads: number; failed: number; drafts: number };
+  /** The first steps of a new organization. */
+  setup: { workspace: boolean; published: boolean; documents: boolean; people: boolean };
+  /** Whether you may see what the agents cost (those who audit or manage billing). */
+  costs: boolean;
+  period: { days: OrgPeriod; from: string; to: string; series: Overview["days"]; current: OrgPeriodTotals; previous: OrgPeriodTotals };
+  /** Your workspaces, and for an organization admin the others too. */
+  workspace_health: OrgWorkspaceHealth[];
+  /** Workspaces you hold a role in where something is waiting. */
+  needs_you: { slug: string; name: string; status: "draft" | "active"; needs_review: number; questions: number; threads: number; failed: number }[];
+  this_month: { documents: number; cost_usd: number | null; tokens: number | null; near_limit: string[] };
+  /** The latest steps in the logs of the workspaces you hold a role in. */
+  latest_work: { id: string; workspace: string; workspace_slug: string; document_id: string | null; stage: LogEntry["stage"]; level: LogEntry["level"]; message: string; created_at: string }[];
   /** Only for people who may read the organization's activity. */
   activity: OrgActivityItem[] | null;
 }
