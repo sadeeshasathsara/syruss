@@ -97,4 +97,5 @@ async def test_closing_the_organization_needs_an_owner_and_its_exact_name(client
     assert done.status_code == 204
     assert (await client.get(f"{API}/organization/overview", headers=boss)).status_code == 403  # it no longer opens
     async with AsyncSessionLocal() as db:
-        assert (await db.get(Tenant, "tenant_to_close")).is_active is False  # closed, not erased
+        closed = await db.get(Tenant, "tenant_to_close")
+        assert closed.is_active is False and closed.status == "closed"  # closed, not erased, and said to be closed

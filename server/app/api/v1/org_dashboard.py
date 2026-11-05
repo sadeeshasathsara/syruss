@@ -144,6 +144,6 @@ async def close_organization(body: CloseIn, auth: AuthContext = Depends(get_curr
     tenant = await db.get(Tenant, auth.tenant_id)
     if body.confirm.strip() != tenant.name:
         raise HTTPException(status_code=422, detail="Type the organization's name exactly to confirm.")
-    tenant.is_active = False
+    tenant.set_status("closed", "Closed by its owner")
     db.add(AuditLog(tenant_id=tenant.id, event_type="ORG_DELETED", entity_type="Organization", entity_id=tenant.id, actor=auth.user_id, details={"name": tenant.name}))
     await db.commit()

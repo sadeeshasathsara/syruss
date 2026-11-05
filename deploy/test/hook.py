@@ -23,7 +23,7 @@ SECRET = os.environ["HOOK_SECRET"].encode()
 FOLDER = Path(os.environ.get("DEPLOY_DIR", str(Path.home() / "syruss-deploy")))
 PORT = int(os.environ.get("HOOK_PORT", "9100"))
 HOST = os.environ.get("HOOK_HOST", "127.0.0.1")  # the reverse proxy (Caddy) is the only way in
-SERVICES = {"postgres", "keycloak", "keycloak-db", "kafka", "minio", "server", "agent", "www", "site"}
+SERVICES = {"postgres", "keycloak", "keycloak-db", "kafka", "minio", "server", "agent", "www", "site", "admin"}
 MAX_BODY = 64 * 1024
 MAX_SKEW_SECONDS = 300
 
@@ -47,9 +47,9 @@ def compose(*args: str) -> int:
 
 # Start order: what others rely on comes first. Each service is pulled and started on its own, and the next one
 # waits until it is ready and the machine has calmed down, because starting everything at once starves a small server.
-ORDER = ["postgres", "keycloak-db", "kafka", "minio", "keycloak", "server", "agent", "www", "site"]
+ORDER = ["postgres", "keycloak-db", "kafka", "minio", "keycloak", "server", "agent", "www", "site", "admin"]
 # Services without a healthcheck: how long to let them settle after they start.
-SETTLE_SECONDS = {"minio": 10, "agent": 20, "www": 15, "site": 15}
+SETTLE_SECONDS = {"minio": 10, "agent": 20, "www": 15, "site": 15, "admin": 15}
 READY_TIMEOUT = 900   # per service, first start of Keycloak included
 CALM_LOAD = 3.0       # one-minute load average to wait for before starting the next service
 CALM_TIMEOUT = 240
