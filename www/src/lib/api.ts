@@ -1,7 +1,7 @@
 import type {
   Access, AgentQuestion, AgentRun, AgentRunDetail, MemoryItem, MemoryKind, ApiKeyInfo, ApiSourceInput, AppNotification, AuditEntry, Billing, ChatMessage, Conversation,
   DocumentItem, Entity, MyOrganization, Screen, ScreenCatalogue, ScreenDefinition, ScreenFilter, ScreenRun, ScreenStarter, ScreenSummary, Extraction, Invitation, InvitationPreview, KnowledgeSource, Me, Member, NotificationPref,
-  InviteIssued, LogPage, OrgActivityPage, OrgOverview, Organization, Overview, SecurityEventPage, TrustedDevice, Proposal, RecordSet, ReviewTask, Role, RoleCatalogue, Template, TemplateSchema, TemplateVersion, OrgMemberInfo, OrgInvitationInfo, OrgRole, Permission,
+  InviteIssued, LogPage, OrgActivityPage, OrgOverview, OrgPeriod, Organization, Overview, SecurityEventPage, TrustedDevice, Proposal, RecordSet, ReviewTask, Role, RoleCatalogue, Template, TemplateSchema, TemplateVersion, OrgMemberInfo, OrgInvitationInfo, OrgRole, Permission,
   WebhookDeliveryInfo, WebhookInfo, Workspace, WorkspaceEventType, WorkspaceSettingsData, BudgetStatus, ReflectionState,
   IntakeActivityPage, IntakeChannelInfo, IntakeKeyInfo, DeveloperInfo, ChannelConfigPatch, NewIntakeKey,
   ConnectionsOverview, DeliveryDetail, DeliveryPage, DeliveryStats, DeliveryStatus, DestinationInfo, DestinationKind, MappingPreview, MappingSources, MappingSpec,
@@ -129,7 +129,7 @@ export const api = {
   /** The organization's people. Roles here run the organization; they never open a workspace's data. */
   org: {
     rename: (name: string) => request<Organization>("/organization", { method: "PATCH", body: json({ name }) }),
-    overview: () => request<OrgOverview>("/organization/overview"),
+    overview: (days: OrgPeriod = 30) => request<OrgOverview>(`/organization/overview?days=${days}`),
     activity: (before?: string | null, limit = 30) =>
       request<OrgActivityPage>(`/organization/activity?limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ""}`),
     close: (confirm: string) => request<void>("/organization", { method: "DELETE", body: json({ confirm }) }),
