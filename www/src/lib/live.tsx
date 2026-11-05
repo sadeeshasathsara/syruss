@@ -40,6 +40,8 @@ function staleKeys(e: LiveEvent): string[][] {
       return [["thread"]];
     case "agent_conversation":
       return [["conversations"], ["conversation"], ["workspace"], ["questions"]];
+    case "conversation_renamed":
+      return [["conversations"], ["conversation"]];
     case "intake_received":
       return [["channels"], ["connections"]];
     case "delivery_changed":

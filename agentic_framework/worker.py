@@ -10,12 +10,11 @@ is retried with backoff, then sent to the dead-letter topic and its work is mark
 import asyncio
 import json
 import logging
-import re
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, TopicPartition
-from agentic_framework.agent import checkpoint, memory_upkeep
+from agentic_framework.agent import memory_upkeep
 from agentic_framework.agent.loop import RunResult, WorkspaceAgent, stopped
 from agentic_framework.agent.tools import RunContext
 from agentic_framework.config import settings
@@ -28,18 +27,13 @@ from agentic_framework.telemetry import Telemetry
 
 logger = logging.getLogger("agent.worker")
 
+NOTE_CHARS = 2000  # of the note a thread keeps of where the agent left off
 
-ANALYTICS_WORDS = re.compile(r"\b(analytics?|screens?|dashboards?|reports?|pivot|breakdown)\b", re.I)
-
-
-def wants_analyst(event: AgentEvent) -> bool:
-    """A chat about analytics screens goes to the analyst (its guide, its tools, its warmer model): when the screens page asked
-    (mode "screens"), when they wrote it from an Analytics page, or when their message is plainly about analytics or screens."""
-    if event.type != "human.message" or event.payload.get("conversation_kind") != "chat":
-        return False
-    context = event.payload.get("context") or {}
-    return (context.get("mode") == "screens" or "/analytics" in (event.payload.get("page") or "")
-            or bool(ANALYTICS_WORDS.search(event.payload.get("text") or "")))
+# What a person is told when a chat run ended without answering them, by how it ended.
+UNFINISHED_REPLY = {
+    "BUDGET_EXCEEDED": "I couldn't finish that in one go. Could you narrow it down, for example to a period or a name?",
+    "COMPLETED": "I couldn't put an answer together for that. Could you ask it another way?",
+}
 
 
 class AgentWorker:
@@ -50,7 +44,8 @@ class AgentWorker:
         self.chat_agent = chat_agent or WorkspaceAgent(agent.base_model, mode="chat")
         # Evaluations read like work, with only the tools that can't change the workspace.
         self.eval_agent = WorkspaceAgent(agent.base_model, mode="eval")
-        # Screens and analytics: a warmer model, so it comes up with new things to look at (its numbers still come from tools).
+        # The scheduled look at the records: a warmer model, so it comes up with new things to look at (its numbers still come
+        # from tools). Chats about screens stay with the chat agent, which gets the screens guide for them.
         self.analyst_agent = analyst_agent or WorkspaceAgent(agent.base_model, mode="analyst")
         self.memory = memory
         self.producer = producer
@@ -121,20 +116,20 @@ class AgentWorker:
         resuming = bool(event.payload.get("conversation_id")) and (
             (event.type == "human.message" and event.payload.get("conversation_kind") in ("agent", "flag"))
             or event.type == "human.answered")
-        analytical = event.type == "schedule.insights" or wants_analyst(event)
-        agent = (self.agent if resuming else self.analyst_agent if analytical
-                 else {"human.message": self.chat_agent, "eval.item": self.eval_agent}.get(event.type, self.agent))
+        # Every message in a person's chat is answered by the same chat agent; the chat's mode brings its guide.
+        agent = (self.agent if resuming else {"human.message": self.chat_agent, "eval.item": self.eval_agent,
+                                              "schedule.insights": self.analyst_agent}.get(event.type, self.agent))
         if event.type != "eval.item":  # an evaluation must not change anything, memory included
             await self._upkeep("before the run", memory_upkeep.before_run(ctx))
-        history = None
-        if resuming:
+        if resuming:  # where it left off: a short note it wrote then, beside the thread's own transcript
             saved = await api.get(f"/conversations/{event.payload['conversation_id']}/state")
-            history = checkpoint.load(((saved.get("state") or {}).get("messages")) or [])
-        result: RunResult = await agent.run(ctx, telemetry, history=history)
+            ctx.working_note = ((saved.get("state") or {}).get("note")) or ""
+        result: RunResult = await agent.run(ctx, telemetry)
         await self._enforce_outcomes(event, api, ctx, result)
-        await self._save_checkpoints(event, api, ctx, result, resuming)
+        await self._save_working_notes(event, api, ctx, result, resuming)
         if event.type == "human.message" and not resuming:
             await self._upkeep("summarizing the chat", memory_upkeep.summarize_conversation(ctx, agent.base_model))
+            await self._upkeep("naming the chat", memory_upkeep.name_conversation(ctx, agent.base_model))
         await api.post("/traces", {
             "trigger": event.type, "model": model_name(agent.mode), "status": result.status,
             "started_at": result.started_at.isoformat(), "completed_at": result.completed_at.isoformat(),
@@ -145,15 +140,16 @@ class AgentWorker:
         logger.info("Event %s (%s) handled: %s, %d steps", event.event_id, event.type, result.status, len(result.steps))
         return result.status
 
-    async def _save_checkpoints(self, event: AgentEvent, api: CoreAPI, ctx: RunContext, result: RunResult, resuming: bool) -> None:
-        """Conversations the agent opened keep its working state in Postgres until they are resolved."""
+    async def _save_working_notes(self, event: AgentEvent, api: CoreAPI, ctx: RunContext, result: RunResult, resuming: bool) -> None:
+        """Conversations the agent opened keep a note of where it left off (its last thought and the documents it worked
+        on) until they are resolved. The next reply resumes from that note and the thread itself, not a replay of the run."""
         ids = list(ctx.opened_conversations)
         if resuming:
             ids.append(event.payload["conversation_id"])
-        saved = checkpoint.dump(result.messages)
+        note = {"note": (result.final_thought or "")[:NOTE_CHARS], "document_ids": sorted(ctx.touched_documents)}
         for conv_id in dict.fromkeys(ids):
             if conv_id not in ctx.resolved_conversations:
-                await api.put(f"/conversations/{conv_id}/state", {"messages": saved})
+                await api.put(f"/conversations/{conv_id}/state", note)
 
     async def _enforce_outcomes(self, event: AgentEvent, api: CoreAPI, ctx: RunContext, result: RunResult) -> None:
         """Nothing is left hanging: a document always ends in a state, a chat message always gets a reply."""
@@ -167,8 +163,11 @@ class AgentWorker:
         if event.type == "eval.item" and event.document_id not in ctx.resolved_documents:
             await api.post("/evals/outcome", {"note": f"Ended without a record ({result.status}). {result.final_thought}"[:2000]})
         if event.type == "human.message" and not ctx.replied and result.status != "CANCELLED":
+            # A run that finished by answering in plain text has its answer delivered. One that was cut off says so in words
+            # for the person, never with the runtime's own note ("Stopped: reached the limit of ... steps").
+            answered = result.status == "COMPLETED" and result.final_thought.strip()
             await api.post(f"/conversations/{event.payload['conversation_id']}/messages", {
-                "content": result.final_thought or "I couldn't finish working on this. Please try again.",
+                "content": result.final_thought if answered else UNFINISHED_REPLY.get(result.status, UNFINISHED_REPLY["COMPLETED"]),
                 "reply_to": event.payload.get("message_id"), "channel_id": event.payload.get("channel_id"),
                 "confidence": 0.5,
             })

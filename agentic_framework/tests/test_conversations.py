@@ -1,13 +1,12 @@
 import json
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from agentic_framework.agent import checkpoint
+from langchain_core.messages import AIMessage
 from agentic_framework.agent.loop import WorkspaceAgent
 from agentic_framework.worker import AgentWorker
 from agentic_framework.tests.conftest import ScriptedModel, call, make_event
 
 
 def with_conversations(core):
-    """Fake core routes for conversations the agent opens, with their saved state."""
+    """Fake core routes for conversations the agent opens, with the note it keeps there of where it left off."""
     state = {}
 
     def open_conversation(request, m):
@@ -15,11 +14,11 @@ def with_conversations(core):
         return 201, {"id": "conv1", "title": body["title"], "status": "open"}
 
     def put_state(request, m):
-        state[m["id"]] = json.loads(request.content)["messages"]
+        state[m["id"]] = json.loads(request.content)
         return 200, {"saved": True}
 
     core.add("POST", r"/conversations", open_conversation)
-    core.add("GET", r"/conversations/(?P<id>[^/]+)/state", lambda r, m: (200, {"id": m["id"], "state": {"messages": state.get(m["id"])}}))
+    core.add("GET", r"/conversations/(?P<id>[^/]+)/state", lambda r, m: (200, {"id": m["id"], "state": state.get(m["id"])}))
     core.add("PUT", r"/conversations/(?P<id>[^/]+)/state", put_state)
     core.add("POST", r"/conversations/(?P<id>[^/]+)/resolve", lambda r, m: (200, {"id": m["id"], "status": "resolved"}))
     return state
@@ -37,22 +36,6 @@ async def _handle(core, memory, model, event):
         worker_module.CoreAPI = original
 
 
-def test_checkpoints_drop_images_and_keep_tool_calls_paired():
-    messages = [HumanMessage(content="briefing")]
-    for i in range(40):
-        messages += [AIMessage(content="", tool_calls=[call("view_document", {"document_id": f"d{i}"})]),
-                     ToolMessage(content="x" * 5000, tool_call_id=f"call_view_document_{i}", name="view_document"),
-                     HumanMessage(content=[{"type": "text", "text": "Requested image(s):"},
-                                           {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,AAAA"}}])]
-    saved = checkpoint.dump(messages)
-    assert "base64" not in json.dumps(saved)
-    restored = checkpoint.load(saved)
-    assert isinstance(restored[0], HumanMessage) and "left out" in restored[0].content
-    assert isinstance(restored[1], AIMessage) and len(restored) <= checkpoint.MAX_MESSAGES + 1
-    assert all(len(m.content) <= checkpoint.MAX_TOOL_TEXT + 10 for m in restored if isinstance(m, ToolMessage))
-    assert isinstance(restored[-1], AIMessage)  # the next person's message follows a model turn
-
-
 async def test_a_conversation_resumes_from_where_the_agent_left_off(core, memory):
     saved = with_conversations(core)
     # While reading a document, the agent opens a conversation and parks the document.
@@ -63,9 +46,10 @@ async def test_a_conversation_resumes_from_where_the_agent_left_off(core, memory
     ])
     await _handle(core, memory, opener, make_event("document.submitted", {"document_id": "doc1"}, event_id="e-open"))
     assert core.doc_status["doc1"] == "AWAITING_INPUT"
-    assert "OT column" in json.dumps(saved["conv1"])  # its working state, saved on the conversation
+    # A short note of where it left off is kept on the conversation, not a replay of the whole run.
+    assert saved["conv1"] == {"note": "Parked doc1 until the admin explains OT.", "document_ids": ["doc1"]}
 
-    # The admin replies: the agent continues from that state, with its full tools.
+    # The admin replies: the agent continues from that note and the thread, with its full tools.
     resumer = ScriptedModel(script=[
         AIMessage(content="", tool_calls=[call("reply_to_user", {"content": "Thanks, I'll capture overtime."})]),
         AIMessage(content="", tool_calls=[call("resolve_conversation", {"conversation_id": "conv1", "resolution": "OT is overtime."})]),
@@ -76,12 +60,63 @@ async def test_a_conversation_resumes_from_where_the_agent_left_off(core, memory
                                          "sender": {"name": "Asha", "role": "Admin"}}, event_id="e-reply")
     assert await _handle(core, memory, resumer, reply) == "COMPLETED"
     first_prompt = resumer.seen[0]
-    assert any("Parked doc1 until the admin explains OT." in str(m.content) for m in first_prompt)
+    assert len(first_prompt) == 2   # the charter and the briefing: no earlier run replayed
+    assert "Where you left off last time: Parked doc1 until the admin explains OT." in str(first_prompt[-1].content)
     assert "replied in the conversation you opened" in str(first_prompt[-1].content)
     calls = [(m, p) for m, p, _ in core.requests]
     assert ("POST", "/conversations/conv1/resolve") in calls
     # Resolved in this run: its state isn't saved again.
     assert [p for m, p in calls if m == "PUT"].count("/conversations/conv1/state") == 1
+
+
+def test_only_a_run_someone_wrote_to_can_reply():
+    from agentic_framework.agent.tools import CHAT_TOOLS, work_tools
+    assert "reply_to_user" in CHAT_TOOLS
+    for woke in (make_event("document.submitted", {"document_id": "d1"}),
+                 make_event("template.samples_added", {"sample_document_ids": []}),
+                 make_event("proposal.decided", {"proposal_id": "p1"}),
+                 make_event("review.completed", {"review_id": "r1", "document_id": "d1", "conversation_id": "c1"})):
+        assert "reply_to_user" not in work_tools(woke), woke.type
+    assert "reply_to_user" in work_tools(make_event("human.answered", {"question_id": "q1", "conversation_id": "t1"}))
+    assert "reply_to_user" in work_tools(make_event("human.message", {"conversation_id": "t1", "conversation_kind": "flag"}))
+
+
+async def test_a_reply_goes_only_to_the_conversation_that_woke_the_run(core, memory):
+    from agentic_framework.agent.tools import RunContext, execute
+    work = RunContext(event=make_event("document.submitted", {"document_id": "d1", "channel_id": "c1"}), api=core.api(), memory=memory)
+    assert (await execute(work, "reply_to_user", {"content": "Done."})).text.startswith("ERROR: Nobody wrote to you")
+    chat = RunContext(event=make_event("human.message", {"conversation_id": "c1", "message_id": "m1", "text": "hi"}),
+                      api=core.api(), memory=memory)
+    # The conversation can't be chosen: a model that names another one still answers where it was asked.
+    await execute(chat, "reply_to_user", {"content": "Hello.", "conversation_id": "someone-else"})
+    assert [p for m, p, _ in core.requests if m == "POST"] == ["/conversations/c1/messages"]
+
+
+async def test_what_a_chat_run_did_travels_with_its_reply_and_is_read_back_later(core, memory):
+    from agentic_framework.agent.briefing import _transcript
+    from agentic_framework.agent.tools import RunContext, execute
+    core.add("POST", r"/memories", lambda r, m: (201, {"id": "mem1"}))
+    ctx = RunContext(event=make_event("human.message", {"conversation_id": "c1", "message_id": "m1", "text": "x"}),
+                     api=core.api(), memory=memory)
+    await execute(ctx, "remember", {"kind": "lesson", "content": "A blank in a column repeats the row above"})
+    await execute(ctx, "reply_to_user", {"content": "Noted."})
+    [(_, _, body)] = [r for r in core.requests if r[1] == "/conversations/c1/messages"]
+    assert body["actions"] == ["remembered (lesson): A blank in a column repeats the row above"]
+    history = [{"id": "a", "role": "user", "content": "x"},
+               {"id": "b", "role": "assistant", "content": "Noted.", "actions": body["actions"]},
+               {"id": "c", "role": "system", "content": "Asha stopped Syruss."}]
+    read = _transcript(history, skip="none")
+    assert "You: Noted.\n  (before that reply you remembered (lesson)" in read and "Note: Asha stopped Syruss." in read
+
+
+async def test_a_chat_cut_short_says_so_in_words_not_with_the_runtimes_note(core, memory, monkeypatch):
+    from agentic_framework.config import settings
+    monkeypatch.setattr(settings, "MAX_STEPS", 2)
+    looping = ScriptedModel(script=[AIMessage(content="", tool_calls=[call("list_documents", {})])] * 3)
+    await _handle(core, memory, looping, make_event("human.message", {"conversation_id": "c1", "message_id": "m1",
+                                                                      "text": "everything?"}, event_id="e-long"))
+    [(_, _, body)] = [r for r in core.requests if r[0] == "POST" and r[1] == "/conversations/c1/messages"]
+    assert "Stopped" not in body["content"] and "narrow it down" in body["content"]
 
 
 async def test_the_agent_sees_its_page_budget_when_it_wakes_and_after_each_page(core, memory):

@@ -312,6 +312,8 @@ export interface Conversation {
   message_count?: number;
   /** chat: your own chat with Syruss. agent: a conversation Syruss opened about an issue. flag: a flag's thread. */
   kind?: "chat" | "agent" | "flag";
+  /** chat: what it is for, fixed by the page it was started from. */
+  mode?: "general" | "rules" | "screens";
   status?: "open" | "resolved" | null;
   audience?: "admin" | "reviewer" | null;
   resolution?: string | null;
@@ -346,7 +348,7 @@ export interface ConversationPage {
   items: ConversationSummary[];
   has_more: boolean;
   next_offset: number;
-  /** Agent conversations still open (kind=agent only). */
+  /** Threads Syruss started that are still open (kind=agent and kind=syruss only). */
   open?: number;
 }
 

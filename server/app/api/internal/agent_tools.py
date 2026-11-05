@@ -55,6 +55,7 @@ from app.services import (
     settings_service, source_service, workspace_events,
 )
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
+from app.services.display_names import name_documents
 from app.services.document_key import document_label, identification_key, identification_spec, label_for
 from app.services.identity_check import normalize_id
 from app.services.record_service import record_service
@@ -1002,8 +1003,8 @@ def _markdown_table(t: Dict[str, Any]) -> str:
 
 
 class QuestionBody(BaseModel):
-    question: str
-    context: str = Field(..., description="Why you are asking and what you currently believe")
+    question: str = Field(..., description="One short question, for the person who answers it")
+    context: str = Field(..., description="For the person who answers: what they need to know to answer, in a sentence or two")
     answer_type: str = Field("text", pattern="^(text|single|multiple)$",
                              description="text: a written answer; single: one of the options; multiple: any of them")
     options: List[str] = Field(default_factory=list, description="Choices for single/multiple; 'Other' is always added")
@@ -1030,8 +1031,11 @@ async def flag(body: QuestionBody, ws: Workspace = Depends(get_workspace)):
     ))).scalar_one_or_none()
     if duplicate:
         return {**_question_dict(duplicate), "duplicate": True}
+    # People read both: documents by their names, not ids or file names.
+    body.question = await name_documents(ws.db, ws.template_id, body.question.strip())
+    body.context = await name_documents(ws.db, ws.template_id, body.context)
     q = AgentQuestion(
-        tenant_id=ws.tenant_id, template_id=ws.template_id, question=body.question.strip(), context=body.context,
+        tenant_id=ws.tenant_id, template_id=ws.template_id, question=body.question, context=body.context,
         options=body.options, answer_type=body.answer_type, evidence_document_ids=body.evidence_document_ids,
         data_table=body.data_table.cleaned() if body.data_table else None, target_role=body.target_role,
         priority=body.priority, related_document_id=body.related_document_id,
@@ -1085,6 +1089,9 @@ class ChatReplyBody(BaseModel):
     evidence_citations: List[Dict[str, Any]] = Field(default_factory=list)
     confidence: float = 1.0
     channel_id: Optional[str] = Field(None, description="Live channel to deliver on (defaults to the conversation id)")
+    actions: List[str] = Field(default_factory=list, max_length=20,
+                               description="What the run did before this reply (built a screen, suggested a rule...), so later "
+                                           "runs in this conversation know it")
 
 
 # Who an agent conversation is for, by the permission their role must have.
@@ -1124,6 +1131,7 @@ async def open_conversation(body: OpenConversationBody, ws: Workspace = Depends(
     if same:
         return {**_conversation_dict(same), "already_open": True,
                 "note": "You already have an open conversation about this; continue it with reply_to_user."}
+    body.message = await name_documents(ws.db, ws.template_id, body.message)
     conv = Conversation(
         tenant_id=ws.tenant_id, template_id=ws.template_id, user_id="agent", kind="agent", status="open",
         audience=body.audience, title=body.title.strip(),
@@ -1147,35 +1155,57 @@ async def open_conversation(body: OpenConversationBody, ws: Workspace = Depends(
     return _conversation_dict(conv)
 
 
-class CheckpointBody(BaseModel):
-    messages: List[Dict[str, Any]] = Field(..., description="The agent's message history, serialized")
+class WorkingNoteBody(BaseModel):
+    note: str = Field("", max_length=4000, description="Where you left off: what you were doing and what you wait for")
+    document_ids: List[str] = Field(default_factory=list, max_length=200, description="The documents you worked on")
 
 
 @router.get("/conversations/{conversation_id}/state")
-async def get_checkpoint(conversation_id: str, ws: Workspace = Depends(get_workspace)):
-    """Your saved working state for a conversation you opened (until it is resolved)."""
+async def get_working_note(conversation_id: str, ws: Workspace = Depends(get_workspace)):
+    """The note you left in a conversation you opened, of where you left off (kept until it is resolved)."""
     conv = await _agent_conversation(ws, conversation_id)
-    return {**_conversation_dict(conv), "state": conv.agent_state}
+    state = conv.agent_state if conv.agent_state and "note" in conv.agent_state else None   # older saved runs are not resumed
+    return {**_conversation_dict(conv), "state": state}
 
 
 @router.put("/conversations/{conversation_id}/state")
-async def save_checkpoint(conversation_id: str, body: CheckpointBody, ws: Workspace = Depends(get_workspace)):
+async def save_working_note(conversation_id: str, body: WorkingNoteBody, ws: Workspace = Depends(get_workspace)):
     conv = await _agent_conversation(ws, conversation_id)
     if conv.status != "open":
         return {"saved": False, "reason": "The conversation is resolved; its state is no longer kept."}
-    conv.agent_state = {"messages": body.messages, "saved_at": datetime.now(timezone.utc).isoformat(), "event_id": ws.event_id}
+    conv.agent_state = {"note": body.note, "document_ids": body.document_ids,
+                        "saved_at": datetime.now(timezone.utc).isoformat(), "event_id": ws.event_id}
     await ws.db.commit()
-    return {"saved": True, "messages": len(body.messages)}
+    return {"saved": True}
 
 
 class ResolveBody(BaseModel):
     resolution: str = Field(..., min_length=3, description="What was decided or done")
 
 
+async def _waking_conversation(ws: Workspace) -> Optional[str]:
+    """The conversation a person wrote in to wake this run (a chat message, or an answer in a flag's thread), if any."""
+    event = await ws.db.get(AgentEventOutbox, ws.event_id) if ws.event_id else None
+    if event is None or event.event_type not in ("human.message", "human.answered"):
+        return None
+    return (event.payload or {}).get("conversation_id")
+
+
+async def _replied_in(ws: Workspace, conv: Conversation) -> bool:
+    rows = (await ws.db.execute(select(ChatMessage.agent_trace).where(
+        ChatMessage.conversation_id == conv.id, ChatMessage.role == "assistant"))).scalars().all()
+    return any((trace or {}).get("event_id") == ws.event_id for trace in rows)
+
+
 @router.post("/conversations/{conversation_id}/resolve")
 async def resolve_conversation(conversation_id: str, body: ResolveBody, ws: Workspace = Depends(get_workspace)):
-    """Marks a conversation you opened as resolved. Its saved working state is cleared."""
+    """Marks a conversation you opened as resolved. Its saved working state is cleared. When a person's message
+    woke you in it, reply to them first: the resolution note comes after your answer, not before it."""
     conv = await _agent_conversation(ws, conversation_id)
+    if await _waking_conversation(ws) == conv.id and not await _replied_in(ws, conv):
+        raise HTTPException(status_code=409, detail=(
+            "Reply to them in this conversation first (reply_to_user: what you did with their answer), then resolve it."))
+    body.resolution = await name_documents(ws.db, ws.template_id, body.resolution)
     conv.status, conv.resolution, conv.resolved_at = "resolved", body.resolution, datetime.now(timezone.utc)
     conv.agent_state = None
     ws.db.add(ChatMessage(conversation_id=conv.id, tenant_id=ws.tenant_id, role="system",
@@ -1190,26 +1220,35 @@ async def resolve_conversation(conversation_id: str, body: ResolveBody, ws: Work
 
 @router.get("/conversations/{conversation_id}/messages")
 async def conversation_history(conversation_id: str, limit: int = Query(20, ge=1, le=100), ws: Workspace = Depends(get_workspace)):
-    """The latest messages of a conversation, oldest first (what you and the person said)."""
+    """The latest messages of a conversation, oldest first: what you and the person said, what you did before each reply
+    (`actions`), and the platform's notes of what happened in it (role "system": they stopped you, it was resolved)."""
     conv = await ws.db.get(Conversation, conversation_id)
     if not conv or conv.template_id != ws.template_id:
         raise HTTPException(status_code=404, detail="Conversation not found in this workspace.")
     rows = (await ws.db.execute(
-        select(ChatMessage).where(ChatMessage.conversation_id == conv.id, ChatMessage.role.in_(("user", "assistant")))
+        select(ChatMessage).where(ChatMessage.conversation_id == conv.id)
         .order_by(ChatMessage.created_at.desc()).limit(limit)
     )).scalars().all()
-    return [{"id": m.id, "role": m.role, "content": m.content, "at": m.created_at} for m in reversed(rows)]
+    return [{"id": m.id, "role": m.role, "content": m.content, "at": m.created_at,
+             "actions": (m.agent_trace or {}).get("actions") or []} for m in reversed(rows)]
 
 
 @router.post("/conversations/{conversation_id}/messages", status_code=201)
 async def reply_in_chat(conversation_id: str, body: ChatReplyBody, ws: Workspace = Depends(get_workspace)):
+    """A reply in the conversation a person wrote in to wake this run. Work runs (reading documents, designing the
+    template) write in no chat: their outcome shows in Activity, and questions go through flag / open_conversation."""
     conv = await ws.db.get(Conversation, conversation_id)
     if not conv or conv.template_id != ws.template_id:
         raise HTTPException(status_code=404, detail="Conversation not found in this workspace.")
+    event = await ws.db.get(AgentEventOutbox, ws.event_id) if ws.event_id else None
+    if event is not None and await _waking_conversation(ws) != conv.id:
+        raise HTTPException(status_code=403, detail=(
+            "Nobody wrote to you in that conversation in this run. You can only reply where a person wrote to you."))
+    body.content = await name_documents(ws.db, ws.template_id, body.content)
     msg = ChatMessage(
         conversation_id=conv.id, tenant_id=ws.tenant_id, role="assistant", content=body.content,
         evidence_citations=body.evidence_citations, confidence=body.confidence,
-        agent_trace={"event_id": ws.event_id, "reply_to": body.reply_to},
+        agent_trace={"event_id": ws.event_id, "reply_to": body.reply_to, **({"actions": body.actions} if body.actions else {})},
     )
     ws.db.add(msg)
     conv.updated_at = datetime.now(timezone.utc)
@@ -1640,6 +1679,26 @@ class SummaryBody(BaseModel):
 async def get_summary(conversation_id: str, ws: Workspace = Depends(get_workspace)):
     summary = await memory_service.conversation_summary(ws.db, ws.template_id, conversation_id)
     return {"content": summary.content, "covers_until": summary.data.get("covers_until")} if summary else {"content": None, "covers_until": None}
+
+
+class TitleBody(BaseModel):
+    title: str = Field(..., min_length=1, max_length=60, description="What the chat is about, in a few words")
+    was: str = Field(..., description="The title you saw: the chat is renamed only if it is still that")
+
+
+@router.put("/conversations/{conversation_id}/title")
+async def name_chat(conversation_id: str, body: TitleBody, ws: Workspace = Depends(get_workspace)):
+    """Names a person's chat by its topic after its first exchange. A chat they renamed meanwhile keeps their name."""
+    conv = await ws.db.get(Conversation, conversation_id)
+    if not conv or conv.template_id != ws.template_id or conv.kind != "chat":
+        raise HTTPException(status_code=404, detail="Chat not found in this workspace.")
+    if conv.title != body.was:
+        return {"renamed": False, "title": conv.title}
+    conv.title = body.title.strip()
+    await ws.db.commit()
+    await publish_ui_event(conv.id, "conversation_renamed", {"conversation_id": conv.id, "title": conv.title},
+                           tenant_id=ws.tenant_id, template_id=ws.template_id, private_to=conv.user_id)
+    return {"renamed": True, "title": conv.title}
 
 
 @router.put("/conversations/{conversation_id}/summary")
