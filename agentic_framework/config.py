@@ -52,7 +52,7 @@ class AgentSettings(BaseSettings):
 
     # Budgets per wake-up (one event)
     MAX_STEPS: int = 40              # model calls
-    # Chats can use a smaller, cheaper model from the same provider; empty uses the work model.
+    # The model for chats (same provider), one that follows a conversation well; empty uses the work model.
     CHAT_MODEL: str = ""
 
     # Memory. Embeddings let the core server rank memories by meaning (pgvector); without them it

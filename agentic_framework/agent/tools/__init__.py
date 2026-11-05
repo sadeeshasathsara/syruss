@@ -15,10 +15,10 @@ from agentic_framework.agent.tools.calc import safe_calculate
 from agentic_framework.agent.tools.documents import budget_note
 from agentic_framework.agent.tools.memory import save_memory
 from agentic_framework.agent.tools.registry import (
-    ANALYST_TOOLS, CHAT_TOOLS, EVAL_TOOLS, TOOLSETS, WORK_CORE, execute, tool_schemas, work_tools,
+    CHAT_TOOLS, EVAL_TOOLS, TOOLSETS, WORK_CORE, execute, tool_schemas, work_tools,
 )
 
 __all__ = [
     "TOOLS", "RunContext", "Tool", "ToolOutcome", "tool", "safe_calculate", "budget_note", "save_memory",
-    "ANALYST_TOOLS", "CHAT_TOOLS", "EVAL_TOOLS", "TOOLSETS", "WORK_CORE", "execute", "tool_schemas", "work_tools",
+    "CHAT_TOOLS", "EVAL_TOOLS", "TOOLSETS", "WORK_CORE", "execute", "tool_schemas", "work_tools",
 ]

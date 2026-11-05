@@ -9,7 +9,29 @@ from agentic_framework.agent import guides
 from agentic_framework.agent.tools import RunContext, budget_note
 from agentic_framework.embeddings import embed_query
 
-CHAT_HISTORY = 20  # earlier messages a chat run sees
+CHAT_HISTORY = 30  # earlier messages a chat run sees (older ones are in the chat's summary)
+MESSAGE_CHARS = 1500  # of each earlier message
+
+
+def _working_note(ctx: RunContext) -> str:
+    return f"Where you left off last time: {ctx.working_note}\n" if ctx.working_note else ""
+
+
+def _transcript(history: List[Dict[str, Any]], skip: str) -> str:
+    """The conversation as the agent reads it: who said what, what it did before each reply, and the platform's notes."""
+    lines = []
+    for m in history:
+        if m["id"] == skip:
+            continue
+        text = m["content"][:MESSAGE_CHARS]
+        if m["role"] == "assistant":
+            did = "; ".join(m.get("actions") or [])
+            lines.append(f"You: {text}" + (f"\n  (before that reply you {did})" if did else ""))
+        elif m["role"] == "user":
+            lines.append(f"Them: {text}")
+        else:
+            lines.append(f"Note: {text}")
+    return "\n".join(lines) or "(this is the start of the conversation)"
 
 
 def _j(value: Any) -> str:
@@ -85,35 +107,37 @@ async def _what_happened(ctx: RunContext, workspace: Dict[str, Any]) -> str:
         if sender.get("role"):
             who += f" ({sender['role']})"
         history = await ctx.api.get(f"/conversations/{p['conversation_id']}/messages", limit=CHAT_HISTORY)
-        earlier = [m for m in history if m["id"] != p["message_id"]]
-        transcript = "\n".join(
-            f"{'You' if m['role'] == 'assistant' else 'Them'}: {m['content'][:600]}" for m in earlier
-        ) or "(this is the start of the conversation)"
+        transcript = _transcript(history, p["message_id"])
         if p.get("conversation_kind") in ("agent", "flag"):
             return (f"{who} replied in the conversation you opened, \"{p.get('conversation_title')}\" "
-                    f"(conversation {p['conversation_id']}, message {p['message_id']}). Your earlier work on it is above.\n"
+                    f"(conversation {p['conversation_id']}, message {p['message_id']}).\n"
+                    f"{_working_note(ctx)}"
                     f"The conversation so far, oldest first:\n{transcript}\n\nTheir new message:\n\"{p['text']}\"\n"
-                    "Reply with reply_to_user. When the issue is settled and you have acted on it, ask whether there is "
-                    "anything else; once they say no (or ask you to close it), resolve_conversation.")
+                    "Act on it, then reply with reply_to_user. When the issue is settled, ask whether there is anything "
+                    "else; once they say no (or ask you to close it), resolve_conversation (always after your reply).")
         return (f"{who} is chatting with you (conversation {p['conversation_id']}, message {p['message_id']}).\n"
                 f"Conversation so far, oldest first:\n{transcript}\n\n"
                 f"Their new message:\n\"{p['text']}\"\n"
-                f"They were on this page when they wrote it (a hint, not a request): {p.get('page') or 'unknown'}"
-                + ("\nThey wrote it from the new-rule page: they want a rule. Turn what they describe into a rule, try it with "
-                   "check_rule, and suggest it with suggest_rule so they can add it from the chat. Ask one short question first "
-                   "only if the meaning is unclear (which object, a tolerance, what counts as a failure)."
-                   if (p.get("context") or {}).get("mode") == "rules" else "")
+                f"They were on {p.get('page') or 'an unknown page'} when they wrote it: it is what \"this\" or \"here\" "
+                "means, and nothing more (don't look at it unless they ask about it)."
+                + ("\nThis chat was started from the new-rule page: it is about making rules. Turn what they describe into a "
+                   "rule, try it with check_rule, and suggest it with suggest_rule so they can add it from the chat. Ask one "
+                   "short question first only if the meaning is unclear (which object, a tolerance, what counts as a failure)."
+                   if chat_mode(ctx) == "rules" else "")
+                + ("\nThis chat was started from Analytics: it is about analytics screens, which you build and change "
+                   "yourself (the screens guide is below)." if chat_mode(ctx) == "screens" else "")
                 + (f"\nThey wrote it from the analytics screen '{(p.get('context') or {}).get('screen')}': changes they ask for are to that "
                    "screen (list_screens has its definition)." if (p.get("context") or {}).get("screen") else ""))
     if t == "human.answered":
         waiting = await ctx.memory.work_items_for_question(e.tenant_id, e.template_id, p["question_id"])
         verb = "dismissed" if p.get("dismissed") else "answered"
-        return (f"A person {verb} your question {p['question_id']}.\nQuestion: {p['question']}\n"
+        return (f"A person {verb} your question {p['question_id']}.\n{_working_note(ctx)}Question: {p['question']}\n"
                 f"Your context then: {p.get('context')}\n{'Reason' if p.get('dismissed') else 'Answer'}: {p['answer']}\n"
                 f"Work waiting on this answer: {_j(waiting) if waiting else 'none recorded'}"
                 + (f"\nThe flag has its own conversation ({p['conversation_id']}), where their answer now is. When you've "
                    "acted on it, reply there (reply_to_user): say what you did, ask what you still need if anything "
-                   "is unclear, and resolve_conversation when nothing is left." if p.get("conversation_id") and not p.get("dismissed") else ""))
+                   "is unclear, and only after that resolve_conversation when nothing is left."
+                   if p.get("conversation_id") and not p.get("dismissed") else ""))
     if t == "review.completed":
         changes = _diff(p.get("original_data") or {}, p.get("corrected_data") or {}) if p.get("corrected_data") else []
         return (f"A reviewer finished review {p['review_id']} of document {p['document_id']}: {p['action']}.\n"
@@ -242,11 +266,19 @@ Open work items:
 {_task_guide(ctx)}"""
 
 
+def chat_mode(ctx: RunContext) -> str:
+    """What this chat is for: fixed by its first message (the page it was started from), the same for every message in it."""
+    p = ctx.event.payload
+    if ctx.event.type != "human.message" or p.get("conversation_kind") not in (None, "chat"):
+        return "general"
+    return p.get("conversation_mode") or (p.get("context") or {}).get("mode") or "general"
+
+
 def _task_guide(ctx: RunContext) -> str:
     """The guide this kind of task always needs, so the agent doesn't spend a step reading it."""
     name = guides.FOR_TASK.get(ctx.event.type)
-    if ctx.event.type == "human.message" and (ctx.event.payload.get("context") or {}).get("mode") == "rules":
-        name = "rules"  # written from Template > Rules > New: they want a rule made
+    if ctx.event.type == "human.message":
+        name = guides.FOR_CHAT_MODE.get(chat_mode(ctx))  # a rules chat, a screens chat
     if not name:
         return ""
     ctx.guides_read.add(name)

@@ -13,13 +13,6 @@ CHAT_TOOLS = (
     "list_rules", "check_rule", "suggest_rule",
 )
 
-# What the analyst may use (custom screens, "what stands out?"): the chat's lookups, plus trying, saving and changing screens.
-ANALYST_TOOLS = (
-    "get_workspace", "list_documents", "get_document", "search_past_records", "query_records", "search_entities", "review_history",
-    "recall", "remember", "update_memory", "calculate", "reply_to_user", "related", "read_guide",
-    "list_screens", "screen_catalogue", "preview_screen", "run_screen", "save_screen", "update_screen", "remove_screen",
-)
-
 # What an evaluation may use: everything needed to read a document, nothing that changes the workspace.
 EVAL_TOOLS = (
     "get_workspace", "get_document", "view_document", "search_past_records", "search_entities", "review_history",
@@ -51,11 +44,25 @@ TOOLSETS: Dict[str, Sequence[str]] = {
 
 
 def work_tools(event: AgentEvent) -> Sequence[str]:
-    """The tools a work run gets, by what woke it."""
+    """The tools a work run gets, by what woke it. Only a run a person woke by writing (a reply in a thread Syruss
+    opened, an answer to its flag) may reply_to_user; work never writes in anyone's chat."""
     chosen = TOOLSETS.get(event.type)
-    if chosen is None:
-        return tuple(name for name in TOOLS if name != "process_documents")  # process_documents is for chats
-    return chosen
+    if chosen is not None:
+        return chosen
+    written_to = event.type in ("human.message", "human.answered") and bool(event.payload.get("conversation_id"))
+    # process_documents is for chats.
+    return tuple(name for name in TOOLS if name != "process_documents" and (written_to or name != "reply_to_user"))
+
+
+# What a successful call did, in words a later run in the same conversation reads beside the reply.
+ACTIONS = {
+    "save_screen": lambda a: f"saved the screen '{a.name}'",
+    "update_screen": lambda a: f"changed the screen '{a.name or a.slug}'",
+    "remove_screen": lambda a: f"removed the screen '{a.slug}'",
+    "suggest_rule": lambda a: f"suggested the rule '{a.name}' (waiting for them to add it)",
+    "process_documents": lambda a: f"started reading {len(a.document_ids)} document(s)",
+    "remember": lambda a: f"remembered ({a.kind}): {a.content[:120]}",
+}
 
 
 def tool_schemas(names: Optional[Sequence[str]] = None) -> List[Dict[str, Any]]:
@@ -78,4 +85,6 @@ async def execute(ctx: RunContext, name: str, raw_args: Optional[Dict[str, Any]]
     except ValueError as exc:
         return ToolOutcome(f"ERROR: {exc}")
     ctx.touched_documents.update(outcome.touched_document_ids)
+    if name in ACTIONS and not outcome.text.startswith(("ERROR", "REFUSED")):
+        ctx.actions.append(ACTIONS[name](args))
     return outcome
