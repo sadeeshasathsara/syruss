@@ -12,6 +12,24 @@
 
 ## [2026-11-05] - Release via dev
 
+### server (0.6.0-dev.1)
+- The organization overview covers a period (7, 30 or 90 days) against the one before it: documents received, the share saved without a person, time to save, and failures or agent cost
+- A chart of documents received across workspaces, split by where each one stands now
+- "Needs you" lists what waits on you in each workspace (reviews, questions from Syruss, failed documents, templates still in design), each linking straight to it
+- A workspace table shows each one's health, period figures, this month's documents against its plan, cost and last activity; organization admins see every workspace as counts
+- "This month" shows documents and agent cost across workspaces, and warns when a workspace nears its document limit; a model with no price set shows its tokens instead of a cost of nothing
+- The latest work across your workspaces, and a "Get started" checklist until a new organization has a workspace, a finished template, documents and a teammate
+
+### www (0.6.0-dev.1)
+- The organization overview covers a period (7, 30 or 90 days) against the one before it: documents received, the share saved without a person, time to save, and failures or agent cost
+- A chart of documents received across workspaces, split by where each one stands now
+- "Needs you" lists what waits on you in each workspace (reviews, questions from Syruss, failed documents, templates still in design), each linking straight to it
+- A workspace table shows each one's health, period figures, this month's documents against its plan, cost and last activity; organization admins see every workspace as counts
+- "This month" shows documents and agent cost across workspaces, and warns when a workspace nears its document limit; a model with no price set shows its tokens instead of a cost of nothing
+- The latest work across your workspaces, and a "Get started" checklist until a new organization has a workspace, a finished template, documents and a teammate
+
+## [2026-11-05] - Release via dev
+
 ### agent (0.5.0-dev.1)
 - A chat holds only what was asked in it: work started from a page (uploads, corrections, data sources, template design) shows in Activity, and runs that read documents can no longer write in anyone's chat
 - A correction opens its own chat about that document; a chat started from the rules page or Analytics keeps that purpose for every message, and every chat message is answered by the same agent
