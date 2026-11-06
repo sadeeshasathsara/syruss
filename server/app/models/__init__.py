@@ -45,7 +45,7 @@ from app.models.delivery import Delivery, DeliveryAttempt, Destination
 from app.models.evaluation import EvalRun, EvalRunItem
 from app.models.page_view import AgentPageView
 from app.models.system_lesson import SystemLesson
-from app.models.platform import PlatformAuditEntry, PlatformStaff
+from app.models.platform import PlatformAccessGrant, PlatformAuditEntry, PlatformStaff
 
 __all__ = [
     "Tenant",
@@ -92,4 +92,5 @@ __all__ = [
     "SystemLesson",
     "PlatformStaff",
     "PlatformAuditEntry",
+    "PlatformAccessGrant",
 ]

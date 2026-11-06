@@ -36,6 +36,36 @@ UNFINISHED_REPLY = {
 }
 
 
+class RunRecorder:
+    """
+    Saves a run on the platform while it runs: when it starts, then each step as it is done. A crash leaves its
+    steps behind, and the platform sees what is running now (and marks a run that stops reporting as lost).
+    Saving never fails the run: a step that couldn't be sent goes with the next one, or with the run's end.
+    """
+
+    def __init__(self, api: CoreAPI, run_id: str, model: str):
+        self.api, self.run_id, self.model = api, run_id, model
+        self.sent = 0
+        self.result: Optional[RunResult] = None
+
+    async def start(self, event: AgentEvent, attempt: int) -> None:
+        try:
+            await self.api.post("/traces/start", {"run_id": self.run_id, "trigger": event.type, "model": self.model,
+                                                  "document_id": event.document_id, "origin": event.actor, "attempt": attempt})
+        except (CoreUnavailable, ToolRefused) as exc:
+            logger.warning("Couldn't record the start of run %s: %s", self.run_id, exc)
+
+    async def step(self, result: RunResult) -> None:
+        self.result = result
+        try:
+            await self.api.patch(f"/traces/{self.run_id}", {
+                "steps": result.steps[self.sent:], "usage": result.usage, "model_calls": result.model_calls,
+                "cost_usd": run_cost(self.model, result.usage)})
+            self.sent = len(result.steps)
+        except (CoreUnavailable, ToolRefused) as exc:
+            logger.warning("Couldn't save a step of run %s: %s", self.run_id, exc)
+
+
 class AgentWorker:
     def __init__(self, agent: WorkspaceAgent, memory: MemoryStore, producer: Optional[AIOKafkaProducer],
                  chat_agent: Optional[WorkspaceAgent] = None, analyst_agent: Optional[WorkspaceAgent] = None):
@@ -71,7 +101,7 @@ class AgentWorker:
         for attempt in range(1, settings.MAX_ATTEMPTS + 1):
             api = CoreAPI(event.agent_token)
             try:
-                status = await self._run_once(event, api)
+                status = await self._run_once(event, api, attempt)
                 await self.memory.mark_processed(event.event_id, event.type, event.template_id, status)
                 return status
             except ToolRefused as exc:
@@ -91,7 +121,7 @@ class AgentWorker:
         await self.memory.mark_processed(event.event_id, event.type, event.template_id, "DEAD_LETTERED")
         return "DEAD_LETTERED"
 
-    async def _run_once(self, event: AgentEvent, api: CoreAPI) -> str:
+    async def _run_once(self, event: AgentEvent, api: CoreAPI, attempt: int = 1) -> str:
         ctx = RunContext(event=event, api=api, memory=self.memory)
         if await stopped(ctx):  # stopped before it started: nothing to do
             logger.info("Event %s was stopped before it started", event.event_id)
@@ -108,7 +138,6 @@ class AgentWorker:
             if doc["status"] not in ("QUEUED", "PROCESSING"):
                 logger.info("Skipping %s: document %s is already %s", event.event_id, event.document_id, doc["status"])
                 return "SKIPPED"
-            await api.post(f"/documents/{event.document_id}/status", {"status": "PROCESSING"})
 
         # A reply in a conversation the agent opened resumes the work it was doing, with full tools.
         # A reply in a thread Syruss started (a conversation, or a flag's thread, including the answer to
@@ -119,26 +148,51 @@ class AgentWorker:
         # Every message in a person's chat is answered by the same chat agent; the chat's mode brings its guide.
         agent = (self.agent if resuming else {"human.message": self.chat_agent, "eval.item": self.eval_agent,
                                               "schedule.insights": self.analyst_agent}.get(event.type, self.agent))
-        if event.type != "eval.item":  # an evaluation must not change anything, memory included
-            await self._upkeep("before the run", memory_upkeep.before_run(ctx))
-        if resuming:  # where it left off: a short note it wrote then, beside the thread's own transcript
-            saved = await api.get(f"/conversations/{event.payload['conversation_id']}/state")
-            ctx.working_note = ((saved.get("state") or {}).get("note")) or ""
-        result: RunResult = await agent.run(ctx, telemetry)
-        await self._enforce_outcomes(event, api, ctx, result)
-        await self._save_working_notes(event, api, ctx, result, resuming)
-        if event.type == "human.message" and not resuming:
-            await self._upkeep("summarizing the chat", memory_upkeep.summarize_conversation(ctx, agent.base_model))
-            await self._upkeep("naming the chat", memory_upkeep.name_conversation(ctx, agent.base_model))
+        model = model_name(agent.mode)
+        recorder = RunRecorder(api, run_id, model)
+        await recorder.start(event, attempt)  # first, so the run's start comes before anything it does
+        if event.type == "document.submitted":
+            await api.post(f"/documents/{event.document_id}/status", {"status": "PROCESSING"})
+        try:
+            if event.type != "eval.item":  # an evaluation must not change anything, memory included
+                await self._upkeep("before the run", memory_upkeep.before_run(ctx))
+            if resuming:  # where it left off: a short note it wrote then, beside the thread's own transcript
+                saved = await api.get(f"/conversations/{event.payload['conversation_id']}/state")
+                ctx.working_note = ((saved.get("state") or {}).get("note")) or ""
+            result: RunResult = await agent.run(ctx, telemetry, on_step=recorder.step)
+            await self._enforce_outcomes(event, api, ctx, result)
+            await self._save_working_notes(event, api, ctx, result, resuming)
+            if event.type == "human.message" and not resuming:
+                await self._upkeep("summarizing the chat", memory_upkeep.summarize_conversation(ctx, agent.base_model))
+                await self._upkeep("naming the chat", memory_upkeep.name_conversation(ctx, agent.base_model))
+        except Exception as exc:
+            # This try failed (it may be tried again): its run ends as failed, with the steps it got through.
+            await self._finish_failed(event, api, recorder, attempt, exc)
+            raise
         await api.post("/traces", {
-            "trigger": event.type, "model": model_name(agent.mode), "status": result.status,
+            "trigger": event.type, "model": model, "status": result.status,
             "started_at": result.started_at.isoformat(), "completed_at": result.completed_at.isoformat(),
             "steps": result.steps, "final_thought": result.final_thought, "usage": result.usage,
-            "document_id": event.document_id, "run_id": run_id, "origin": event.actor,
-            "model_calls": result.model_calls, "cost_usd": run_cost(model_name(agent.mode), result.usage),
+            "document_id": event.document_id, "run_id": run_id, "origin": event.actor, "attempt": attempt,
+            "model_calls": result.model_calls, "cost_usd": run_cost(model, result.usage),
         })
         logger.info("Event %s (%s) handled: %s, %d steps", event.event_id, event.type, result.status, len(result.steps))
         return result.status
+
+    async def _finish_failed(self, event: AgentEvent, api: CoreAPI, recorder: RunRecorder, attempt: int, error: Exception) -> None:
+        result = recorder.result
+        now = datetime.now(timezone.utc)
+        usage = result.usage if result else {}
+        try:
+            await api.post("/traces", {
+                "trigger": event.type, "model": recorder.model, "status": "FAILED",
+                "started_at": (result.started_at if result else now).isoformat(), "completed_at": now.isoformat(),
+                "steps": result.steps if result else [], "usage": usage, "error_message": str(error)[:2000] or type(error).__name__,
+                "document_id": event.document_id, "run_id": recorder.run_id, "origin": event.actor, "attempt": attempt,
+                "model_calls": result.model_calls if result else 0, "cost_usd": run_cost(recorder.model, usage),
+            })
+        except (CoreUnavailable, ToolRefused) as exc:
+            logger.error("Could not record the failed run %s: %s", recorder.run_id, exc)
 
     async def _save_working_notes(self, event: AgentEvent, api: CoreAPI, ctx: RunContext, result: RunResult, resuming: bool) -> None:
         """Conversations the agent opened keep a note of where it left off (its last thought and the documents it worked

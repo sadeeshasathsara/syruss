@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, Optional
 from app.core.config import settings
 from app.services.agent_events import agent_event_relay
 from app.services.event_broadcaster import broadcaster
+from app.services.kafka_ws_bridge import KafkaWebSocketBridge
 
 logger = logging.getLogger("core.ui_events")
 
@@ -53,9 +54,7 @@ async def publish_ui_event(
             return
         except Exception as exc:
             logger.warning("UI event via Kafka failed (%s); broadcasting locally.", exc)
-    await broadcaster.broadcast_to_channel(channel_id, envelope)
-    if template_id and not private_to:
-        await broadcaster.broadcast_to_channel(f"template:{template_id}", envelope)
+    await KafkaWebSocketBridge.deliver(envelope)
 
 
 @asynccontextmanager
