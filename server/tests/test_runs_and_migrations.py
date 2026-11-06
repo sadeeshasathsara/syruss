@@ -2,6 +2,7 @@
 The run log (origins, cost, who may see what) and the database migrations.
 """
 import asyncio
+import uuid
 from datetime import datetime, timedelta, timezone
 import pytest
 from alembic import command
@@ -24,7 +25,7 @@ async def report(client, tpl: str, origin: dict, **extra) -> None:
         "trigger": extra.pop("trigger", "human.message"), "model": "test-model", "status": "COMPLETED",
         "started_at": start.isoformat(), "completed_at": (start + timedelta(seconds=2)).isoformat(),
         "steps": [{"thought": "x"}], "usage": {"input_tokens": 1200, "output_tokens": 300},
-        "run_id": "run_abc", "origin": origin, "model_calls": 2, "cost_usd": 0.0081, **extra,
+        "run_id": f"run_{uuid.uuid4().hex[:10]}", "origin": origin, "model_calls": 2, "cost_usd": 0.0081, **extra,
     })
     assert res.status_code == 201, res.text
 

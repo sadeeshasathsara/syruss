@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, LogOut, Moon, ScrollText, ShieldCheck, Sun, UsersRound } from "lucide-react";
+import { Bot, FileText, LayoutDashboard, Layers, LogOut, Moon, Radio, ScrollText, ShieldCheck, Sun, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useSyncExternalStore } from "react";
@@ -22,6 +22,10 @@ export function useStaff(): StaffMe & { can: (permission: string) => boolean } {
 
 const NAV = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
+  { href: "/live", label: "Live", icon: Radio },
+  { href: "/runs", label: "Agent runs", icon: Bot },
+  { href: "/documents", label: "Documents", icon: FileText },
+  { href: "/queues", label: "Queues", icon: Layers },
   { href: "/staff", label: "Staff", icon: UsersRound },
   { href: "/audit", label: "Audit log", icon: ScrollText },
 ];

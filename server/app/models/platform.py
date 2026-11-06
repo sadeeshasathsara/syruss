@@ -50,3 +50,22 @@ class PlatformAuditEntry(Base):
     details: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False, index=True)
+
+
+class PlatformAccessGrant(Base):
+    """
+    A staff member's access to one organization's content (documents, records, chats, what the agent thought and did),
+    for a stated reason until a set time. Without one, staff see facts only: what ran, where, when, for how long, at
+    what cost. Opening and ending one is in the platform audit log and in the organization's own activity.
+    """
+    __tablename__ = "platform_access_grants"
+    __table_args__ = (Index("ix_platform_access_staff_tenant", "staff_id", "tenant_id", "expires_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    staff_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    staff_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

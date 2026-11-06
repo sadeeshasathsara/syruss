@@ -24,6 +24,7 @@ router = APIRouter(tags=["Organization"])
 ORG_EVENTS = (
     "ORG_ROLE_CHANGED", "ORG_MEMBER_REMOVED", "ORG_INVITATION_SENT", "ORG_INVITATION_REVOKED", "ORG_INVITATION_ACCEPTED",
     "ORG_RENAMED", "ORG_DELETED", "WORKSPACE_CREATED", "WORKSPACE_DELETED", "ORG_ADMIN_JOINED_WORKSPACE",
+    "PLATFORM_ACCESS_OPENED", "PLATFORM_ACCESS_ENDED", "PLATFORM_ACTION",
 )
 
 
@@ -44,6 +45,11 @@ def describe(event: str, who: str, d: Dict[str, Any], names: Dict[str, str]) -> 
         "WORKSPACE_CREATED": lambda: f"{who} created the workspace {d.get('name', '')}.".replace(" .", "."),
         "WORKSPACE_DELETED": lambda: f"{who} deleted the workspace {d.get('name', '')}.".replace(" .", "."),
         "ORG_ADMIN_JOINED_WORKSPACE": lambda: f"{who} joined a workspace as {d.get('role', 'a member')} to manage it.",
+        # Syruss's own staff, from the system admin app (see api/v1/sysadmin)
+        "PLATFORM_ACCESS_OPENED": lambda: f"{d.get('staff', 'Syruss support')} of Syruss support opened the organization's content "
+                                          f"until {d.get('until', 'later')}, because: {d.get('reason', '')}",
+        "PLATFORM_ACCESS_ENDED": lambda: f"{d.get('staff', 'Syruss support')} of Syruss support closed their access to the organization's content.",
+        "PLATFORM_ACTION": lambda: f"{d.get('staff', 'Syruss support')} of Syruss support {d.get('text', 'acted on the organization')}, because: {d.get('reason', '')}",
     }.get(event, lambda: f"{who}: {event.replace('_', ' ').lower()}")()
 
 
@@ -63,7 +69,8 @@ async def _activity(db: AsyncSession, tenant_id: str, *, limit: int, before: Opt
     ids = {r.actor for r in shown} | {str(r.details.get("user")) for r in shown if r.details.get("user")}
     names = await _names(db, ids)
     items = [{
-        "id": r.id, "event": r.event_type, "created_at": r.created_at, "actor": names.get(r.actor, "System" if r.actor in ("system", "agent") else "Someone"),
+        "id": r.id, "event": r.event_type, "created_at": r.created_at,
+        "actor": "Syruss support" if r.actor == "platform" else names.get(r.actor, "System" if r.actor in ("system", "agent") else "Someone"),
         "text": describe(r.event_type, names.get(r.actor, "Someone"), r.details or {}, names),
     } for r in shown]
     return {"items": items, "next_before": items[-1]["created_at"] if len(rows) > limit and items else None}
