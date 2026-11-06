@@ -101,7 +101,7 @@ export interface DocumentItem {
   template_id: string;
   role: "DOCUMENT" | "SAMPLE";
   original_filename: string;
-  /** The identification key (e.g. "Colombo Port_2026-07-22") once the record has its values; show it before the file name. */
+  /** The identification key (e.g. "North Branch_2026-07-22") once the record has its values; show it before the file name. */
   display_name: string | null;
   content_type: string;
   file_size_bytes: number;
@@ -131,7 +131,9 @@ export interface Extraction {
   evidence_records: FieldEvidence[];
   validation: {
     valid?: boolean;
-    errors?: { code: string; message: string; path?: string }[];
+    errors?: { code: string; message: string; path?: string; rule?: string }[];
+    /** Failures of rules set to warn only: reported, never blocking. */
+    warnings?: { code: string; message: string; path?: string; rule?: string }[];
     /** The workspace graph's identity checks: likely misreads and first-time appearances. */
     signals?: { id: string; code: string; path: string; message: string; blocking: boolean; acknowledged?: boolean; reason?: string }[];
   };
@@ -310,6 +312,8 @@ export interface Conversation {
   message_count?: number;
   /** chat: your own chat with Syruss. agent: a conversation Syruss opened about an issue. flag: a flag's thread. */
   kind?: "chat" | "agent" | "flag";
+  /** chat: what it is for, fixed by the page it was started from. */
+  mode?: "general" | "rules" | "screens";
   status?: "open" | "resolved" | null;
   audience?: "admin" | "reviewer" | null;
   resolution?: string | null;
@@ -344,7 +348,7 @@ export interface ConversationPage {
   items: ConversationSummary[];
   has_more: boolean;
   next_offset: number;
-  /** Agent conversations still open (kind=agent only). */
+  /** Threads Syruss started that are still open (kind=agent and kind=syruss only). */
   open?: number;
 }
 
@@ -798,13 +802,71 @@ export interface Overview {
   usage: { documents_this_month: number; documents_limit: number; members: number; members_limit: number; plan: string };
 }
 
+export type OrgPeriod = 7 | 30 | 90;
+
+/** How work went over a period, added up across workspaces. Rates are 0 to 1, null when there was nothing to rate. */
+export interface OrgPeriodTotals {
+  received: number;
+  saved: number;
+  review: number;
+  failed: number;
+  working: number;
+  hands_free_rate: number | null;
+  avg_seconds_to_save: number | null;
+  failure_rate: number | null;
+  runs: number;
+  /** Null when you may not see costs, or when the agent ran on a model with no price set (then `tokens` still counts). */
+  cost_usd: number | null;
+  tokens: number | null;
+}
+
+export interface OrgWorkspaceHealth {
+  id: string;
+  slug: string;
+  name: string;
+  status: "draft" | "active";
+  /** Null for an organization admin who manages the workspace without a role in it. */
+  my_role: string | null;
+  /** In the period. */
+  received: number;
+  saved: number;
+  failed: number;
+  hands_free_rate: number | null;
+  /** Now. */
+  needs_review: number;
+  open_questions: number;
+  open_threads: number;
+  failed_now: number;
+  last_activity_at: string | null;
+  documents_this_month: number;
+  documents_limit: number;
+  plan: string;
+  cost_usd: number | null;
+  tokens: number | null;
+  cost_this_month_usd: number | null;
+  budget_usd: number | null;
+}
+
 export interface OrgOverview {
   organization: { name: string; slug: string; created_at: string };
   workspaces: { total: number; draft: number; mine: number; reachable: number };
   people: { total: number; owners: number; admins: number; members: number };
   /** Only for people who manage members. */
   pending_invitations: number | null;
-  attention: { needs_review: number; questions: number; drafts: number };
+  /** Across the workspaces you hold a role in. */
+  attention: { needs_review: number; questions: number; threads: number; failed: number; drafts: number };
+  /** The first steps of a new organization. */
+  setup: { workspace: boolean; published: boolean; documents: boolean; people: boolean };
+  /** Whether you may see what the agents cost (those who audit or manage billing). */
+  costs: boolean;
+  period: { days: OrgPeriod; from: string; to: string; series: Overview["days"]; current: OrgPeriodTotals; previous: OrgPeriodTotals };
+  /** Your workspaces, and for an organization admin the others too. */
+  workspace_health: OrgWorkspaceHealth[];
+  /** Workspaces you hold a role in where something is waiting. */
+  needs_you: { slug: string; name: string; status: "draft" | "active"; needs_review: number; questions: number; threads: number; failed: number }[];
+  this_month: { documents: number; cost_usd: number | null; tokens: number | null; near_limit: string[] };
+  /** The latest steps in the logs of the workspaces you hold a role in. */
+  latest_work: { id: string; workspace: string; workspace_slug: string; document_id: string | null; stage: LogEntry["stage"]; level: LogEntry["level"]; message: string; created_at: string }[];
   /** Only for people who may read the organization's activity. */
   activity: OrgActivityItem[] | null;
 }
@@ -1201,4 +1263,65 @@ export interface TryResult {
 export interface MappingPreview {
   envelope: Record<string, unknown>;
   problems: string[];
+}
+
+/** A check in the rule language that runs on every record after a document is read (Template > Rules). */
+export type RuleStatus = "suggested" | "active" | "disabled" | "broken";
+export interface RuleDraft {
+  scope: string;
+  check: string;
+  when?: string;
+  severity?: "error" | "warning";
+}
+export interface RuleInput extends RuleDraft {
+  name: string;
+  description?: string;
+  message?: string;
+}
+export interface RuleDryRun {
+  records: number;
+  passed: number;
+  failed: number;
+  not_applicable: number;
+  failures: { document_id: string; name: string; rows: string[] }[];
+  reads: string[];
+}
+export interface Rule extends RuleInput {
+  id: string;
+  when: string;
+  severity: "error" | "warning";
+  description: string;
+  message: string;
+  status: RuleStatus;
+  created_by: string;
+  created_by_kind: "person" | "agent";
+  rationale: string | null;
+  source_document_id: string | null;
+  source_conversation_id: string | null;
+  broken_reason: string | null;
+  last_dry_run: RuleDryRun | null;
+  created_at: string;
+  updated_at: string;
+}
+/** Why a rule doesn't compile: which part, where (0-based columns) and how to fix it. */
+export interface RuleProblem {
+  code: string;
+  part: "check" | "when" | "scope" | "severity";
+  message: string;
+  explanation: string;
+  hint: string;
+  col: number | null;
+  end_col: number | null;
+}
+export interface RuleCheckResult {
+  ok: boolean;
+  problems: RuleProblem[];
+  dry_run?: RuleDryRun;
+}
+export interface RuleLanguage {
+  functions: { name: string; usage: string }[];
+  aggregates: { name: string; usage: string }[];
+  operators: string[];
+  constants: string[];
+  objects: { type: string; multiple: boolean; fields: { name: string; type: string; resolves_to?: string }[] }[];
 }

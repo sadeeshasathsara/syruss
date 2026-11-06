@@ -148,6 +148,54 @@ a:hover { color: var(--syruss-ink); }
 #kc-register-form > .pf-v5-c-form__group:nth-of-type(n + 2):nth-of-type(-n + 5) { grid-column: auto; }
 .pf-v5-c-login__main-body:has(#kc-register-form) { padding-top: 0; }
 
+/* The system admin app's pages offer no "Create account" (staff are added by an owner, in the app). */
+.syruss-staff-app #kc-registration-container { display: none; }
+.syruss-note { margin: 0 0 20px; color: var(--syruss-muted); }
+.syruss-block-button { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+
+/* Setting up a one-time code: the steps on the left, the QR code beside them, the two fields side by side, so the
+   whole page fits one screen. Keycloak's own template is kept; this only places its parts. */
+.pf-v5-c-login__main:has(#kc-totp-settings) { width: min(100%, 560px); }
+#kc-totp-settings { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto 1fr; column-gap: 28px; row-gap: 14px; margin: 0 0 20px; padding: 0; list-style: none; }
+#kc-totp-settings > li { margin: 0; padding-left: 30px; position: relative; }
+/* Fixed numbers: the steps are placed out of their reading order on the grid, which can upset counters. */
+#kc-totp-settings > li:nth-child(1)::before { content: "1"; }
+#kc-totp-settings > li:nth-child(2)::before { content: "2"; }
+#kc-totp-settings > li:nth-child(3)::before { content: "3"; }
+#kc-totp-settings > li::before { position: absolute; left: 0; top: 1px; width: 20px; height: 20px; border-radius: 50%; background: var(--syruss-frame); color: var(--syruss-ink); font-size: 12px; font-weight: 600; line-height: 20px; text-align: center; }
+#kc-totp-settings > li:nth-child(2) { grid-column: 2; grid-row: 1 / span 2; }
+#kc-totp-settings > li:nth-child(3) { grid-column: 1; grid-row: 2; }
+#kc-totp-settings p { margin: 0; font-size: 15px; line-height: 1.45; }
+#kc-totp-settings p + p { margin-top: 4px; color: var(--syruss-muted); font-size: 14px; }
+#kc-totp-supported-apps { display: flex; flex-wrap: wrap; gap: 0 4px; margin: 4px 0 0; padding: 0; list-style: none; color: var(--syruss-muted); font-size: 14px; }
+#kc-totp-supported-apps li { margin: 0; }
+#kc-totp-supported-apps li:not(:last-child)::after { content: ","; }
+#kc-totp-supported-apps li:nth-last-child(2)::after { content: " or"; }
+#kc-totp-secret-qr-code { display: block; width: 148px; height: 148px; margin: 8px 0 6px; padding: 6px; background: #fff; border-radius: 4px; image-rendering: pixelated; }
+#kc-totp-settings > li:nth-child(2) br { display: none; }
+#kc-totp-settings > li:nth-child(2) a { font-size: 14px; }
+#kc-totp-secret-key { display: inline-block; margin-top: 4px; font-family: ui-monospace, monospace; font-size: 14px; word-break: break-all; background: var(--syruss-frame); padding: 4px 8px; border-radius: 4px; }
+#kc-totp-settings ul:not(#kc-totp-supported-apps) { margin: 4px 0 0; padding-left: 18px; font-size: 14px; color: var(--syruss-muted); }
+#kc-totp-settings-form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+#kc-totp-settings-form > * { grid-column: 1 / -1; margin: 0; }
+#kc-totp-settings-form > .pf-v5-c-form__group:nth-of-type(-n + 2) { grid-column: auto; }
+@media (max-width: 520px) {
+  /* Phones: the QR code stays beside the first step, smaller; the device name sits under the code field. */
+  .syruss-pane:has(#kc-totp-settings) { padding-bottom: 20px; }
+  .syruss-pane:has(#kc-totp-settings) .syruss-mobile-brand { margin-bottom: 16px; }
+  #kc-totp-settings { column-gap: 14px; row-gap: 10px; margin-bottom: 14px; }
+  #kc-totp-settings > li:nth-child(2) { grid-row: 1; }
+  #kc-totp-settings > li:nth-child(3) { grid-column: 1 / -1; }
+  #kc-totp-secret-qr-code { width: 112px; height: 112px; padding: 4px; }
+  #kc-totp-settings-form { grid-template-columns: 1fr; gap: 12px; }
+}
+/* Short screens: tighter still, so the button stays in view. */
+@media (max-height: 760px) and (min-width: 901px) {
+  .pf-v5-c-login__main:has(#kc-totp-settings) .pf-v5-c-login__main-header { padding-bottom: 12px; }
+  .pf-v5-c-login__main:has(#kc-totp-settings) .pf-v5-c-alert { margin-bottom: 12px; }
+  #kc-totp-secret-qr-code { width: 128px; height: 128px; }
+}
+
 /* Messages */
 .pf-v5-c-alert { border: 0; border-radius: 4px; padding: 10px 14px; font-size: 14px; box-shadow: none; background: var(--syruss-frame); color: var(--syruss-ink); margin: 0 0 16px; }
 .pf-v5-c-alert::before { display: none; }

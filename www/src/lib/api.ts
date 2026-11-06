@@ -1,12 +1,13 @@
 import type {
   Access, AgentQuestion, AgentRun, AgentRunDetail, MemoryItem, MemoryKind, ApiKeyInfo, ApiSourceInput, AppNotification, AuditEntry, Billing, ChatMessage, Conversation,
   DocumentItem, Entity, MyOrganization, Screen, ScreenCatalogue, ScreenDefinition, ScreenFilter, ScreenRun, ScreenStarter, ScreenSummary, Extraction, Invitation, InvitationPreview, KnowledgeSource, Me, Member, NotificationPref,
-  InviteIssued, LogPage, OrgActivityPage, OrgOverview, Organization, Overview, SecurityEventPage, TrustedDevice, Proposal, RecordSet, ReviewTask, Role, RoleCatalogue, Template, TemplateSchema, TemplateVersion, OrgMemberInfo, OrgInvitationInfo, OrgRole, Permission,
+  InviteIssued, LogPage, OrgActivityPage, OrgOverview, OrgPeriod, Organization, Overview, SecurityEventPage, TrustedDevice, Proposal, RecordSet, ReviewTask, Role, RoleCatalogue, Template, TemplateSchema, TemplateVersion, OrgMemberInfo, OrgInvitationInfo, OrgRole, Permission,
   WebhookDeliveryInfo, WebhookInfo, Workspace, WorkspaceEventType, WorkspaceSettingsData, BudgetStatus, ReflectionState,
   IntakeActivityPage, IntakeChannelInfo, IntakeKeyInfo, DeveloperInfo, ChannelConfigPatch, NewIntakeKey,
   ConnectionsOverview, DeliveryDetail, DeliveryPage, DeliveryStats, DeliveryStatus, DestinationInfo, DestinationKind, MappingPreview, MappingSources, MappingSpec,
   NewDestination, TryResult,
   WorkspaceJobInfo, LiveQuality, GoldenDocument, EvalRunInfo, FlagAnswer, ConversationPage, SystemLesson,
+  Rule, RuleCheckResult, RuleDraft, RuleInput, RuleLanguage, ValidationRule,
 } from "./types";
 
 /**
@@ -26,8 +27,9 @@ export class ApiError extends Error {
 function messageFrom(detail: unknown, fallback: string): string {
   if (typeof detail === "string") return detail;
   if (detail && typeof detail === "object") {
-    const d = detail as { message?: string; errors?: { message: string }[]; problems?: string[] };
-    const first = d.errors?.[0]?.message ?? d.problems?.[0];
+    const d = detail as { message?: string; errors?: { message: string }[]; problems?: unknown[] };
+    const problem = d.problems?.[0];
+    const first = d.errors?.[0]?.message ?? (typeof problem === "string" ? problem : undefined);
     if (d.message && first) return `${d.message} ${first}`;
     if (d.message) return d.message;
     if (first) return first;
@@ -35,32 +37,21 @@ function messageFrom(detail: unknown, fallback: string): string {
   return fallback;
 }
 
-/**
- * The chat you have open. Actions you take in the dashboard while it is open (uploads, processing,
- * data sources) are linked to it, so their progress shows in that chat. Set by the chat panel.
- */
 let activeOrg: string | undefined;
 /** The organization named in the address; every call names it so the API can check you belong to it. */
 export const setActiveOrg = (slug: string | undefined) => {
   activeOrg = slug;
 };
 
-let activeConversation: string | undefined;
-export const setActiveConversation = (id: string | undefined) => {
-  activeConversation = id;
-};
-export const getActiveConversation = () => activeConversation;
-
+// Work started from a page is not tied to the chat that happens to be open: a chat holds only what was asked in it.
 async function request<T>(path: string, init: RequestInit & { workspaceId?: string } = {}): Promise<T> {
   const { workspaceId, headers, ...rest } = init;
-  const changes = !!rest.method && rest.method !== "GET";
   const res = await fetch(`${API}${path}`, {
     ...rest,
     headers: {
       ...(rest.body && !(rest.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
       ...(activeOrg ? { "X-Org-Slug": activeOrg } : {}),
       ...(workspaceId ? { "X-Template-ID": workspaceId } : {}),
-      ...(workspaceId && changes && activeConversation ? { "X-Conversation-ID": activeConversation } : {}),
       ...headers,
     },
   });
@@ -116,12 +107,29 @@ export const api = {
     exportUrl: (workspaceId: string, slug: string) =>
       `${API}/screens/${encodeURIComponent(slug)}/export.csv?template_id=${workspaceId}${activeOrg ? `&org=${encodeURIComponent(activeOrg)}` : ""}`,
   },
+  /** Checks that run on every record after a document is read (Template > Rules). */
+  rules: {
+    list: (workspaceId: string) => request<{ rules: Rule[]; template_checks: ValidationRule[] }>("/rules", { workspaceId }),
+    get: (workspaceId: string, id: string) => request<Rule>(`/rules/${encodeURIComponent(id)}`, { workspaceId }),
+    language: (workspaceId: string) => request<RuleLanguage>("/rules/language", { workspaceId }),
+    /** Rules Syruss thinks are worth having here; the first request for a template version asks it. */
+    ideas: (workspaceId: string) =>
+      request<{ status: "ready" | "thinking" | "none" | "no_template"; ideas: { text: string }[] }>("/rules/ideas", { method: "POST", workspaceId }),
+    /** Compiles a rule and tries it on the saved records, without saving it. */
+    check: (workspaceId: string, draft: RuleDraft) => request<RuleCheckResult>("/rules/check", { method: "POST", body: json(draft), workspaceId }),
+    create: (workspaceId: string, body: RuleInput) => request<Rule>("/rules", { method: "POST", body: json(body), workspaceId }),
+    update: (workspaceId: string, id: string, body: Partial<RuleInput> & { status?: "active" | "disabled" }) =>
+      request<Rule>(`/rules/${encodeURIComponent(id)}`, { method: "PATCH", body: json(body), workspaceId }),
+    remove: (workspaceId: string, id: string) => request<void>(`/rules/${encodeURIComponent(id)}`, { method: "DELETE", workspaceId }),
+    accept: (workspaceId: string, id: string) => request<Rule>(`/rules/${encodeURIComponent(id)}/accept`, { method: "POST", workspaceId }),
+    dismiss: (workspaceId: string, id: string) => request<void>(`/rules/${encodeURIComponent(id)}/dismiss`, { method: "POST", workspaceId }),
+  },
   organization: () => request<Organization>("/organization"),
 
   /** The organization's people. Roles here run the organization; they never open a workspace's data. */
   org: {
     rename: (name: string) => request<Organization>("/organization", { method: "PATCH", body: json({ name }) }),
-    overview: () => request<OrgOverview>("/organization/overview"),
+    overview: (days: OrgPeriod = 30) => request<OrgOverview>(`/organization/overview?days=${days}`),
     activity: (before?: string | null, limit = 30) =>
       request<OrgActivityPage>(`/organization/activity?limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ""}`),
     close: (confirm: string) => request<void>("/organization", { method: "DELETE", body: json({ confirm }) }),
@@ -157,11 +165,10 @@ export const api = {
     get: (workspaceId: string) => request<Template>(`/templates/${workspaceId}`, { workspaceId }),
     versions: (workspaceId: string) => request<TemplateVersion[]>(`/templates/${workspaceId}/versions`, { workspaceId }),
     /** Uploads samples (or none, to study the existing ones again); the agent proposes a template. */
-    discover: (workspaceId: string, files: File[], notes: string, threadId: string) => {
+    discover: (workspaceId: string, files: File[], notes: string) => {
       const fd = new FormData();
       files.forEach((f) => fd.append("files", f));
       fd.append("template_id", workspaceId);
-      fd.append("session_id", threadId);
       if (notes.trim()) fd.append("user_notes", notes.trim());
       return request<{ template_id: string }>("/templates/discover", { method: "POST", body: fd, workspaceId });
     },
@@ -198,7 +205,7 @@ export const api = {
       fd.append("file", file);
       return request<DocumentItem>("/documents/upload", { method: "POST", body: fd, workspaceId });
     },
-    /** A person corrects a saved record; their changes and reasons go to Syruss in the open chat (or a new one). */
+    /** A person corrects a saved record; their changes and reasons go to Syruss as a new chat about that document. */
     correct: (workspaceId: string, id: string, data: Extraction["extracted_data"], reasons: { object: string; reason: string }[]) =>
       request<{ status: string; conversation_id: string; message_id: string }>(`/documents/${id}/corrections`, {
         method: "POST", workspaceId, body: json({ data, reasons }),
@@ -469,7 +476,7 @@ export const api = {
   },
   chat: {
     /** A page of conversation titles (never messages): your chats, or Syruss's conversations with your role. */
-    list: (workspaceId: string, opts: { kind?: "chat" | "agent" | "history"; offset?: number; limit?: number; status?: "open" | "resolved" } = {}) => {
+    list: (workspaceId: string, opts: { kind?: "chat" | "agent" | "syruss" | "history"; offset?: number; limit?: number; status?: "open" | "resolved" } = {}) => {
       const q = new URLSearchParams({ kind: opts.kind ?? "chat", offset: String(opts.offset ?? 0), limit: String(opts.limit ?? 20) });
       if (opts.status) q.set("status", opts.status);
       return request<ConversationPage>(`/conversations?${q}`, { workspaceId });

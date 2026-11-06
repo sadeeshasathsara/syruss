@@ -38,6 +38,8 @@ EVENT_TYPES: Dict[str, Dict[str, Any]] = {
     "document.completed": {"label": "A document was read and saved", "permission": "documents.upload", "notify": False},
     "agent.question": {"label": "The agent asks a question", "permission": "documents.review", "notify": True},
     "agent.screen": {"label": "Syruss suggests an analytics screen", "permission": "screens.manage", "notify": True},
+    "agent.rule": {"label": "Syruss suggests a rule", "permission": "template.publish", "notify": True},
+    "rule.broken": {"label": "A rule no longer fits the template", "permission": "template.publish", "notify": True},
     "agent.proposal": {"label": "The agent proposes a change", "permission": "template.publish", "notify": True},
     "agent.conversation": {"label": "The agent starts a conversation with you", "permission": "documents.review", "notify": True},
     "member.joined": {"label": "Someone joins the workspace", "permission": "members.manage", "notify": True},

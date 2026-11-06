@@ -99,8 +99,10 @@ services:
       # Substituted into realm-syruss.json at import
       SYRUSS_SITE_URL: ${SYRUSS_SITE_URL:-http://localhost:3100}
       SYRUSS_APP_URL: ${SYRUSS_APP_URL:-http://localhost:3000}
+      SYRUSS_ADMIN_URL: ${SYRUSS_ADMIN_URL:-http://localhost:3200}
       SYRUSS_SITE_CLIENT_SECRET: ${SYRUSS_SITE_CLIENT_SECRET:-dev-site-secret-change-me}
       SYRUSS_APP_CLIENT_SECRET: ${SYRUSS_APP_CLIENT_SECRET:-dev-app-secret-change-me}
+      SYRUSS_ADMIN_CLIENT_SECRET: ${SYRUSS_ADMIN_CLIENT_SECRET:-dev-admin-secret-change-me}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-unset}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-unset}
     ports:

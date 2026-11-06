@@ -51,16 +51,18 @@ from app.models.trace import AgentExecutionTrace
 from app.models.evaluation import EvalRunItem
 from app.models.page_view import AgentPageView
 from app.services import (
-    budget_service, duplicate_check, eval_service, extraction_log, system_lessons, graph_service, memory_service, quality_service, record_query,
-    settings_service, source_service, workspace_events,
+    budget_service, duplicate_check, eval_service, extraction_log, system_lessons, graph_service, memory_service, platform_feed, quality_service,
+    record_query, settings_service, source_service, workspace_events,
 )
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
+from app.services.display_names import name_documents
 from app.services.document_key import document_label, identification_key, identification_spec, label_for
 from app.services.identity_check import normalize_id
 from app.services.record_service import record_service
+from app.models.rule import TemplateRule
 from app.models.screen import WorkspaceScreen
-from app.services import formula, screen_engine, screen_service
-from app.services.rule_engine import check_rule_definitions, normalize_schema, validate_record
+from app.services import formula, rule_service, screen_engine, screen_service
+from app.services.rule_engine import check_rule_definitions, normalize_schema, schema_rules, validate_record
 from app.services.storage_service import storage_service
 from app.services.template_service import template_service
 from app.services.source_data import record_sets
@@ -86,7 +88,7 @@ class Workspace:
 
 
 # What the agent may still call while evaluating (everything else that writes is refused).
-EVAL_WRITES = re.compile(r"/(documents/[^/]+/record|documents/[^/]+/status|records/validate|records/query|memories/search|traces|evals/outcome)$")
+EVAL_WRITES = re.compile(r"/(documents/[^/]+/record|documents/[^/]+/status|records/validate|records/query|memories/search|traces(/[^/]+)?|evals/outcome)$")
 
 
 # In a person's private chat the agent acts as that person: what they may do bounds every call it makes
@@ -97,6 +99,7 @@ CHAT_POLICY = [
     (re.compile(r"^/documents/[^/]+/record$"), {"POST"}, "documents.review"),
     (re.compile(r"^/documents/[^/]+/status$"), {"POST"}, "documents.upload"),
     (re.compile(r"^/screens(/|$)"), {"GET"}, "documents.view"),
+    (re.compile(r"^/rules(/check)?$"), {"GET", "POST"}, "documents.view"),
     (re.compile(r"^/screens/(preview|[^/]+/run)$"), {"POST"}, "documents.view"),
     (re.compile(r"^/screens(?:/(?!preview$)[^/]+)?$"), {"POST", "PATCH", "DELETE"}, "screens.manage"),
     (re.compile(r"^/(entities/search|graph/|sources/[^/]+$|proposals$)"), {"GET"}, "knowledge.view"),
@@ -160,7 +163,7 @@ async def _document(ws: Workspace, document_id: str) -> Document:
 def _audit(ws: Workspace, event_type: str, entity_type: str, entity_id: str, details: Dict[str, Any]) -> None:
     ws.db.add(AuditLog(
         tenant_id=ws.tenant_id, template_id=ws.template_id, event_type=event_type,
-        entity_type=entity_type, entity_id=entity_id, actor="agent", details=details,
+        entity_type=entity_type, entity_id=entity_id, actor="agent", details=details, event_id=ws.event_id,
     ))
 
 
@@ -237,6 +240,8 @@ async def get_workspace_overview(ws: Workspace = Depends(get_workspace)):
         "pending_proposals": [_proposal_dict(p) for p in pending],
         "open_conversations": [_conversation_dict(c) for c in conversations],
         "knowledge_sources": [{"id": s.id, "name": s.name, "kind": s.kind, "status": s.status} for s in sources],
+        "rules": [{k: v for k, v in rule_service.detail(r).items() if k in ("id", "name", "scope", "check", "when", "severity", "status")}
+                  for r in await rule_service.list_rules(db, ws.template_id, ["active", "suggested", "broken"])],
         "workspace_policy": await _policy(ws),
     }
 
@@ -452,7 +457,7 @@ class DocumentStatusUpdate(BaseModel):
 
 
 class IdentifyBody(BaseModel):
-    details: Dict[str, Any] = Field(..., description='What the page says, shaped like a record: {"Roster": {"site": "S12", "date": "2026-07-22"}}')
+    details: Dict[str, Any] = Field(..., description='What the page says, shaped like a record: {"Head": {"name": "...", "date": "2026-07-22"}}')
 
 
 @router.post("/documents/{document_id}/identification")
@@ -513,7 +518,7 @@ async def set_document_status(document_id: str, body: DocumentStatusUpdate, ws: 
         DocumentStatus.FAILED: ("failed", "error", f"Couldn't be processed. {body.message or ''}".strip()),
     }[body.status]
     await extraction_log.record(tenant_id=ws.tenant_id, template_id=ws.template_id, stage=stage, level=level, message=text,
-                                document_id=doc.id, document_name=document_label(doc), actor="Agent")
+                                document_id=doc.id, document_name=document_label(doc), actor="Agent", event_id=ws.event_id)
     return {"status": doc.status.value}
 
 
@@ -678,11 +683,11 @@ async def submit_record(document_id: str, body: RecordSubmission, ws: Workspace 
         await extraction_log.record(
             tenant_id=ws.tenant_id, template_id=ws.template_id, stage="review", level="warning", actor="Agent", document_id=doc.id,
             document_name=name, message=f"Sent to review. {body.review_reason or ''}".strip(),
-            details={"confidence": body.confidence})
+            details={"confidence": body.confidence}, event_id=ws.event_id)
     elif outcome["status"] == "COMPLETED":
         await extraction_log.record(
             tenant_id=ws.tenant_id, template_id=ws.template_id, stage="saved", level="success", actor="Agent", document_id=doc.id,
-            document_name=name, message="Read and saved.", details={"confidence": body.confidence})
+            document_name=name, message="Read and saved.", details={"confidence": body.confidence}, event_id=ws.event_id)
     if outcome["status"] == "COMPLETED" and may_register:
         new = await _new_identities(ws, body.data)
         if new:
@@ -700,7 +705,7 @@ async def _evaluate_record(ws: Workspace, doc: Document, body: RecordSubmission,
     decision = body.decision.upper()
     if decision not in ("COMMIT", "REVIEW"):
         raise HTTPException(status_code=400, detail="decision must be COMMIT or REVIEW")
-    validation = validate_record(ws.template.schema_definition, body.data)
+    validation = validate_record(ws.template.schema_definition, body.data, await rule_service.active_rules(ws.db, ws.template_id))
     signals = await graph_service.identity_signals(
         ws.db, template_id=ws.template_id, schema=ws.template.schema_definition, data=body.data, document_id=doc.id,
     ) + await duplicate_check.duplicate_signals(
@@ -753,7 +758,8 @@ class RecordDraft(BaseModel):
 async def validate_draft_record(body: RecordDraft, ws: Workspace = Depends(get_workspace)):
     """Dry run: checks a draft against the active (or a proposed) template without storing anything.
     Against the active template it also returns the workspace graph's identity signals."""
-    result = validate_record(body.schema_definition or ws.template.schema_definition, body.data)
+    rules = [] if body.schema_definition else await rule_service.active_rules(ws.db, ws.template_id)
+    result = validate_record(body.schema_definition or ws.template.schema_definition, body.data, rules)
     if not body.schema_definition:
         document = await _document(ws, body.document_id) if body.document_id else None
         result["signals"] = await graph_service.identity_signals(
@@ -768,7 +774,7 @@ async def validate_draft_record(body: RecordDraft, ws: Workspace = Depends(get_w
 @router.post("/records/query")
 async def query_records(body: record_query.RecordQuery, ws: Workspace = Depends(get_workspace)):
     """Rows of one template object across every saved record, filtered and grouped in one call
-    (e.g. the unique people who worked a day shift). The answer to list, count and filter questions."""
+    (e.g. the unique names on rows that match a condition). The answer to list, count and filter questions."""
     return await record_query.query(ws.db, template_id=ws.template_id, schema=ws.template.schema_definition,
                                     q=body, hidden=ws.hidden)
 
@@ -956,7 +962,7 @@ async def add_alias(entity_id: str, body: AliasBody, ws: Workspace = Depends(get
 
 @router.get("/graph/related")
 async def related(
-    object_type: str = Query(..., alias="object", description="The object type, e.g. Guard"),
+    object_type: str = Query(..., alias="object", description="The object type, as the template names it"),
     identifier: str = Query(..., alias="id", description="Its ID as written"),
     ws: Workspace = Depends(get_workspace),
 ):
@@ -997,8 +1003,8 @@ def _markdown_table(t: Dict[str, Any]) -> str:
 
 
 class QuestionBody(BaseModel):
-    question: str
-    context: str = Field(..., description="Why you are asking and what you currently believe")
+    question: str = Field(..., description="One short question, for the person who answers it")
+    context: str = Field(..., description="For the person who answers: what they need to know to answer, in a sentence or two")
     answer_type: str = Field("text", pattern="^(text|single|multiple)$",
                              description="text: a written answer; single: one of the options; multiple: any of them")
     options: List[str] = Field(default_factory=list, description="Choices for single/multiple; 'Other' is always added")
@@ -1025,8 +1031,11 @@ async def flag(body: QuestionBody, ws: Workspace = Depends(get_workspace)):
     ))).scalar_one_or_none()
     if duplicate:
         return {**_question_dict(duplicate), "duplicate": True}
+    # People read both: documents by their names, not ids or file names.
+    body.question = await name_documents(ws.db, ws.template_id, body.question.strip())
+    body.context = await name_documents(ws.db, ws.template_id, body.context)
     q = AgentQuestion(
-        tenant_id=ws.tenant_id, template_id=ws.template_id, question=body.question.strip(), context=body.context,
+        tenant_id=ws.tenant_id, template_id=ws.template_id, question=body.question, context=body.context,
         options=body.options, answer_type=body.answer_type, evidence_document_ids=body.evidence_document_ids,
         data_table=body.data_table.cleaned() if body.data_table else None, target_role=body.target_role,
         priority=body.priority, related_document_id=body.related_document_id,
@@ -1080,6 +1089,9 @@ class ChatReplyBody(BaseModel):
     evidence_citations: List[Dict[str, Any]] = Field(default_factory=list)
     confidence: float = 1.0
     channel_id: Optional[str] = Field(None, description="Live channel to deliver on (defaults to the conversation id)")
+    actions: List[str] = Field(default_factory=list, max_length=20,
+                               description="What the run did before this reply (built a screen, suggested a rule...), so later "
+                                           "runs in this conversation know it")
 
 
 # Who an agent conversation is for, by the permission their role must have.
@@ -1119,6 +1131,7 @@ async def open_conversation(body: OpenConversationBody, ws: Workspace = Depends(
     if same:
         return {**_conversation_dict(same), "already_open": True,
                 "note": "You already have an open conversation about this; continue it with reply_to_user."}
+    body.message = await name_documents(ws.db, ws.template_id, body.message)
     conv = Conversation(
         tenant_id=ws.tenant_id, template_id=ws.template_id, user_id="agent", kind="agent", status="open",
         audience=body.audience, title=body.title.strip(),
@@ -1142,35 +1155,57 @@ async def open_conversation(body: OpenConversationBody, ws: Workspace = Depends(
     return _conversation_dict(conv)
 
 
-class CheckpointBody(BaseModel):
-    messages: List[Dict[str, Any]] = Field(..., description="The agent's message history, serialized")
+class WorkingNoteBody(BaseModel):
+    note: str = Field("", max_length=4000, description="Where you left off: what you were doing and what you wait for")
+    document_ids: List[str] = Field(default_factory=list, max_length=200, description="The documents you worked on")
 
 
 @router.get("/conversations/{conversation_id}/state")
-async def get_checkpoint(conversation_id: str, ws: Workspace = Depends(get_workspace)):
-    """Your saved working state for a conversation you opened (until it is resolved)."""
+async def get_working_note(conversation_id: str, ws: Workspace = Depends(get_workspace)):
+    """The note you left in a conversation you opened, of where you left off (kept until it is resolved)."""
     conv = await _agent_conversation(ws, conversation_id)
-    return {**_conversation_dict(conv), "state": conv.agent_state}
+    state = conv.agent_state if conv.agent_state and "note" in conv.agent_state else None   # older saved runs are not resumed
+    return {**_conversation_dict(conv), "state": state}
 
 
 @router.put("/conversations/{conversation_id}/state")
-async def save_checkpoint(conversation_id: str, body: CheckpointBody, ws: Workspace = Depends(get_workspace)):
+async def save_working_note(conversation_id: str, body: WorkingNoteBody, ws: Workspace = Depends(get_workspace)):
     conv = await _agent_conversation(ws, conversation_id)
     if conv.status != "open":
         return {"saved": False, "reason": "The conversation is resolved; its state is no longer kept."}
-    conv.agent_state = {"messages": body.messages, "saved_at": datetime.now(timezone.utc).isoformat(), "event_id": ws.event_id}
+    conv.agent_state = {"note": body.note, "document_ids": body.document_ids,
+                        "saved_at": datetime.now(timezone.utc).isoformat(), "event_id": ws.event_id}
     await ws.db.commit()
-    return {"saved": True, "messages": len(body.messages)}
+    return {"saved": True}
 
 
 class ResolveBody(BaseModel):
     resolution: str = Field(..., min_length=3, description="What was decided or done")
 
 
+async def _waking_conversation(ws: Workspace) -> Optional[str]:
+    """The conversation a person wrote in to wake this run (a chat message, or an answer in a flag's thread), if any."""
+    event = await ws.db.get(AgentEventOutbox, ws.event_id) if ws.event_id else None
+    if event is None or event.event_type not in ("human.message", "human.answered"):
+        return None
+    return (event.payload or {}).get("conversation_id")
+
+
+async def _replied_in(ws: Workspace, conv: Conversation) -> bool:
+    rows = (await ws.db.execute(select(ChatMessage.agent_trace).where(
+        ChatMessage.conversation_id == conv.id, ChatMessage.role == "assistant"))).scalars().all()
+    return any((trace or {}).get("event_id") == ws.event_id for trace in rows)
+
+
 @router.post("/conversations/{conversation_id}/resolve")
 async def resolve_conversation(conversation_id: str, body: ResolveBody, ws: Workspace = Depends(get_workspace)):
-    """Marks a conversation you opened as resolved. Its saved working state is cleared."""
+    """Marks a conversation you opened as resolved. Its saved working state is cleared. When a person's message
+    woke you in it, reply to them first: the resolution note comes after your answer, not before it."""
     conv = await _agent_conversation(ws, conversation_id)
+    if await _waking_conversation(ws) == conv.id and not await _replied_in(ws, conv):
+        raise HTTPException(status_code=409, detail=(
+            "Reply to them in this conversation first (reply_to_user: what you did with their answer), then resolve it."))
+    body.resolution = await name_documents(ws.db, ws.template_id, body.resolution)
     conv.status, conv.resolution, conv.resolved_at = "resolved", body.resolution, datetime.now(timezone.utc)
     conv.agent_state = None
     ws.db.add(ChatMessage(conversation_id=conv.id, tenant_id=ws.tenant_id, role="system",
@@ -1185,26 +1220,35 @@ async def resolve_conversation(conversation_id: str, body: ResolveBody, ws: Work
 
 @router.get("/conversations/{conversation_id}/messages")
 async def conversation_history(conversation_id: str, limit: int = Query(20, ge=1, le=100), ws: Workspace = Depends(get_workspace)):
-    """The latest messages of a conversation, oldest first (what you and the person said)."""
+    """The latest messages of a conversation, oldest first: what you and the person said, what you did before each reply
+    (`actions`), and the platform's notes of what happened in it (role "system": they stopped you, it was resolved)."""
     conv = await ws.db.get(Conversation, conversation_id)
     if not conv or conv.template_id != ws.template_id:
         raise HTTPException(status_code=404, detail="Conversation not found in this workspace.")
     rows = (await ws.db.execute(
-        select(ChatMessage).where(ChatMessage.conversation_id == conv.id, ChatMessage.role.in_(("user", "assistant")))
+        select(ChatMessage).where(ChatMessage.conversation_id == conv.id)
         .order_by(ChatMessage.created_at.desc()).limit(limit)
     )).scalars().all()
-    return [{"id": m.id, "role": m.role, "content": m.content, "at": m.created_at} for m in reversed(rows)]
+    return [{"id": m.id, "role": m.role, "content": m.content, "at": m.created_at,
+             "actions": (m.agent_trace or {}).get("actions") or []} for m in reversed(rows)]
 
 
 @router.post("/conversations/{conversation_id}/messages", status_code=201)
 async def reply_in_chat(conversation_id: str, body: ChatReplyBody, ws: Workspace = Depends(get_workspace)):
+    """A reply in the conversation a person wrote in to wake this run. Work runs (reading documents, designing the
+    template) write in no chat: their outcome shows in Activity, and questions go through flag / open_conversation."""
     conv = await ws.db.get(Conversation, conversation_id)
     if not conv or conv.template_id != ws.template_id:
         raise HTTPException(status_code=404, detail="Conversation not found in this workspace.")
+    event = await ws.db.get(AgentEventOutbox, ws.event_id) if ws.event_id else None
+    if event is not None and await _waking_conversation(ws) != conv.id:
+        raise HTTPException(status_code=403, detail=(
+            "Nobody wrote to you in that conversation in this run. You can only reply where a person wrote to you."))
+    body.content = await name_documents(ws.db, ws.template_id, body.content)
     msg = ChatMessage(
         conversation_id=conv.id, tenant_id=ws.tenant_id, role="assistant", content=body.content,
         evidence_citations=body.evidence_citations, confidence=body.confidence,
-        agent_trace={"event_id": ws.event_id, "reply_to": body.reply_to},
+        agent_trace={"event_id": ws.event_id, "reply_to": body.reply_to, **({"actions": body.actions} if body.actions else {})},
     )
     ws.db.add(msg)
     conv.updated_at = datetime.now(timezone.utc)
@@ -1637,6 +1681,26 @@ async def get_summary(conversation_id: str, ws: Workspace = Depends(get_workspac
     return {"content": summary.content, "covers_until": summary.data.get("covers_until")} if summary else {"content": None, "covers_until": None}
 
 
+class TitleBody(BaseModel):
+    title: str = Field(..., min_length=1, max_length=60, description="What the chat is about, in a few words")
+    was: str = Field(..., description="The title you saw: the chat is renamed only if it is still that")
+
+
+@router.put("/conversations/{conversation_id}/title")
+async def name_chat(conversation_id: str, body: TitleBody, ws: Workspace = Depends(get_workspace)):
+    """Names a person's chat by its topic after its first exchange. A chat they renamed meanwhile keeps their name."""
+    conv = await ws.db.get(Conversation, conversation_id)
+    if not conv or conv.template_id != ws.template_id or conv.kind != "chat":
+        raise HTTPException(status_code=404, detail="Chat not found in this workspace.")
+    if conv.title != body.was:
+        return {"renamed": False, "title": conv.title}
+    conv.title = body.title.strip()
+    await ws.db.commit()
+    await publish_ui_event(conv.id, "conversation_renamed", {"conversation_id": conv.id, "title": conv.title},
+                           tenant_id=ws.tenant_id, template_id=ws.template_id, private_to=conv.user_id)
+    return {"renamed": True, "title": conv.title}
+
+
 @router.put("/conversations/{conversation_id}/summary")
 async def put_summary(conversation_id: str, body: SummaryBody, ws: Workspace = Depends(get_workspace)):
     """The rolling summary of a chat's older messages (one per chat)."""
@@ -1674,6 +1738,25 @@ async def list_proposals(
 # Traces
 # ---------------------------------------------------------------------------
 
+# A run is written when it starts, after every step, and when it ends; the platform watch marks one that stops
+# reporting as LOST (services/run_watch.py). Each write is also a fact on the platform's live view.
+
+class TraceStart(BaseModel):
+    run_id: str = Field(..., min_length=1, max_length=64)
+    trigger: str
+    model: str
+    document_id: Optional[str] = None
+    origin: Dict[str, Any] = Field(default_factory=dict, description="The event's actor: type, id, name, origin, source, conversation_id")
+    attempt: int = Field(1, ge=1)
+
+
+class TraceProgress(BaseModel):
+    steps: List[Dict[str, Any]] = Field(default_factory=list, description="New or changed steps; a step replaces the one with its number")
+    usage: Dict[str, Any] = Field(default_factory=dict)
+    model_calls: int = 0
+    cost_usd: Optional[float] = None
+
+
 class TraceBody(BaseModel):
     trigger: str
     model: str
@@ -1689,29 +1772,184 @@ class TraceBody(BaseModel):
     origin: Dict[str, Any] = Field(default_factory=dict, description="The event's actor: type, id, name, origin, source, conversation_id")
     model_calls: int = 0
     cost_usd: Optional[float] = None
+    attempt: int = Field(1, ge=1)
+
+
+def _origin(trace: AgentExecutionTrace, origin: Dict[str, Any]) -> None:
+    trace.origin_kind, trace.origin_source = origin.get("origin") or "system", origin.get("source") or "system"
+    trace.actor_type, trace.actor_id, trace.actor_name = origin.get("type") or "system", origin.get("id"), origin.get("name")
+    trace.conversation_id = origin.get("conversation_id")
+
+
+def _usage(trace: AgentExecutionTrace, usage: Dict[str, Any], model_calls: int, cost_usd: Optional[float]) -> None:
+    trace.usage, trace.model_calls, trace.cost_usd = usage, model_calls, cost_usd
+    trace.input_tokens, trace.output_tokens = int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0)
+
+
+def run_fact(trace: AgentExecutionTrace) -> Dict[str, Any]:
+    """What the platform's live view says about a run: facts only (sysadmin/live)."""
+    return {
+        "run_id": trace.run_id, "trace_id": trace.id, "trigger": trace.profile, "status": trace.status, "model": trace.model,
+        "document_id": trace.document_id, "conversation_id": trace.conversation_id, "origin": trace.origin_kind,
+        "source": trace.origin_source, "actor_type": trace.actor_type, "attempt": trace.attempt,
+        "started_at": trace.started_at.isoformat() if trace.started_at else None,
+        "queued_at": trace.queued_at.isoformat() if trace.queued_at else None,
+        "step": trace.current_step, "tool": trace.current_tool, "model_calls": trace.model_calls,
+        "input_tokens": trace.input_tokens, "output_tokens": trace.output_tokens, "cost_usd": trace.cost_usd,
+        "duration_ms": trace.total_duration_ms,
+    }
+
+
+async def _run(ws: Workspace, run_id: str) -> Optional[AgentExecutionTrace]:
+    return (await ws.db.execute(select(AgentExecutionTrace).where(
+        AgentExecutionTrace.run_id == run_id, AgentExecutionTrace.template_id == ws.template_id).limit(1))).scalar_one_or_none()
+
+
+@router.post("/traces/start", status_code=201)
+async def start_trace(body: TraceStart, ws: Workspace = Depends(get_workspace)):
+    """The run has begun: it shows as running everywhere at once."""
+    if body.document_id:
+        await _document(ws, body.document_id)
+    trace = await _run(ws, body.run_id)
+    if trace is None:
+        event = await ws.db.get(AgentEventOutbox, ws.event_id) if ws.event_id else None
+        now = datetime.now(timezone.utc)
+        trace = AgentExecutionTrace(
+            id=str(uuid.uuid4()), tenant_id=ws.tenant_id, template_id=ws.template_id, document_id=body.document_id,
+            profile=body.trigger, model=body.model, status="RUNNING", started_at=now, last_step_at=now, steps=[], usage={},
+            run_id=body.run_id, event_id=ws.event_id, attempt=body.attempt, queued_at=event.created_at if event else None,
+        )
+        _origin(trace, body.origin)
+        ws.db.add(trace)
+        await ws.db.commit()
+    await platform_feed.publish_fact("run.started", tenant_id=ws.tenant_id, template_id=ws.template_id, **run_fact(trace))
+    return {"id": trace.id}
+
+
+@router.patch("/traces/{run_id}")
+async def trace_progress(run_id: str, body: TraceProgress, ws: Workspace = Depends(get_workspace)):
+    """A step is done: its record is saved now, so a crash later still leaves it, and the run is known to be alive."""
+    trace = await _run(ws, run_id)
+    if trace is None:
+        raise HTTPException(status_code=404, detail="No run with that id has started in this workspace.")
+    if trace.status != "RUNNING":
+        return {"id": trace.id, "status": trace.status}  # finished (or given up as lost) meanwhile: its record stands
+    steps = {s.get("step_number"): s for s in (trace.steps or [])}
+    for step in body.steps:
+        steps[step.get("step_number")] = step
+    trace.steps = [steps[k] for k in sorted(steps, key=lambda n: n or 0)]
+    last = trace.steps[-1] if trace.steps else {}
+    trace.current_step = last.get("step_number")
+    trace.current_tool = ((last.get("tool_calls") or [{}])[-1].get("tool_name") or None) if last.get("tool_calls") else None
+    trace.last_step_at = datetime.now(timezone.utc)
+    _usage(trace, body.usage, body.model_calls, body.cost_usd)
+    await ws.db.commit()
+    await platform_feed.publish_fact("run.step", tenant_id=ws.tenant_id, template_id=ws.template_id, **run_fact(trace))
+    return {"id": trace.id, "status": trace.status}
 
 
 @router.post("/traces", status_code=201)
 async def report_trace(body: TraceBody, ws: Workspace = Depends(get_workspace)):
+    """The run is over: finishes the run that started (or writes it whole, for a run that never reported its start)."""
     if body.document_id:
         await _document(ws, body.document_id)
-    trace = AgentExecutionTrace(
-        id=str(uuid.uuid4()), tenant_id=ws.tenant_id, template_id=ws.template_id, document_id=body.document_id,
-        profile=body.trigger, model=body.model, status=body.status, started_at=body.started_at,
-        completed_at=body.completed_at,
-        total_duration_ms=(body.completed_at - body.started_at).total_seconds() * 1000,
-        steps=body.steps, final_thought=body.final_thought, usage=body.usage, error_message=body.error_message,
-        run_id=body.run_id, event_id=ws.event_id,
-        origin_kind=body.origin.get("origin") or "system", origin_source=body.origin.get("source") or "system",
-        actor_type=body.origin.get("type") or "system", actor_id=body.origin.get("id"), actor_name=body.origin.get("name"),
-        conversation_id=body.origin.get("conversation_id"), model_calls=body.model_calls,
-        input_tokens=int(body.usage.get("input_tokens") or 0), output_tokens=int(body.usage.get("output_tokens") or 0),
-        cost_usd=body.cost_usd,
-    )
-    ws.db.add(trace)
+    trace = await _run(ws, body.run_id) if body.run_id else None
+    if trace is None:
+        trace = AgentExecutionTrace(id=str(uuid.uuid4()), tenant_id=ws.tenant_id, template_id=ws.template_id,
+                                    run_id=body.run_id, event_id=ws.event_id, attempt=body.attempt)
+        event = await ws.db.get(AgentEventOutbox, ws.event_id) if ws.event_id else None
+        trace.queued_at = event.created_at if event else None
+        ws.db.add(trace)
+    trace.document_id, trace.profile, trace.model, trace.status = body.document_id, body.trigger, body.model, body.status
+    trace.started_at, trace.completed_at = trace.started_at or body.started_at, body.completed_at
+    trace.total_duration_ms = (body.completed_at - trace.started_at).total_seconds() * 1000
+    trace.steps, trace.final_thought, trace.error_message = body.steps, body.final_thought, body.error_message
+    trace.current_tool, trace.last_step_at = None, body.completed_at
+    trace.current_step = len(body.steps) or None
+    _origin(trace, body.origin)
+    _usage(trace, body.usage, body.model_calls, body.cost_usd)
     await ws.db.flush()
     await budget_service.check_alerts(ws.db, tenant_id=ws.tenant_id, template_id=ws.template_id)
     await ws.db.commit()
     await workspace_events.dispatch(ws.db)
     budget_service.forget(ws.template_id)
+    await platform_feed.publish_fact("run.finished", tenant_id=ws.tenant_id, template_id=ws.template_id, **run_fact(trace),
+                                     error=(body.error_message or "")[:300] or None)
     return {"id": trace.id}
+
+
+# ---------------------------------------------------------------------------
+# Rules (checks in the rule language that run on every record; people add them)
+# ---------------------------------------------------------------------------
+
+MAX_PENDING_RULES = 10
+
+
+class RuleDraft(BaseModel):
+    scope: str = Field("document", max_length=100, description='"document", or an object type to check each of its rows')
+    check: str = Field(..., max_length=600)
+    when: str = Field("", max_length=600)
+    severity: str = "error"
+    name: Optional[str] = Field(None, max_length=120)
+
+
+class RuleSuggestion(rule_service.RuleIn):
+    rationale: str = Field(..., min_length=1, max_length=1000, description="Why the rule is worth having: what you saw, on how many documents")
+    source_document_id: Optional[str] = None
+
+
+@router.get("/rules")
+async def agent_list_rules(ws: Workspace = Depends(get_workspace)):
+    """The workspace's rules (suggested, active, disabled, broken) and the checks that come with the template version."""
+    return {"rules": [rule_service.detail(r) for r in await rule_service.list_rules(ws.db, ws.template_id)],
+            "template_checks": schema_rules(ws.template.schema_definition)}
+
+
+@router.post("/rules/check")
+async def agent_check_rule(body: RuleDraft, ws: Workspace = Depends(get_workspace)):
+    """Compiles a rule without saving it and tries it on the committed records: problems come back with where and why."""
+    return await rule_service.check(ws.db, ws.template, body.model_dump(), hidden=ws.hidden)
+
+
+@router.post("/rules/suggest", status_code=201)
+async def agent_suggest_rule(body: RuleSuggestion, ws: Workspace = Depends(get_workspace)):
+    """
+    Suggests a rule. It does nothing until a person adds it (in the chat card or the Rules tab), whether you thought of it
+    or a person asked for it in their chat.
+    """
+    pending = (await ws.db.execute(select(func.count()).select_from(TemplateRule).where(
+        TemplateRule.template_id == ws.template_id, TemplateRule.status == "suggested"))).scalar_one()
+    if pending >= MAX_PENDING_RULES:
+        raise HTTPException(status_code=409, detail=f"{pending} rule suggestions are already waiting for a person. Wait for them to be added or dismissed.")
+    if body.source_document_id:
+        await _document(ws, body.source_document_id)
+    actor = await _on_a_persons_request(ws)
+    event = await ws.db.get(AgentEventOutbox, ws.event_id) if actor else None
+    r = await rule_service.create(
+        ws.db, ws.template, rule_service.RuleIn(**body.model_dump(include=set(rule_service.RuleIn.model_fields))),
+        actor="agent", actor_kind="agent", status="suggested", rationale=body.rationale, source_document_id=body.source_document_id,
+        source_conversation_id=event.payload.get("conversation_id") if event else None)
+    if actor is None:
+        await workspace_events.emit(
+            ws.db, tenant_id=ws.tenant_id, template_id=ws.template_id, type="agent.rule", title="Syruss suggests a rule", body=r.name,
+            path="template/rules", data={"rule": r.id})
+    await ws.db.commit()
+    await rule_service.announce(r, "suggested")
+    await workspace_events.dispatch(ws.db)
+    return rule_service.detail(r)
+
+
+class RuleIdeas(BaseModel):
+    ideas: List[str] = Field(..., min_length=1, max_length=rule_service.MAX_IDEAS,
+                             description="Rules worth having, each one sentence the way a person would say it")
+
+
+@router.post("/rules/ideas")
+async def agent_rule_ideas(body: RuleIdeas, ws: Workspace = Depends(get_workspace)):
+    """The ideas a rules.ideas run came up with: shown on the new-rule page as starting points (nothing is created)."""
+    event = await ws.db.get(AgentEventOutbox, ws.event_id)
+    if not event or event.event_type != "rules.ideas":
+        raise HTTPException(status_code=403, detail="Rule ideas are given only when you were asked for them.")
+    result = await rule_service.store_ideas(ws.db, ws.template, event.payload.get("version_id") or ws.template.active_version_id, body.ideas)
+    await ws.db.commit()
+    return result

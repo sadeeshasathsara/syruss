@@ -264,6 +264,47 @@ The agent worker listens to Kafka events from the core server and executes agent
 
 ---
 
+### Step 7: System Admin App (`admin/`, platform staff only)
+
+The platform tools for the people who run Syruss: service health, platform figures, the platform staff and their
+audit log. It signs in through its own Keycloak client, `syruss-admin`, with a password **and a one-time code** every
+time; the server's `/api/v1/sysadmin` routes accept only that client's tokens, and only from platform staff.
+
+1. Give your running Keycloak the admin client and its sign-in flow (a brand-new Keycloak needs this once too):
+   ```bash
+   python bridge/keycloak/harden.py
+   ```
+
+2. Make yourself a platform owner: put your Keycloak user id (Keycloak > Users > your account > ID) in
+   `server/.env`, then restart the server. Owners add everyone else on the platform staff from the app.
+   ```env
+   PLATFORM_ADMIN_USER_IDS=<your keycloak user id>
+   ```
+
+3. Install and configure the app:
+   ```bash
+   cd admin
+   npm install
+   # Windows (PowerShell): Copy-Item .env.example .env.local    macOS / Linux: cp .env.example .env.local
+   ```
+   In `admin/.env.local`, set `OIDC_CLIENT_SECRET` (the dev default is `dev-admin-secret-change-me`) and a new
+   `SESSION_SECRET` (generate one as above; don't reuse another app's).
+
+4. Start it (runs on port 3200):
+   ```bash
+   syruss run dev admin
+   ```
+   Access at: [http://localhost:3200](http://localhost:3200). The first sign-in asks you to set up an authenticator app.
+
+**Following agent work.** Live, Agent runs, Documents and Queues show every run and document across the platform as
+it happens (Server-Sent Events from `/api/v1/sysadmin/live`, through the app's own proxy). They show facts only; a
+customer's content (thoughts, tool results, records, the file) opens for one organization at a time, with a reason and
+an end time ("Open content…" on a run or document), and that organization sees it in its activity. The agent saves a run
+when it starts and after every step, so restart the agent service after pulling these changes; a run with no step for
+15 minutes is marked lost (`RUN_LOST_AFTER_SECONDS`).
+
+---
+
 ## 5. Running the Test Suite
 
 ### Backend Unit & Integration Tests (pytest)
@@ -353,6 +394,7 @@ syruss run dev                  # Start all services concurrently in single term
 syruss run dev --console        # Start all services in independent console windows
 syruss run dev server           # Start only the FastAPI REST API
 syruss run dev www              # Start only the Next.js Web App
+syruss run dev admin            # Start only the System Admin app (platform staff)
 
 # Production Mode
 syruss start                    # Start all services in production mode

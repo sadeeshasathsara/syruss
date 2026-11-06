@@ -53,6 +53,7 @@ jobs:
       agent: ${{ steps.filter.outputs.agent }}
       www: ${{ steps.filter.outputs.www }}
       site: ${{ steps.filter.outputs.site }}
+      admin: ${{ steps.filter.outputs.admin }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,11 +70,12 @@ jobs:
           echo "agent=$(echo "$CHANGED"  | grep -qE '^(agentic_framework/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
           echo "www=$(echo "$CHANGED"    | grep -qE '^(www/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
           echo "site=$(echo "$CHANGED"   | grep -qE '^(site/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "admin=$(echo "$CHANGED"  | grep -qE '^(admin/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
 
   typecheck-frontend:
     name: Frontend Typecheck & Build
     needs: detect-changes
-    if: needs.detect-changes.outputs.www == 'true' || needs.detect-changes.outputs.site == 'true'
+    if: needs.detect-changes.outputs.www == 'true' || needs.detect-changes.outputs.site == 'true' || needs.detect-changes.outputs.admin == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,6 +86,11 @@ jobs:
           cache-dependency-path: |
             www/package-lock.json
             site/package-lock.json
+            admin/package-lock.json
+
+      # site/, www/ and admin/ share one sign-in implementation, copied into each app: the copies must not drift.
+      - name: Sign-in code is identical in every app
+        run: node site/scripts/check-auth-sync.mjs
 
       - name: Typecheck www
         if: needs.detect-changes.outputs.www == 'true'
@@ -104,6 +111,19 @@ jobs:
           cd site
           npm ci || npm install
           npx tsc --noEmit
+
+      - name: Typecheck admin
+        if: needs.detect-changes.outputs.admin == 'true'
+        run: |
+          cd admin
+          npm ci || npm install
+          npx tsc --noEmit
+
+      - name: Build admin
+        if: needs.detect-changes.outputs.admin == 'true'
+        run: |
+          cd admin
+          npm run build
 
   test-server:
     name: Backend Server Tests

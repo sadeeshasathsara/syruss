@@ -33,10 +33,14 @@ class Settings(BaseSettings):
     OIDC_JWKS_URL: str = ""
     OIDC_AUDIENCE: str = "syruss-api"
     # Clients allowed to call the API (the token's authorized party)
-    OIDC_ALLOWED_CLIENTS: str = "syruss-site,syruss-app"
+    OIDC_ALLOWED_CLIENTS: str = "syruss-site,syruss-app,syruss-admin"
     OIDC_CLOCK_SKEW_SECONDS: int = 30
+    # The system admin app's client. The /sysadmin API takes only its tokens: that client signs in with a second factor,
+    # so a stolen session from the everyday app can't reach platform tools.
+    OIDC_ADMIN_CLIENT: str = "syruss-admin"
 
-    # People who run the platform itself (Keycloak subjects, comma-separated): platform-wide lessons, admin tools
+    # People who run the platform itself (Keycloak subjects, comma-separated). They are platform owners from the start;
+    # everyone else on the platform staff is added in the admin app (platform_staff).
     PLATFORM_ADMIN_USER_IDS: str = ""
 
     # Single-use tickets that let a browser open a WebSocket without a token in the URL
@@ -130,6 +134,12 @@ class Settings(BaseSettings):
     # (app/services/scheduler.py). Safe to run in several server processes.
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_INTERVAL_SECONDS: int = 60
+    # A run that has reported no step for this long is marked LOST (the agent's own limit for a whole run is 10 minutes)
+    RUN_LOST_AFTER_SECONDS: int = 900
+    # What a run thought and did step by step is kept this long; its summary (when, why, outcome, cost) stays
+    RUN_STEPS_RETENTION_DAYS: int = 90
+    # The agent service's Kafka consumer group, whose lag the system admin app shows
+    AGENT_CONSUMER_GROUP: str = "workspace-agents"
 
     # Connections: how other systems send documents in and receive approved data out.
     PUBLIC_API_URL: str = "http://localhost:8000"          # what senders are told to call (shown in the Connections pages)
