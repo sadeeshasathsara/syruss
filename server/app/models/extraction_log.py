@@ -26,4 +26,6 @@ class ExtractionLogEntry(Base):
     message: Mapped[str] = mapped_column(Text, nullable=False)
     actor: Mapped[str] = mapped_column(String(100), default="system", nullable=False)  # a person's name, "Agent" or "System"
     details: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    # The agent event (run) that wrote it, when the agent did
+    event_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)

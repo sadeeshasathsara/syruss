@@ -3,6 +3,7 @@ import json
 import logging
 import uuid
 from app.core.config import settings
+from app.services import platform_feed
 from app.services.event_broadcaster import broadcaster
 
 try:
@@ -54,8 +55,12 @@ class KafkaWebSocketBridge:
         """
         Sends a telemetry event to its channel and to the workspace channel. A private chat's events
         (`private_to`) go only to that chat's own channel (which only its person may open), never to the workspace.
+        Every event also passes the platform view (services/platform_feed), whose own facts go nowhere else.
         """
+        platform_feed.deliver(payload)
         channel_id = payload.get("channel_id")
+        if channel_id == platform_feed.OPS:
+            return
         if channel_id:
             await broadcaster.broadcast_to_channel(channel_id, payload)
         template_id = payload.get("template_id")

@@ -123,6 +123,34 @@ async def test_worker_never_leaves_a_document_hanging(core, memory):
         worker_module.CoreAPI = original
 
 
+async def test_a_run_is_saved_as_it_goes_and_a_failed_try_keeps_its_steps(core, memory, monkeypatch):
+    """The platform sees a run start, each step as it is done, and how it ended, even when it ends in an error."""
+    import agentic_framework.worker as worker_module
+
+    class Breaks(ScriptedModel):
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            if not self.script:
+                raise RuntimeError("model went away")
+            return super()._generate(messages, stop, run_manager, **kwargs)
+
+    model = Breaks(script=[AIMessage(content="Looking.", tool_calls=[call("view_document", {"document_id": "doc7"})])])
+    worker = AgentWorker(WorkspaceAgent(model), memory, producer=None)
+    monkeypatch.setattr(worker_module, "CoreAPI", lambda token: core.api())   # the worker closes each client it is given
+    monkeypatch.setattr(worker_module.settings, "MAX_ATTEMPTS", 1)
+    async def no_sleep(seconds):
+        return None
+    monkeypatch.setattr(worker_module.asyncio, "sleep", no_sleep)
+    assert await worker.handle(make_event("document.submitted", {"document_id": "doc7"}, event_id="e-breaks")) == "DEAD_LETTERED"
+
+    calls = [(m, p, b) for m, p, b in core.requests if p.startswith("/traces")]
+    start, step = calls[0], calls[1]
+    assert start[:2] == ("POST", "/traces/start") and start[2]["attempt"] == 1 and start[2]["document_id"] == "doc7"
+    run_id = start[2]["run_id"]
+    assert step[:2] == ("PATCH", f"/traces/{run_id}") and step[2]["steps"][0]["tool_calls"][0]["tool_name"] == "view_document"
+    failed = next(b for m, p, b in calls if m == "POST" and p == "/traces" and b.get("run_id") == run_id)
+    assert failed["status"] == "FAILED" and "model went away" in failed["error_message"] and len(failed["steps"]) == 1
+
+
 async def test_worker_always_answers_a_chat_message(core, memory):
     # The model answers in plain text and ignores the reminder to use reply_to_user:
     # the runtime still delivers its answer.

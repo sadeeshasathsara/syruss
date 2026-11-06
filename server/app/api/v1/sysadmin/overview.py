@@ -71,6 +71,14 @@ async def stats(db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
     }
 
 
+@router.get("/names", dependencies=[Depends(require_staff())])
+async def names_of(tenants: str = "", workspaces: str = "", db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
+    """Names of organizations and workspaces by id (comma separated, up to 200 of each), for a live page meeting new ones."""
+    from app.api.v1.sysadmin.common import names
+    split = lambda s: [x for x in s.split(",") if x][:200]  # noqa: E731
+    return await names(db, split(tenants), split(workspaces))
+
+
 async def _timed(check: Callable[[], Awaitable[Dict[str, Any]]]) -> Dict[str, Any]:
     started = time.perf_counter()
     try:

@@ -1,4 +1,7 @@
-import type { PlatformHealth, PlatformStats, StaffActionPage, StaffList, StaffMe, StaffMember, StaffRole } from "./types";
+import type {
+  Grant, GrantList, Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
+  StaffActionPage, StaffList, StaffMe, StaffMember, StaffRole,
+} from "./types";
 
 /** Typed client for the platform tools (/api/v1/sysadmin), through this app's own proxy. */
 
@@ -67,4 +70,35 @@ export const api = {
     q.set("limit", String(params.limit ?? 50));
     return request<StaffActionPage>(`/audit?${q}`);
   },
+  runs: {
+    list: (params: Record<string, string | undefined>) => request<RunList>(`/runs?${query(params)}`),
+    running: () => request<RunList>("/runs/running"),
+    stats: (hours: number) => request<RunStats>(`/runs/stats?hours=${hours}`),
+    get: (id: string) => request<RunDetail>(`/runs/${encodeURIComponent(id)}`),
+    stop: (id: string, reason: string) => request<{ stopping: boolean }>(`/runs/${encodeURIComponent(id)}/stop`, { method: "POST", body: json({ reason }) }),
+  },
+  processes: {
+    list: (params: Record<string, string | undefined>) => request<ProcessList>(`/processes?${query(params)}`),
+    get: (id: string) => request<ProcessDetail>(`/processes/${encodeURIComponent(id)}`),
+    retry: (id: string, reason: string) => request<{ status: string; event_id: string }>(`/processes/${encodeURIComponent(id)}/retry`, { method: "POST", body: json({ reason }) }),
+    fileUrl: (id: string) => `${API}/processes/${encodeURIComponent(id)}/file`,
+  },
+  events: {
+    resend: (id: string, reason: string) => request<{ resent: boolean }>(`/events/${encodeURIComponent(id)}/resend`, { method: "POST", body: json({ reason }) }),
+  },
+  queues: () => request<QueuesPage>("/queues"),
+  names: (tenants: string[], workspaces: string[]) => request<Names>(`/names?${query({ tenants: tenants.join(","), workspaces: workspaces.join(",") })}`),
+  access: {
+    list: () => request<GrantList>("/access"),
+    open: (body: { tenant_id: string; reason: string; minutes: number }) => request<Grant>("/access", { method: "POST", body: json(body) }),
+    end: (id: string) => request<void>(`/access/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  },
+  /** The live view's address (an EventSource can't set headers; the proxy signs it in). */
+  liveUrl: (params: Record<string, string | undefined>) => `${API}/live?${query(params)}`,
 };
+
+function query(params: Record<string, string | undefined>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
+  return q.toString();
+}

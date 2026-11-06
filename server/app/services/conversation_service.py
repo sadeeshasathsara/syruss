@@ -252,7 +252,7 @@ class ConversationService:
         documents) carries on: only the reply stops.
         """
         conv = await ConversationService.get_conversation(db, scope, conversation_id)
-        finished = select(AgentExecutionTrace.event_id).where(AgentExecutionTrace.event_id.is_not(None))
+        finished = select(AgentExecutionTrace.event_id).where(AgentExecutionTrace.event_id.is_not(None), AgentExecutionTrace.status != "RUNNING")
         events = (await db.execute(select(AgentEventOutbox).where(
             AgentEventOutbox.template_id == scope.template_id, AgentEventOutbox.conversation_id == conv.id,
             AgentEventOutbox.event_type == "human.message", AgentEventOutbox.cancelled_at.is_(None),

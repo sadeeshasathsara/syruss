@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.sysadmin.access import require_staff
 from app.core.database import get_db_session
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/audit")
 @router.get("", dependencies=[Depends(require_staff())])
 async def staff_actions(
     limit: int = Query(50, ge=1, le=200), before: Optional[datetime] = None,
-    action: Optional[str] = Query(None, description="An action, or its group: 'staff' matches staff.added, staff.removed…"),
+    action: Optional[str] = Query(None, description="Actions or their groups, comma separated: 'staff' matches staff.added, staff.removed…"),
     actor_id: Optional[str] = None, tenant_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db_session),
 ) -> Dict[str, Any]:
@@ -22,7 +22,8 @@ async def staff_actions(
     if before:
         stmt = stmt.where(PlatformAuditEntry.created_at < before)
     if action:
-        stmt = stmt.where((PlatformAuditEntry.action == action) | PlatformAuditEntry.action.startswith(f"{action}."))
+        stmt = stmt.where(or_(*((PlatformAuditEntry.action == a) | PlatformAuditEntry.action.startswith(f"{a}.")
+                                for a in action.split(",") if a)))
     if actor_id:
         stmt = stmt.where(PlatformAuditEntry.actor_id == actor_id)
     if tenant_id:
