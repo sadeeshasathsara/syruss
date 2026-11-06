@@ -296,6 +296,13 @@ time; the server's `/api/v1/sysadmin` routes accept only that client's tokens, a
    ```
    Access at: [http://localhost:3200](http://localhost:3200). The first sign-in asks you to set up an authenticator app.
 
+**Following agent work.** Live, Agent runs, Documents and Queues show every run and document across the platform as
+it happens (Server-Sent Events from `/api/v1/sysadmin/live`, through the app's own proxy). They show facts only; a
+customer's content (thoughts, tool results, records, the file) opens for one organization at a time, with a reason and
+an end time ("Open content…" on a run or document), and that organization sees it in its activity. The agent saves a run
+when it starts and after every step, so restart the agent service after pulling these changes; a run with no step for
+15 minutes is marked lost (`RUN_LOST_AFTER_SECONDS`).
+
 ---
 
 ## 5. Running the Test Suite

@@ -80,6 +80,8 @@ class FakeCore:
         self.add("POST", r"/questions", lambda r, m: (201, {"id": "q1", **json.loads(r.content)}))
         self.add("POST", r"/conversations/(?P<id>[^/]+)/messages", lambda r, m: (201, {"message_id": "m2"}))
         self.add("POST", r"/traces", lambda r, m: (201, {"id": "trace1"}))
+        self.add("POST", r"/traces/start", lambda r, m: (201, {"id": "trace1"}))
+        self.add("PATCH", r"/traces/(?P<id>[^/]+)", lambda r, m: (200, {"id": "trace1", "status": "RUNNING"}))
         self.add("GET", r"/quality", lambda r, m: (200, {"agent": {}, "reviews": {}, "fields": [], "calibration": []}))
         self.add("GET", r"/reviews/history", lambda r, m: (200, []))
         self.add("POST", r"/evals/outcome", lambda r, m: (200, {"status": "NO_ANSWER"}))

@@ -32,12 +32,15 @@ def entry_dict(e: ExtractionLogEntry) -> Dict[str, Any]:
 async def record(
     *, tenant_id: str, template_id: str, stage: str, message: str, level: str = "info", document_id: Optional[str] = None,
     document_name: Optional[str] = None, actor: str = "System", details: Optional[Dict[str, Any]] = None,
+    event_id: Optional[str] = None,
 ) -> None:
+    """`event_id`: the agent event whose run wrote this, so the run shows what it did."""
     try:
         async with AsyncSessionLocal() as db:
             entry = ExtractionLogEntry(
                 tenant_id=tenant_id, template_id=template_id, document_id=document_id, document_name=document_name, stage=stage,
                 level=level if level in LEVELS else "info", message=message[:1000], actor=actor[:100], details=details or {},
+                event_id=event_id,
             )
             db.add(entry)
             await db.commit()

@@ -9,7 +9,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from agentic_framework.agent.briefing import build_briefing, build_chat_briefing
@@ -156,8 +156,16 @@ class WorkspaceAgent:
             self._bound[key] = self.base_model.bind_tools(tool_schemas(key))
         return self._bound[key]
 
-    async def run(self, ctx: RunContext, telemetry: Telemetry) -> RunResult:
+    async def run(self, ctx: RunContext, telemetry: Telemetry,
+                  on_step: Optional[Callable[[RunResult], Awaitable[None]]] = None) -> RunResult:
+        """`on_step` is told after every step (the worker saves the run as it goes)."""
         result = RunResult(status="COMPLETED", final_thought="")
+
+        async def step_done(record: Dict[str, Any]) -> None:
+            record["step_completed_at"] = datetime.now(timezone.utc).isoformat()
+            if on_step:
+                await on_step(result)
+
         tools = self.tools if self.tools is not None else work_tools(ctx.event)
         model = self._model_for(tools)
         deadline = time.monotonic() + settings.MAX_RUN_SECONDS
@@ -199,7 +207,7 @@ class WorkspaceAgent:
             result.steps.append(record)
 
             if not response.tool_calls:
-                record["step_completed_at"] = datetime.now(timezone.utc).isoformat()
+                await step_done(record)
                 if not thought:
                     messages.pop()  # an empty turn adds nothing to the conversation
                 owed = open_obligations(ctx)
@@ -230,7 +238,7 @@ class WorkspaceAgent:
                     content.append({"type": "text", "text": img["caption"]})
                     content.append({"type": "image_url", "image_url": {"url": f"data:{img['mime']};base64,{img['b64']}"}})
                 messages.append(HumanMessage(content=content))
-            record["step_completed_at"] = datetime.now(timezone.utc).isoformat()
+            await step_done(record)
             await asyncio.sleep(0)
         else:
             result.status = "BUDGET_EXCEEDED"
