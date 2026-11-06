@@ -10,6 +10,116 @@
 
 > Generated file. Do not edit.
 
+## [2026-11-06] - Release Candidate (test)
+
+### admin (0.3.0-rc.1)
+- The system admin app follows every agent run and every document on the platform, in every organization, as it happens: a Live page (what is running now, what just happened), Agent runs (filters, totals, runs per hour, the busiest organizations), one run step by step with every try and what it changed, Documents with each one's whole journey from arrival to delivery and how long each part took, and Queues (events waiting or never picked up, the agent's Kafka lag, failures, stuck documents)
+- The agent saves a run when it starts and after every step, not only at the end, so a crash leaves its steps behind and the platform sees what is running now; a try that fails ends as failed with the steps it got through
+- A run that stops reporting for 15 minutes is marked lost and written in its document's log; step records are kept 90 days, run summaries for good
+- Log and audit entries the agent writes name the run that wrote them
+- Staff see facts only (what ran, where, when, for how long, at what cost); a customer's content (thoughts, tool results, records, messages, the file) opens only through an access grant with a reason and an end time, each opening is in the platform audit log, and the organization sees in its own activity that Syruss support looked and why
+- Staff with operations rights can stop a run, send a failed or stuck document to the agent again and send a waiting event again, each with a reason the organization also sees
+- The run log in the main app shows running, stopped and lost runs; stopping a chat reply works while its run is under way
+- The system admin app (admin/, port 3200), for the people who run the platform: service health, platform figures, the platform staff and their audit log
+- It signs in through its own Keycloak client with a password and a one-time code every time; `bridge/keycloak/harden.py` adds the client and its sign-in flow to a running realm
+- The admin app's sign-in pages offer no sign-up and no other providers, and setting up a one-time code fits one screen, on phones too
+- The /api/v1/sysadmin API answers only the admin app's tokens and only platform staff, whose roles (owner, operator, support, billing, viewer) each allow only their part; staff changes need a fresh sign-in
+- Every staff action is written to a platform audit log that the database refuses to change or delete
+- An organization records why it is shut: suspended by platform staff, or closed by its owner
+- site/, www/ and admin/ share one sign-in implementation, checked identical in CI
+
+### agent (0.6.0-rc.1)
+- The system admin app follows every agent run and every document on the platform, in every organization, as it happens: a Live page (what is running now, what just happened), Agent runs (filters, totals, runs per hour, the busiest organizations), one run step by step with every try and what it changed, Documents with each one's whole journey from arrival to delivery and how long each part took, and Queues (events waiting or never picked up, the agent's Kafka lag, failures, stuck documents)
+- The agent saves a run when it starts and after every step, not only at the end, so a crash leaves its steps behind and the platform sees what is running now; a try that fails ends as failed with the steps it got through
+- A run that stops reporting for 15 minutes is marked lost and written in its document's log; step records are kept 90 days, run summaries for good
+- Log and audit entries the agent writes name the run that wrote them
+- Staff see facts only (what ran, where, when, for how long, at what cost); a customer's content (thoughts, tool results, records, messages, the file) opens only through an access grant with a reason and an end time, each opening is in the platform audit log, and the organization sees in its own activity that Syruss support looked and why
+- Staff with operations rights can stop a run, send a failed or stuck document to the agent again and send a waiting event again, each with a reason the organization also sees
+- The run log in the main app shows running, stopped and lost runs; stopping a chat reply works while its run is under way
+- A chat holds only what was asked in it: work started from a page (uploads, corrections, data sources, template design) shows in Activity, and runs that read documents can no longer write in anyone's chat
+- A correction opens its own chat about that document; a chat started from the rules page or Analytics keeps that purpose for every message, and every chat message is answered by the same agent
+- Syruss replies before it resolves a thread, never shows its own runtime notes as a reply, and names documents by their names instead of ids or file names
+- Chats remember what Syruss did before each reply and the notes of what happened, see the page as words, and are named by their topic after the first exchange
+- Threads Syruss opens resume from a short note of where it left off; the chat history lists them apart under "From Syruss", open ones first
+- Chats can use their own model (CHAT_MODEL, gemini-3.5-flash in the example settings) while documents stay on the work model
+- Template rules: checks in a safe rule language that run on every record after extraction; failing error rules send the document to review, warnings are reported
+- Rules tab under Template with suggested, active, stopped and turned-off rules; new-rule page to describe a rule in plain English (sent to Syruss in a new chat) or write it with a live compile check and dry run
+- Syruss can list, try and suggest rules (a person adds them), with a rules guide; rules that no longer fit after a template change are stopped and announced
+- Legacy expression and regex checks now run on the safe engine (RE2, capped exponents)
+
+### server (0.8.0-rc.1)
+- The system admin app follows every agent run and every document on the platform, in every organization, as it happens: a Live page (what is running now, what just happened), Agent runs (filters, totals, runs per hour, the busiest organizations), one run step by step with every try and what it changed, Documents with each one's whole journey from arrival to delivery and how long each part took, and Queues (events waiting or never picked up, the agent's Kafka lag, failures, stuck documents)
+- The agent saves a run when it starts and after every step, not only at the end, so a crash leaves its steps behind and the platform sees what is running now; a try that fails ends as failed with the steps it got through
+- A run that stops reporting for 15 minutes is marked lost and written in its document's log; step records are kept 90 days, run summaries for good
+- Log and audit entries the agent writes name the run that wrote them
+- Staff see facts only (what ran, where, when, for how long, at what cost); a customer's content (thoughts, tool results, records, messages, the file) opens only through an access grant with a reason and an end time, each opening is in the platform audit log, and the organization sees in its own activity that Syruss support looked and why
+- Staff with operations rights can stop a run, send a failed or stuck document to the agent again and send a waiting event again, each with a reason the organization also sees
+- The run log in the main app shows running, stopped and lost runs; stopping a chat reply works while its run is under way
+- The system admin app (admin/, port 3200), for the people who run the platform: service health, platform figures, the platform staff and their audit log
+- It signs in through its own Keycloak client with a password and a one-time code every time; `bridge/keycloak/harden.py` adds the client and its sign-in flow to a running realm
+- The admin app's sign-in pages offer no sign-up and no other providers, and setting up a one-time code fits one screen, on phones too
+- The /api/v1/sysadmin API answers only the admin app's tokens and only platform staff, whose roles (owner, operator, support, billing, viewer) each allow only their part; staff changes need a fresh sign-in
+- Every staff action is written to a platform audit log that the database refuses to change or delete
+- An organization records why it is shut: suspended by platform staff, or closed by its owner
+- site/, www/ and admin/ share one sign-in implementation, checked identical in CI
+- The organization overview covers a period (7, 30 or 90 days) against the one before it: documents received, the share saved without a person, time to save, and failures or agent cost
+- A chart of documents received across workspaces, split by where each one stands now
+- "Needs you" lists what waits on you in each workspace (reviews, questions from Syruss, failed documents, templates still in design), each linking straight to it
+- A workspace table shows each one's health, period figures, this month's documents against its plan, cost and last activity; organization admins see every workspace as counts
+- "This month" shows documents and agent cost across workspaces, and warns when a workspace nears its document limit; a model with no price set shows its tokens instead of a cost of nothing
+- The latest work across your workspaces, and a "Get started" checklist until a new organization has a workspace, a finished template, documents and a teammate
+- A chat holds only what was asked in it: work started from a page (uploads, corrections, data sources, template design) shows in Activity, and runs that read documents can no longer write in anyone's chat
+- A correction opens its own chat about that document; a chat started from the rules page or Analytics keeps that purpose for every message, and every chat message is answered by the same agent
+- Syruss replies before it resolves a thread, never shows its own runtime notes as a reply, and names documents by their names instead of ids or file names
+- Chats remember what Syruss did before each reply and the notes of what happened, see the page as words, and are named by their topic after the first exchange
+- Threads Syruss opens resume from a short note of where it left off; the chat history lists them apart under "From Syruss", open ones first
+- Chats can use their own model (CHAT_MODEL, gemini-3.5-flash in the example settings) while documents stay on the work model
+- Template rules: checks in a safe rule language that run on every record after extraction; failing error rules send the document to review, warnings are reported
+- Rules tab under Template with suggested, active, stopped and turned-off rules; new-rule page to describe a rule in plain English (sent to Syruss in a new chat) or write it with a live compile check and dry run
+- Syruss can list, try and suggest rules (a person adds them), with a rules guide; rules that no longer fit after a template change are stopped and announced
+- Legacy expression and regex checks now run on the safe engine (RE2, capped exponents)
+
+### site (0.2.2-rc.1)
+- The system admin app (admin/, port 3200), for the people who run the platform: service health, platform figures, the platform staff and their audit log
+- It signs in through its own Keycloak client with a password and a one-time code every time; `bridge/keycloak/harden.py` adds the client and its sign-in flow to a running realm
+- The admin app's sign-in pages offer no sign-up and no other providers, and setting up a one-time code fits one screen, on phones too
+- The /api/v1/sysadmin API answers only the admin app's tokens and only platform staff, whose roles (owner, operator, support, billing, viewer) each allow only their part; staff changes need a fresh sign-in
+- Every staff action is written to a platform audit log that the database refuses to change or delete
+- An organization records why it is shut: suspended by platform staff, or closed by its owner
+- site/, www/ and admin/ share one sign-in implementation, checked identical in CI
+
+### www (0.6.2-rc.1)
+- The system admin app follows every agent run and every document on the platform, in every organization, as it happens: a Live page (what is running now, what just happened), Agent runs (filters, totals, runs per hour, the busiest organizations), one run step by step with every try and what it changed, Documents with each one's whole journey from arrival to delivery and how long each part took, and Queues (events waiting or never picked up, the agent's Kafka lag, failures, stuck documents)
+- The agent saves a run when it starts and after every step, not only at the end, so a crash leaves its steps behind and the platform sees what is running now; a try that fails ends as failed with the steps it got through
+- A run that stops reporting for 15 minutes is marked lost and written in its document's log; step records are kept 90 days, run summaries for good
+- Log and audit entries the agent writes name the run that wrote them
+- Staff see facts only (what ran, where, when, for how long, at what cost); a customer's content (thoughts, tool results, records, messages, the file) opens only through an access grant with a reason and an end time, each opening is in the platform audit log, and the organization sees in its own activity that Syruss support looked and why
+- Staff with operations rights can stop a run, send a failed or stuck document to the agent again and send a waiting event again, each with a reason the organization also sees
+- The run log in the main app shows running, stopped and lost runs; stopping a chat reply works while its run is under way
+- The system admin app (admin/, port 3200), for the people who run the platform: service health, platform figures, the platform staff and their audit log
+- It signs in through its own Keycloak client with a password and a one-time code every time; `bridge/keycloak/harden.py` adds the client and its sign-in flow to a running realm
+- The admin app's sign-in pages offer no sign-up and no other providers, and setting up a one-time code fits one screen, on phones too
+- The /api/v1/sysadmin API answers only the admin app's tokens and only platform staff, whose roles (owner, operator, support, billing, viewer) each allow only their part; staff changes need a fresh sign-in
+- Every staff action is written to a platform audit log that the database refuses to change or delete
+- An organization records why it is shut: suspended by platform staff, or closed by its owner
+- site/, www/ and admin/ share one sign-in implementation, checked identical in CI
+- The organization overview covers a period (7, 30 or 90 days) against the one before it: documents received, the share saved without a person, time to save, and failures or agent cost
+- A chart of documents received across workspaces, split by where each one stands now
+- "Needs you" lists what waits on you in each workspace (reviews, questions from Syruss, failed documents, templates still in design), each linking straight to it
+- A workspace table shows each one's health, period figures, this month's documents against its plan, cost and last activity; organization admins see every workspace as counts
+- "This month" shows documents and agent cost across workspaces, and warns when a workspace nears its document limit; a model with no price set shows its tokens instead of a cost of nothing
+- The latest work across your workspaces, and a "Get started" checklist until a new organization has a workspace, a finished template, documents and a teammate
+- A chat holds only what was asked in it: work started from a page (uploads, corrections, data sources, template design) shows in Activity, and runs that read documents can no longer write in anyone's chat
+- A correction opens its own chat about that document; a chat started from the rules page or Analytics keeps that purpose for every message, and every chat message is answered by the same agent
+- Syruss replies before it resolves a thread, never shows its own runtime notes as a reply, and names documents by their names instead of ids or file names
+- Chats remember what Syruss did before each reply and the notes of what happened, see the page as words, and are named by their topic after the first exchange
+- Threads Syruss opens resume from a short note of where it left off; the chat history lists them apart under "From Syruss", open ones first
+- Chats can use their own model (CHAT_MODEL, gemini-3.5-flash in the example settings) while documents stay on the work model
+- Template rules: checks in a safe rule language that run on every record after extraction; failing error rules send the document to review, warnings are reported
+- Rules tab under Template with suggested, active, stopped and turned-off rules; new-rule page to describe a rule in plain English (sent to Syruss in a new chat) or write it with a live compile check and dry run
+- Syruss can list, try and suggest rules (a person adds them), with a rules guide; rules that no longer fit after a template change are stopped and announced
+- Legacy expression and regex checks now run on the safe engine (RE2, capped exponents)
+
 ## [2026-11-04] - Release Candidate (test)
 
 ### server (0.3.5-rc.1)
