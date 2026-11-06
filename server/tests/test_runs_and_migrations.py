@@ -2,7 +2,9 @@
 The run log (origins, cost, who may see what) and the database migrations.
 """
 import asyncio
+import uuid
 from datetime import datetime, timedelta, timezone
+import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
@@ -23,7 +25,7 @@ async def report(client, tpl: str, origin: dict, **extra) -> None:
         "trigger": extra.pop("trigger", "human.message"), "model": "test-model", "status": "COMPLETED",
         "started_at": start.isoformat(), "completed_at": (start + timedelta(seconds=2)).isoformat(),
         "steps": [{"thought": "x"}], "usage": {"input_tokens": 1200, "output_tokens": 300},
-        "run_id": "run_abc", "origin": origin, "model_calls": 2, "cost_usd": 0.0081, **extra,
+        "run_id": f"run_{uuid.uuid4().hex[:10]}", "origin": origin, "model_calls": 2, "cost_usd": 0.0081, **extra,
     })
     assert res.status_code == 201, res.text
 
@@ -81,6 +83,13 @@ async def test_migrations_build_the_same_schema_as_the_models():
         async with fresh.connect() as conn:
             diff = await conn.run_sync(lambda c: compare_metadata(
                 MigrationContext.configure(c, opts={"include_object": include_object}), Base.metadata))
+            # The platform audit log only grows: the database itself refuses to change or remove an entry.
+            await conn.execute(text("INSERT INTO platform_audit_log (id, actor_id, actor_name, action, target_type, target_id, details, created_at) "
+                                    "VALUES ('a1', 'u', 'U', 'staff.added', 'user', 'x', '{}', now())"))
+            for change in ("UPDATE platform_audit_log SET reason = 'edited'", "DELETE FROM platform_audit_log"):
+                with pytest.raises(Exception, match="append-only"):
+                    async with conn.begin_nested():
+                        await conn.execute(text(change))
         await fresh.dispose()
         assert diff == []
     finally:

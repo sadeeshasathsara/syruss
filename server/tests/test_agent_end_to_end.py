@@ -1,7 +1,7 @@
 """
 The real agent worker against the real core API and database: only the model is scripted. Covers
 the two ways Syruss involves people: a flag (here, whether to register someone new when it may not
-register on its own) and a conversation it opens, resumes from its checkpoint, and resolves.
+register on its own) and a conversation it opens, resumes from the note it left there, and resolves.
 """
 import copy
 import json
@@ -131,7 +131,7 @@ async def test_a_commit_naming_someone_new_is_refused_until_a_person_approves(cl
     assert (entity.name, entity.identifier_value) == ("Sagara Ruwan Priya", "75765")
 
 
-async def test_a_conversation_is_opened_resumed_from_its_checkpoint_and_resolved(client, memory):
+async def test_a_conversation_is_opened_resumed_from_its_note_and_resolved(client, memory):
     tpl = await create_template(client, schema=IDENTIFIED)
     await client.get(f"{API}/settings", headers=ws(tpl))
     doc = await upload(client, tpl, "night-roster.png")
@@ -150,7 +150,7 @@ async def test_a_conversation_is_opened_resumed_from_its_checkpoint_and_resolved
     assert (conv["title"], conv["status"]) == ("OT column on night rosters", "open")
     async with AsyncSessionLocal() as s:
         saved = await s.get(Conversation, conv["id"])
-        assert "Parked night-roster.png" in json.dumps(saved.agent_state)   # its checkpoint, in Postgres
+        assert saved.agent_state["note"].startswith("Parked night-roster.png")   # where it left off, in Postgres
     assert (await client.get(f"{API}/documents/{doc}", headers=ws(tpl))).json()["status"] == "AWAITING_INPUT"
 
     # The admin replies in the conversation: Syruss continues from where it left off.

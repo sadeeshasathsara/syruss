@@ -39,11 +39,13 @@ from app.models.conversation import Conversation, ChatMessage
 from app.models.graph import EntitySighting
 from app.models.jobs import WorkspaceJob
 from app.models.screen import WorkspaceScreen
+from app.models.rule import TemplateRule
 from app.models.intake import IdempotencyRecord, IntakeChannel, IntakeEvent, IntakeUpload
 from app.models.delivery import Delivery, DeliveryAttempt, Destination
 from app.models.evaluation import EvalRun, EvalRunItem
 from app.models.page_view import AgentPageView
 from app.models.system_lesson import SystemLesson
+from app.models.platform import PlatformAccessGrant, PlatformAuditEntry, PlatformStaff
 
 __all__ = [
     "Tenant",
@@ -88,4 +90,7 @@ __all__ = [
     "EvalRunItem",
     "AgentPageView",
     "SystemLesson",
+    "PlatformStaff",
+    "PlatformAuditEntry",
+    "PlatformAccessGrant",
 ]

@@ -8,17 +8,17 @@ One module per area; importing this package registers every tool (base.TOOLS), a
 decides which tools each kind of run gets.
 """
 from agentic_framework.agent.tools import (  # noqa: F401  (each module registers its tools)
-    calc, documents, records, entities, people, template, sources, memory, guide, screens,
+    calc, documents, records, entities, people, template, sources, memory, guide, screens, rules,
 )
 from agentic_framework.agent.tools.base import TOOLS, RunContext, Tool, ToolOutcome, tool
 from agentic_framework.agent.tools.calc import safe_calculate
 from agentic_framework.agent.tools.documents import budget_note
 from agentic_framework.agent.tools.memory import save_memory
 from agentic_framework.agent.tools.registry import (
-    ANALYST_TOOLS, CHAT_TOOLS, EVAL_TOOLS, TOOLSETS, WORK_CORE, execute, tool_schemas, work_tools,
+    CHAT_TOOLS, EVAL_TOOLS, TOOLSETS, WORK_CORE, execute, tool_schemas, work_tools,
 )
 
 __all__ = [
     "TOOLS", "RunContext", "Tool", "ToolOutcome", "tool", "safe_calculate", "budget_note", "save_memory",
-    "ANALYST_TOOLS", "CHAT_TOOLS", "EVAL_TOOLS", "TOOLSETS", "WORK_CORE", "execute", "tool_schemas", "work_tools",
+    "CHAT_TOOLS", "EVAL_TOOLS", "TOOLSETS", "WORK_CORE", "execute", "tool_schemas", "work_tools",
 ]

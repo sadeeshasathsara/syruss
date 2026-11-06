@@ -8,6 +8,10 @@ app.syruss.duckdns.org {
 	reverse_proxy 127.0.0.1:3000
 }
 
+admin.syruss.duckdns.org {
+	reverse_proxy 127.0.0.1:3200
+}
+
 api.syruss.duckdns.org {
 	reverse_proxy 127.0.0.1:8000
 }

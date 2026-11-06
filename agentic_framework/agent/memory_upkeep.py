@@ -4,7 +4,8 @@ Housekeeping around a run, never part of the agent's own reasoning:
     there (once, the first time it works in that workspace again);
   * memories whose text changed (for example edited by a person) get a fresh embedding;
   * a chat's older messages are folded into its rolling summary, so long chats stay coherent
-    without sending their whole history every time.
+    without sending their whole history every time;
+  * after its first exchange a chat is named by its topic, not by its first words.
 """
 import logging
 from datetime import datetime
@@ -23,6 +24,10 @@ You keep the running summary of one chat between Syruss (an AI colleague in a do
 workspace) and a member of the team. Update the summary with the new messages: keep what was asked, \
 decided, promised and learned about the person or the business; drop small talk. Plain sentences, at \
 most 200 words. Reply with the summary only."""
+
+TITLE_PROMPT = """\
+Name this chat in 2 to 6 words, by what it is about, the way the person would look for it later. Plain words, no \
+quotes, no full stop. If it is only a greeting, reply with: Greeting. Reply with the name only."""
 
 
 async def before_run(ctx: RunContext) -> None:
@@ -69,7 +74,8 @@ async def summarize_conversation(ctx: RunContext, model: BaseChatModel) -> None:
     fresh = [m for m in older if covered is None or _when(str(m["at"])) > covered]
     if len(fresh) < settings.SUMMARY_BATCH:
         return
-    transcript = "\n".join(f"{'Syruss' if m['role'] == 'assistant' else 'Them'}: {m['content'][:800]}" for m in fresh)
+    speaker = {"assistant": "Syruss", "user": "Them"}
+    transcript = "\n".join(f"{speaker.get(m['role'], 'Note')}: {m['content'][:800]}" for m in fresh)
     response = await model.ainvoke([
         SystemMessage(content=SUMMARY_PROMPT),
         HumanMessage(content=f"Summary so far:\n{current.get('content') or '(none yet)'}\n\nNew messages:\n{transcript}"),
@@ -80,3 +86,23 @@ async def summarize_conversation(ctx: RunContext, model: BaseChatModel) -> None:
     [vector] = await embed_documents([summary])
     await ctx.api.put(f"/conversations/{conversation_id}/summary",
                       {"content": summary, "covers_until": str(fresh[-1]["at"]), "embedding": vector})
+
+
+async def name_conversation(ctx: RunContext, model: BaseChatModel) -> None:
+    """After a chat's first exchange, names it by its topic instead of its first words ("hi"). Only a chat still called
+    by its first message is renamed: a name a person gave it stays (the platform checks that too)."""
+    p = ctx.event.payload
+    conversation_id = p.get("conversation_id")
+    if not conversation_id or p.get("conversation_kind") != "chat":
+        return
+    history = await ctx.api.get(f"/conversations/{conversation_id}/messages", limit=6)
+    said = [m for m in history if m["role"] in ("user", "assistant")]
+    if [m["role"] for m in said] != ["user", "assistant"] or p.get("conversation_title") != said[0]["content"].strip()[:60]:
+        return
+    response = await model.ainvoke([
+        SystemMessage(content=TITLE_PROMPT),
+        HumanMessage(content=f"Them: {said[0]['content'][:800]}\nSyruss: {said[1]['content'][:800]}"),
+    ])
+    title = message_text(response).strip().strip("\"'.").splitlines()[0][:60] if message_text(response) else ""
+    if title:
+        await ctx.api.put(f"/conversations/{conversation_id}/title", {"title": title, "was": p["conversation_title"]})

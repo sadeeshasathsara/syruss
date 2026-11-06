@@ -2,7 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { RunDetail, SOURCE, STATUS, TRIGGER, who } from "@/components/settings/runs";
+import { useShell } from "@/components/shell/ShellContext";
 import { Bar } from "@/components/ui/Blocks";
 import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
@@ -30,6 +32,7 @@ export function ActivityFeed() {
   const { workspace } = useWorkspace();
   const wid = workspace.id;
   const { events } = useLive();
+  const { notes } = useShell();
   const me = useQuery({ queryKey: ["me"], queryFn: api.me.get, staleTime: 5 * 60_000 });
   const access = useQuery({ queryKey: ["settings", wid], queryFn: () => api.settings.get(wid) });
   const seesAll = !!access.data?.access.permissions.includes("audit.view");
@@ -69,6 +72,20 @@ export function ActivityFeed() {
             </button>
           ))}
         </div>
+      )}
+
+      {notes.length > 0 && (
+        <section className="flex flex-col gap-1">
+          <Heading>You just did</Heading>
+          <ul className="flex flex-col gap-1 px-1">
+            {notes.slice(-5).reverse().map((n) => (
+              <li key={n.id} className="text-body text-muted">
+                {n.href ? <Link href={n.href} className="text-ink underline-offset-2 hover:underline">{n.text}</Link> : n.text}
+                <span className="text-meta text-faint"> · {ago(n.at).toLowerCase()}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {waiting > 0 && (

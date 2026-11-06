@@ -113,6 +113,44 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "syruss-admin",
+      "name": "Syruss system admin",
+      "description": "Platform staff only. harden.py binds the 'syruss admin browser' flow: password and a one-time code on every sign-in.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${SYRUSS_ADMIN_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "rootUrl": "${SYRUSS_ADMIN_URL}",
+      "baseUrl": "${SYRUSS_ADMIN_URL}",
+      "redirectUris": ["${SYRUSS_ADMIN_URL}/api/auth/callback"],
+      "webOrigins": ["${SYRUSS_ADMIN_URL}"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${SYRUSS_SITE_URL}/signed-out",
+        "backchannel.logout.session.required": "true",
+        "client.session.idle.timeout": "1800",
+        "client.session.max.lifespan": "28800"
+      },
+      "protocolMappers": [
+        {
+          "name": "syruss-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "syruss-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "identityProviders": [

@@ -3,26 +3,24 @@
 import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { useAgentChat } from "@/components/chat/ChatProvider";
-import { useShell } from "@/components/shell/ShellContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 
 /**
- * Ask Syruss to build or change a screen in plain words. It goes to the chat, and Syruss works as the analyst: it looks at
- * the records, tries the screen, and saves it. The person is told in the chat and the new screen appears in the sidebar.
+ * Ask Syruss to build or change a screen in plain words. It starts a new chat about screens, where Syruss looks at the
+ * records, tries the screen and saves it; every follow-up in that chat is about screens too. The new screen appears in
+ * the sidebar.
  */
 export function AskForScreen({ screen, placeholder, examples }: { screen?: string; placeholder: string; examples?: string[] }) {
-  const { send } = useAgentChat();
-  const { setChatOpen } = useShell();
+  const { sendInNewChat } = useAgentChat();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const go = async (message: string) => {
     const value = message.trim();
     if (!value || sending) return;
     setSending(true);
-    setChatOpen(true);
     try {
-      await send(value, { mode: "screens", ...(screen ? { screen } : {}) });
+      await sendInNewChat(value, { mode: "screens", ...(screen ? { screen } : {}) });
       setText("");
     } finally {
       setSending(false);

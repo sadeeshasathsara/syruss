@@ -1,7 +1,6 @@
 "use client";
 
 import { createContext, useCallback, useContext, useState } from "react";
-import { getActiveConversation } from "@/lib/api";
 import { storeValue, useMediaQuery, useStoredValue } from "@/lib/browser";
 
 export interface ActionNote {
@@ -9,8 +8,6 @@ export interface ActionNote {
   text: string;
   href?: string;
   at: string;
-  /** The chat that was open when it happened; the note shows there. */
-  conversationId?: string;
 }
 
 export type ChatTab = "chat" | "activity";
@@ -25,8 +22,9 @@ interface ShellContextValue {
   setChatTab: (tab: ChatTab) => void;
   navOpen: boolean;
   setNavOpen: (open: boolean) => void;
-  /** Things the user did, shown in the chat they did them in so their outcome can be followed there. */
+  /** Things the user did on a page, shown at the top of Activity, where their outcome can be followed. */
   notes: ActionNote[];
+  /** `openChat` opens the panel on Activity. */
   announce: (text: string, opts?: { href?: string; openChat?: boolean }) => void;
 }
 
@@ -56,9 +54,9 @@ export function ShellProvider({ children }: { children: React.ReactNode }) {
     (text: string, opts?: { href?: string; openChat?: boolean }) => {
       setNotes((prev) => [
         ...prev,
-        { id: `note_${Date.now()}_${prev.length}`, text, href: opts?.href, at: new Date().toISOString(), conversationId: getActiveConversation() },
+        { id: `note_${Date.now()}_${prev.length}`, text, href: opts?.href, at: new Date().toISOString() },
       ]);
-      if (opts?.openChat) setChatOpen(true);
+      if (opts?.openChat) setChatOpen(true, "activity");
     },
     [setChatOpen],
   );

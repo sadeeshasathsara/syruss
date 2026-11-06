@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 import { Markdown, plainText } from "@/components/ui/Markdown";
 import { MappingSummary } from "@/components/knowledge/MappingSummary";
+import { RuleCard, suggestedRuleId } from "@/components/rules/RuleCard";
 import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
 import { cn, docName, fieldName, humanize, percent, STATUS_LABEL, STATUS_TONE } from "@/lib/format";
@@ -26,6 +27,7 @@ const TRIGGER: Record<string, string> = {
   "review.completed": "Learning from a review",
   "proposal.decided": "Applying your decision",
   "schedule.reflect": "Looking back over recent work",
+  "rules.ideas": "Thinking of rules for this template",
 };
 
 function toolLabel(step: RunStep): string {
@@ -88,6 +90,12 @@ function toolLabel(step: RunStep): string {
       return "Changed a screen";
     case "remove_screen":
       return "Removed a screen";
+    case "list_rules":
+      return "Looked at the rules";
+    case "check_rule":
+      return "Tried a rule on the saved records";
+    case "suggest_rule":
+      return `Suggested the rule${q("name")}`;
     case "list_documents":
       return "Listed documents";
     case "get_document":
@@ -151,8 +159,20 @@ function StepRow({ step, defaultOpen, resetKey }: { step: RunStep; defaultOpen: 
  * "thinking" line; afterwards, only the lookups it made (if any), folded, with no summary.
  */
 function ChatRunLine({ run }: { run: Run }) {
-  const [open, setOpen] = useState(false);
   const tools = run.steps.filter((s) => s.kind === "tool" && s.tool !== "reply_to_user");
+  // Rules it suggested stay in view, with their Add button, rather than folded with the lookups.
+  const rules = [...new Set(tools.filter((s) => s.tool === "suggest_rule").map((s) => suggestedRuleId(s.result)).filter((id): id is string => !!id))];
+  if (!rules.length) return <ChatRunSteps run={run} tools={tools} />;
+  return (
+    <div className="flex flex-col gap-2">
+      <ChatRunSteps run={run} tools={tools} />
+      {rules.map((id) => <RuleCard key={id} ruleId={id} />)}
+    </div>
+  );
+}
+
+function ChatRunSteps({ run, tools }: { run: Run; tools: RunStep[] }) {
+  const [open, setOpen] = useState(false);
   if (run.finished && tools.length === 0) return null;
   if (!run.finished) {
     // While it works, each action shows as it happens: the newest open, the one before folds away.

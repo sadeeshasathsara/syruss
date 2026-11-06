@@ -24,7 +24,7 @@ from app.models.outbox import AgentEventOutbox
 from app.models.trace import AgentExecutionTrace
 from app.schemas.conversation import ChatMessageCreate, ConversationCreate, ConversationUpdate
 from app.services.agent_events import enqueue_agent_event, agent_event_relay
-from app.services import budget_service
+from app.services import budget_service, document_key
 from app.services.ui_events import listen_channel, publish_ui_event
 
 REPLY_TIMEOUT_SECONDS = 180
@@ -35,6 +35,38 @@ DEFAULT_TITLE = "New chat"
 AUDIENCE_PERMISSION = {"admin": "template.publish", "reviewer": "documents.review"}
 # Threads Syruss starts: conversations about issues, and the threads of its flags.
 SYRUSS_KINDS = ("agent", "flag")
+# What a chat can be for besides "general", set by the page it was started from.
+CHAT_MODES = ("rules", "screens")
+
+
+# Pages of a workspace, by the first part of their path after /w/<workspace>/, as people call them.
+PAGES = {
+    "": "the workspace overview", "documents": "the document list", "review": "Review", "template": "the template",
+    "setup": "the template designer", "analytics": "Analytics", "screens": "Analytics", "knowledge": "Knowledge",
+    "connections": "Connections", "settings": "Settings", "agent": "Syruss's conversations", "quality": "Quality",
+}
+
+
+async def page_label(db: AsyncSession, path: Optional[str]) -> Optional[str]:
+    """The page a message was written from, in words ("the document North Branch_2026-07-22", "Template > Rules"),
+    so the agent knows what "this" means without reading a URL."""
+    if not path:
+        return None
+    if "/w/" in path:  # /<org>/w/<workspace>/<page...>
+        inside = path.split("/w/", 1)[1]
+        rest = inside.split("/", 1)[1] if "/" in inside else ""
+    else:
+        rest = path.lstrip("/")
+    parts = [p for p in rest.split("?", 1)[0].split("/") if p]
+    head = parts[0] if parts else ""
+    if head == "documents" and len(parts) > 1:
+        label = (await document_key.labels_for(db, [parts[1]])).get(parts[1])
+        return f"the document {label}" if label else "a document"
+    if head == "template" and len(parts) > 1 and parts[1] == "rules":
+        return "Template > Rules" + (" > New rule" if parts[2:3] == ["new"] else "")
+    if head in ("analytics", "screens") and len(parts) > 1 and parts[1] != "new":
+        return f"the analytics screen '{parts[1]}'"
+    return PAGES.get(head, head.replace("_", " ").replace("-", " ") or None)
 
 
 def _audiences(scope: TemplateScope) -> List[str]:
@@ -49,7 +81,12 @@ class ConversationService:
         """A page of conversations, newest first, without their messages (only what a list shows)."""
         columns = (Conversation.id, Conversation.title, Conversation.kind, Conversation.status, Conversation.audience,
                    Conversation.updated_at, Conversation.created_at)
-        if kind == "agent":
+        order = [Conversation.updated_at.desc()]
+        if kind == "syruss":  # threads Syruss started with your role: what still waits on someone comes first
+            where = [Conversation.template_id == scope.template_id, Conversation.kind.in_(SYRUSS_KINDS),
+                     Conversation.audience.in_(_audiences(scope))]
+            order = [(Conversation.status == "open").desc(), *order]
+        elif kind == "agent":
             where = [Conversation.template_id == scope.template_id, Conversation.kind == "agent",
                      Conversation.audience.in_(_audiences(scope))]
             if status:
@@ -63,11 +100,11 @@ class ConversationService:
         else:
             where = [Conversation.template_id == scope.template_id, Conversation.user_id == scope.user_id,
                      Conversation.kind == "chat"]
-        rows = (await db.execute(select(*columns).where(*where).order_by(Conversation.updated_at.desc())
+        rows = (await db.execute(select(*columns).where(*where).order_by(*order)
                                  .offset(offset).limit(limit + 1))).all()
         items = [dict(zip(("id", "title", "kind", "status", "audience", "updated_at", "created_at"), r)) for r in rows[:limit]]
         result = {"items": items, "has_more": len(rows) > limit, "next_offset": offset + len(items)}
-        if kind == "agent":
+        if kind in ("agent", "syruss"):
             result["open"] = (await db.execute(select(func.count(Conversation.id)).where(
                 *where[:3], Conversation.status == "open"))).scalar() or 0
         return result
@@ -158,15 +195,21 @@ class ConversationService:
     async def post_user_message(
         db: AsyncSession, scope: TemplateScope, conv: Conversation, payload: ChatMessageCreate, channel_id: Optional[str] = None,
     ) -> ChatMessage:
-        """Stores the message and wakes the agent (committed together)."""
+        """Stores the message and wakes the agent (committed together).
+
+        The page and context a message was written from belong to that message only. A chat's mode is
+        fixed by its first message: where it was started from (the rules page, Analytics) decides how
+        every message in it is answered."""
         name = scope.username
         sender = {"user_id": scope.user_id, "name": name, "role": scope.role_name or None}
         context = dict(payload.context or {})
-        if context:
-            conv.context_metadata = {**(conv.context_metadata or {}), **context}
+        first = conv.kind == "chat" and not any(m.role == "user" for m in conv.messages or [])
+        if first and context.get("mode") in CHAT_MODES:
+            conv.mode = context["mode"]
         msg = ChatMessage(
             id=str(uuid.uuid4()), conversation_id=conv.id, tenant_id=scope.tenant_id, role="user",
-            content=payload.content.strip(), evidence_citations=[], confidence=1.0, agent_trace={},
+            content=payload.content.strip(), evidence_citations=[], confidence=1.0,
+            agent_trace={"context": context} if context else {},
         )
         db.add(msg)
         if conv.kind == "chat" and conv.title in (DEFAULT_TITLE, "New Conversation"):  # the first message names the chat
@@ -191,8 +234,8 @@ class ConversationService:
             db, event_type="human.message", tenant_id=scope.tenant_id, template_id=scope.template_id,
             payload={
                 "conversation_id": conv.id, "message_id": msg.id, "text": msg.content, "sender": sender,
-                "conversation_kind": conv.kind, "conversation_title": conv.title,
-                "channel_id": channel_id or conv.id, "page": context.get("current_page"), "context": context,
+                "conversation_kind": conv.kind, "conversation_title": conv.title, "conversation_mode": conv.mode or "general",
+                "channel_id": channel_id or conv.id, "page": await page_label(db, context.get("current_page")), "context": context,
             },
             actor_id=scope.user_id, actor_type="user", actor_name=sender["name"], source="chat", conversation_id=conv.id,
         )
@@ -209,7 +252,7 @@ class ConversationService:
         documents) carries on: only the reply stops.
         """
         conv = await ConversationService.get_conversation(db, scope, conversation_id)
-        finished = select(AgentExecutionTrace.event_id).where(AgentExecutionTrace.event_id.is_not(None))
+        finished = select(AgentExecutionTrace.event_id).where(AgentExecutionTrace.event_id.is_not(None), AgentExecutionTrace.status != "RUNNING")
         events = (await db.execute(select(AgentEventOutbox).where(
             AgentEventOutbox.template_id == scope.template_id, AgentEventOutbox.conversation_id == conv.id,
             AgentEventOutbox.event_type == "human.message", AgentEventOutbox.cancelled_at.is_(None),

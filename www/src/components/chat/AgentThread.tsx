@@ -15,7 +15,7 @@ import { cn } from "@/lib/format";
 import { useLive } from "@/lib/live";
 import { useWorkspace } from "@/lib/workspace";
 import { ActivityFeed } from "./Activity";
-import { ChatHistory } from "./ChatHistory";
+import { ChatHistory, useOpenThreads } from "./ChatHistory";
 import { TimelineCard } from "./cards";
 import { useAgentChat } from "./ChatProvider";
 import type { TimelineItem } from "./timeline";
@@ -83,12 +83,20 @@ function SessionBar() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const issue = active?.kind === "agent" || active?.kind === "flag";
   const current = activeId && active && !issue ? active : undefined;
+  const openThreads = useOpenThreads();
 
   return (
     <div ref={bar} className="flex h-11 flex-none items-center gap-1 border-b border-border bg-chat-panel px-2">
-      <IconButton aria-label="Your chats" aria-expanded={historyOpen} onClick={() => setHistoryOpen((o) => !o)}>
-        <History />
-      </IconButton>
+      <span className="relative">
+        <IconButton
+          aria-label={openThreads ? `Chat history, ${openThreads} from Syruss waiting on you` : "Chat history"}
+          aria-expanded={historyOpen}
+          onClick={() => setHistoryOpen((o) => !o)}
+        >
+          <History />
+        </IconButton>
+        {openThreads > 0 && <span aria-hidden className="pointer-events-none absolute right-1 top-1 size-2 rounded-full bg-accent" />}
+      </span>
       <span className="min-w-0 flex-1 truncate px-1 text-body font-medium text-ink">
         {activeId ? active?.title ?? "" : "New chat"}
       </span>

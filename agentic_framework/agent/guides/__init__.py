@@ -20,6 +20,7 @@ GUIDES: Dict[str, str] = {
     "asking-people": "flags and conversations: when to use which, and how",
     "reflection": "looking back over recent work and corrections",
     "screens": "analytics screens (the Analytics tab): tables, calculated columns and analytics over the saved records",
+    "rules": "rules: checks in the rule language that run on every record, writing one from plain words, and when to suggest one",
 }
 
 # Guides a task always needs, attached to its briefing so the agent doesn't spend a step reading them.
@@ -28,7 +29,11 @@ FOR_TASK: Dict[str, str] = {
     "knowledge.source_added": "reference-data",
     "schedule.reflect": "reflection",
     "schedule.insights": "screens",
+    "rules.ideas": "rules",
 }
+
+# A chat's mode (fixed when it starts, by the page it was started from) brings the guide its every message needs.
+FOR_CHAT_MODE: Dict[str, str] = {"rules": "rules", "screens": "screens"}
 
 
 @lru_cache(maxsize=None)

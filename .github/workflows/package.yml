@@ -440,7 +440,7 @@ jobs:
   # ----------------------------------------------------------------------------
   deploy-test:
     name: Tell the test server to pull
-    needs: [prepare-release, release-server, release-agent, release-www, release-site, detect-infra, release-infra]
+    needs: [prepare-release, release-server, release-agent, release-www, release-site, release-admin, detect-infra, release-infra]
     # Runs even when some services had no release (their jobs are skipped), but not when one failed.
     if: ${{ !cancelled() && github.ref_name == 'test' && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
@@ -458,6 +458,7 @@ jobs:
           AGENT: ${{ needs.release-agent.result }}
           WWW: ${{ needs.release-www.result }}
           SITE: ${{ needs.release-site.result }}
+          ADMIN: ${{ needs.release-admin.result }}
           INFRA: ${{ needs.release-infra.result }}
           INFRA_NAMES: ${{ needs.detect-infra.outputs.names }}
         run: |
@@ -466,6 +467,7 @@ jobs:
           [ "$AGENT" = success ] && services="$services agent"
           [ "$WWW" = success ] && services="$services www"
           [ "$SITE" = success ] && services="$services site"
+          [ "$ADMIN" = success ] && services="$services admin"
           [ "$INFRA" = success ] && services="$services $INFRA_NAMES"
           list=$(printf '%s\n' $services | jq -R . | jq -sc .)
           body=$(jq -nc --argjson services "$list" --arg compose "$(base64 -w0 deploy/test/docker-compose.yml)" '{services: $services, compose: $compose}')

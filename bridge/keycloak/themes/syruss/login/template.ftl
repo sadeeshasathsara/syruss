@@ -21,6 +21,11 @@
     </@field.group>
 </#macro>
 
+<#-- The system admin app: platform staff sign in here, nobody signs up (staff are added by an owner, in the app). -->
+<#function staffApp>
+  <#return ((client.clientId)!'') == 'syruss-admin'>
+</#function>
+
 <#macro registrationLayout bodyClass="" displayInfo=false displayMessage=true displayRequiredFields=false>
 <!DOCTYPE html>
 <html class="${properties.kcHtmlClass!}"<#if realm.internationalizationEnabled> lang="${locale.currentLanguageTag}" dir="${(locale.rtl)?then('rtl','ltr')}"</#if>>
@@ -76,7 +81,7 @@
     </script>
 </head>
 
-<body id="keycloak-bg" class="${properties.kcBodyClass!}">
+<body id="keycloak-bg" class="${properties.kcBodyClass!}<#if staffApp()> syruss-staff-app</#if>">
 
 <div class="syruss-shell">
   <aside class="syruss-aside" aria-hidden="true">
@@ -152,9 +157,12 @@
         </div>
         </#if>
       </div>
+      <#-- Other providers would skip the admin app's one-time code: staff sign in with their password and the code only. -->
+      <#if !staffApp()>
       <div class="pf-v5-c-login__main-footer">
         <#nested "socialProviders">
       </div>
+      </#if>
       <div class="${properties.kcLoginMainBody!}">
         <#if !(auth?has_content && auth.showUsername() && !auth.showResetCredentials())>
             <#if displayRequiredFields>
