@@ -10,7 +10,7 @@ changing one does not need a new version.
 | `server/app/services/rule_lang.py` | the language: compiler (type checks against the template) and interpreter |
 | `server/app/services/rule_service.py` | saving, dry runs on saved records, recheck after a template change |
 | `server/app/api/v1/rules.py` | the people's API (`/api/v1/rules`) |
-| `server/app/api/internal/agent_tools.py` | the agent's API (`/rules`, `/rules/check`, `/rules/suggest`) |
+| `server/app/api/internal/agent_tools/rules.py` | the agent's API (`/rules`, `/rules/check`, `/rules/suggest`) |
 | `agentic_framework/agent/tools/rules.py`, `agent/guides/rules.md` | the agent's tools and guide |
 | `www/src/app/[org]/w/[ws]/template/rules/` | Rules tab, new rule (plain English or custom), edit |
 
