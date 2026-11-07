@@ -62,7 +62,7 @@ async def call(
     if settings.is_production and urlsplit(url).scheme != "https":
         return Reply(error="Destinations must use https in production.", retryable=False)
     try:
-        await source_data._check_host(url)
+        await source_data.check_host(url)
     except SourceError as exc:
         message = str(exc)
         return Reply(error=message, retryable="could not be found" in message)

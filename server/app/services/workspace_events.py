@@ -136,7 +136,7 @@ async def deliver(hook_id: str, event: Dict[str, Any]) -> Optional[WebhookDelive
         started = time.perf_counter()
         status_code, error = None, None
         try:
-            await source_data._check_host(hook.url)
+            await source_data.check_host(hook.url)
             async with httpx.AsyncClient(transport=source_data.HTTP_TRANSPORT, timeout=WEBHOOK_TIMEOUT_SECONDS, follow_redirects=False) as client:
                 response = await client.post(hook.url, content=body, headers=headers)
             status_code = response.status_code

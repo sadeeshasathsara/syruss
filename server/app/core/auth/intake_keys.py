@@ -3,7 +3,6 @@ Who is sending a document in. An intake key is tied to exactly one channel, and 
 a document belongs: senders never name a workspace. These keys are accepted only on /intake/* and nowhere else in the API
 (get_current_auth refuses them), so a leaked key can add documents to its channel and read back its own, and do nothing more.
 """
-import hashlib
 import ipaddress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -14,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import ratelimit
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db_session
+from app.core.secrets import token_hash
 from app.models.intake import IntakeChannel
 from app.models.tenant import Tenant
 from app.models.template import DocumentTemplate
@@ -94,7 +94,7 @@ async def intake_caller(request: Request, db: AsyncSession = Depends(get_db_sess
     token = _bearer(request)
     if not token.startswith("sk_"):
         raise _unauthorized("Send your intake key as 'Authorization: Bearer sk_...'.")
-    key = (await db.execute(select(ApiKey).where(ApiKey.key_hash == hashlib.sha256(token.encode()).hexdigest()))).scalar_one_or_none()
+    key = (await db.execute(select(ApiKey).where(ApiKey.key_hash == token_hash(token)))).scalar_one_or_none()
     now = datetime.now(timezone.utc)
     if key is None or key.revoked_at or (key.expires_at and key.expires_at < now):
         raise _unauthorized("This key is not valid. It may have expired or been revoked.")

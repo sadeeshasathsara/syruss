@@ -115,7 +115,7 @@ def _short(value: Any) -> Any:
 # Calling an API
 # ---------------------------------------------------------------------------
 
-async def _check_host(url: str) -> None:
+async def check_host(url: str) -> None:
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise SourceError("The URL must start with http:// or https:// and name a host.")
@@ -152,7 +152,7 @@ def _check_response(response: httpx.Response) -> None:
 
 async def _request(client: httpx.AsyncClient, method: str, url: str, **kwargs: Any) -> tuple[bytes, str]:
     """One call, with the host checked first and the body read up to the size limit."""
-    await _check_host(url)
+    await check_host(url)
     try:
         async with client.stream(method, url, **kwargs) as response:
             _check_response(response)

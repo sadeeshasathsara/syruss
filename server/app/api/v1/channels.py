@@ -2,7 +2,6 @@
 Intake channels: how other systems send documents into a workspace. People with `integrations.manage` create a channel, give each sending
 system its own key (shown once), watch what arrived and what was refused, and can send a test document to see the whole path work.
 """
-import hashlib
 import io
 import re
 import secrets
@@ -17,6 +16,7 @@ from app.core.auth.intake_keys import valid_allowlist
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.core.permissions import Access, require
+from app.core.secrets import token_hash
 from app.models.audit import AuditLog
 from app.models.intake import IntakeChannel, IntakeEvent
 from app.models.workspace_admin import ApiKey
@@ -26,10 +26,6 @@ from app.services.intake_rules import SUPPORTED, IntakeRejected
 router = APIRouter(prefix="/channels", tags=["Connections: receive"])
 
 MAX_KEYS_PER_CHANNEL = 20
-
-
-def _hash(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def _slug(name: str) -> str:
@@ -247,7 +243,7 @@ def _new_key(access: Access, channel: IntakeChannel, body: KeyIn) -> tuple[ApiKe
         raise HTTPException(status_code=422, detail=str(exc))
     plain = f"sk_{body.mode}_{secrets.token_urlsafe(32)}"
     key = ApiKey(
-        tenant_id=access.scope.tenant_id, template_id=access.scope.template_id, name=body.name.strip(), prefix=plain[:12], key_hash=_hash(plain),
+        tenant_id=access.scope.tenant_id, template_id=access.scope.template_id, name=body.name.strip(), prefix=plain[:12], key_hash=token_hash(plain),
         scope="intake", channel_id=channel.id, mode=body.mode, ip_allowlist=allow, rate_limit_per_minute=body.rate_limit_per_minute,
         daily_quota=body.daily_quota, created_by=access.auth.username or access.auth.user_id,
         expires_at=datetime.now(timezone.utc) + timedelta(days=body.expires_in_days) if body.expires_in_days else None,
