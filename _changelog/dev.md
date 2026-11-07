@@ -12,6 +12,11 @@
 
 ## [2026-11-07] - Release via dev
 
+### server (0.8.3-dev.1)
+- Related services now share a folder: intake (file checks, upload, e-mail, SFTP), rules (the rule language, checking records, saving rules) and live (live events for browsers and the platform's live view). Nothing behaves differently.
+
+## [2026-11-07] - Release via dev
+
 ### server (0.8.2-dev.1)
 - Workspace settings routes are split into one module per area (general, roles, members, invitations, API keys, webhooks); nothing about the API changes
 - Tokens and keys are hashed by one shared helper instead of several copies
