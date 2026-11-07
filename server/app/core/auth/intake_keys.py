@@ -18,8 +18,8 @@ from app.models.intake import IntakeChannel
 from app.models.tenant import Tenant
 from app.models.template import DocumentTemplate
 from app.models.workspace_admin import ApiKey
-from app.services.intake_rules import problem
-from app.services.intake_service import Sender, reject
+from app.services.intake.rules import problem
+from app.services.intake.service import Sender, reject
 
 
 @dataclass

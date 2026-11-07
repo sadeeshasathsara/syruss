@@ -20,8 +20,9 @@ from app.core.secrets import token_hash
 from app.models.audit import AuditLog
 from app.models.intake import IntakeChannel, IntakeEvent
 from app.models.workspace_admin import ApiKey
-from app.services import intake_email, intake_service, intake_sftp, settings_service
-from app.services.intake_rules import SUPPORTED, IntakeRejected
+from app.services import settings_service
+from app.services.intake import email as intake_email, service as intake_service, sftp as intake_sftp
+from app.services.intake.rules import SUPPORTED, IntakeRejected
 
 router = APIRouter(prefix="/channels", tags=["Connections: receive"])
 

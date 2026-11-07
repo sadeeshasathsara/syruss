@@ -12,7 +12,8 @@ from app.models.extraction_log import ExtractionLogEntry
 from app.models.outbox import AgentEventOutbox
 from app.models.platform import PlatformAuditEntry
 from app.models.trace import AgentExecutionTrace as Run
-from app.services import platform_feed, run_watch
+from app.services import run_watch
+from app.services.live import platform_feed
 from tests.conftest import TENANT, AsyncSessionLocal, create_template, outbox_events, person, register, upload, ws
 
 API = "/api/v1"

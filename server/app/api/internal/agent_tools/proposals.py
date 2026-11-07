@@ -9,8 +9,8 @@ from sqlalchemy import select, func
 from app.models.knowledge import Entity, KnowledgeProposal, KnowledgeProposalStatus, KnowledgeProposalType
 from app.models.question import AgentQuestion, AgentQuestionStatus
 from app.services import workspace_events
-from app.services.rule_engine import check_rule_definitions
-from app.services.ui_events import publish_ui_event
+from app.services.rules.engine import check_rule_definitions
+from app.services.live.ui_events import publish_ui_event
 from app.api.internal.agent_tools.scope import Workspace, get_workspace
 from app.api.internal.agent_tools.common import audit, document_in, proposal_dict
 

@@ -22,7 +22,7 @@ from app.models.document import DocumentStatus
 from app.services.formula import Blank, Compiled, FUNCTIONS, FormulaError, compile_formula
 from app.services.graph_service import rows_of
 from app.services.record_query import MAX_RECORDS, Condition, _context, _matches, saved_records
-from app.services.rule_engine import normalize_schema, parse_number
+from app.services.rules.engine import normalize_schema, parse_number
 
 MAX_COLUMNS = 30
 MAX_FILTERS = 20

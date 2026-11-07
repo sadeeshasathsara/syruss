@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import AuthContext, get_current_auth
 from app.core.database import AsyncSessionLocal, get_db_session
 from app.services import channels
-from app.services.event_broadcaster import broadcaster
+from app.services.live.broadcaster import broadcaster
 
 logger = logging.getLogger(__name__)
 

@@ -10,7 +10,7 @@ from app.models.knowledge import Entity, KnowledgeProposal, KnowledgeProposalSta
 from app.models.knowledge_source import KnowledgeSource
 from app.models.question import AgentQuestion, AgentQuestionStatus
 from app.services import budget_service, settings_service
-from app.services import rule_service
+from app.services.rules import service as rule_service
 from app.services.template_service import template_service
 from app.api.internal.agent_tools.scope import Workspace, get_workspace
 from app.api.internal.agent_tools.common import conversation_dict, proposal_dict, question_dict

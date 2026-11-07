@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.notification import Notification
-from app.services.ui_events import publish_ui_event
+from app.services.live.ui_events import publish_ui_event
 
 logger = logging.getLogger("core.notifications")
 

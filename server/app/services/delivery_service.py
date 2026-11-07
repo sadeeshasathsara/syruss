@@ -31,7 +31,7 @@ from app.models.template import DocumentTemplate
 from app.services import mapping_service, workspace_events
 from app.services.document_key import document_label
 from app.services.destinations import ADAPTERS, SendContext, SendResult
-from app.services.ui_events import publish_ui_event
+from app.services.live.ui_events import publish_ui_event
 
 logger = logging.getLogger("core.deliveries")
 

@@ -16,7 +16,8 @@ from app.models.document import Document, DocumentStatus
 from app.models.outbox import AgentEventOutbox
 from app.models.template import DocumentTemplate
 from app.models.trace import AgentExecutionTrace as Run
-from app.services import extraction_log, platform_feed
+from app.services import extraction_log
+from app.services.live import platform_feed
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
 from app.services.document_key import document_label
 

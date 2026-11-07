@@ -22,7 +22,7 @@ from app.models.workspace import Workspace
 from app.models.workspace_admin import WorkspaceMember
 from app.services.agent_events import enqueue_agent_event, agent_event_relay
 from app.services.document_service import document_service
-from app.services.rule_engine import check_rule_definitions
+from app.services.rules.engine import check_rule_definitions
 from app.services.workspace_service import unique_slug
 
 MAX_SAMPLES = 5
@@ -160,7 +160,7 @@ class TemplateService:
             template.document_type = version.schema_definition["document_type"]
         if version.schema_definition.get("description"):
             template.description = version.schema_definition["description"]
-        from app.services import rule_service  # rules check the new fields from now on; ones that no longer fit are broken
+        from app.services.rules import service as rule_service  # rules check the new fields from now on; ones that no longer fit are broken
         await rule_service.recheck_all(db, template)
 
     @staticmethod
