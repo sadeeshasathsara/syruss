@@ -31,7 +31,6 @@ export interface WorkspaceSettingsData {
   };
   documents: { auto_process: boolean; max_file_mb: number; allowed_types: string[]; commit_threshold: number };
   budget: { monthly_cost_usd: number | null; monthly_tokens: number | null; when_reached: "warn" | "pause" };
-  plan: "free" | "team" | "business";
 }
 
 export interface BudgetStatus {
@@ -125,13 +124,14 @@ export interface EvalRunInfo {
   items?: EvalItem[];
 }
 
+/** A plan as a workspace's settings show it (the organization's billing has the full catalog). Null: unlimited. */
 export interface Plan {
   name: string;
   price_per_month: number;
-  documents_per_month: number;
-  members: number;
-  api_keys: number;
-  webhooks: number;
+  documents_per_month: number | null;
+  members: number | null;
+  api_keys: number | null;
+  webhooks: number | null;
 }
 
 export interface Usage {
@@ -189,10 +189,14 @@ export interface AgentRunDetail extends Omit<AgentRun, "steps"> {
   completed_at: string | null;
 }
 
+/** The organization's plan as one workspace sees it: the organization's pages, this workspace's share and its own limits. */
 export interface Billing {
-  plan: WorkspaceSettingsData["plan"];
-  plans: Record<WorkspaceSettingsData["plan"], Plan>;
+  plan: string;
+  plans: Record<string, Plan>;
   usage: Usage;
+  pages: { plan: string; plan_key: string; period_start: string; period_end: string; pages_used: number; pages_limit: number | null; credits: number };
+  workspace_pages: number;
+  limits: Record<string, number | null>;
   payment_method: null;
   invoices: never[];
   payments_enabled: boolean;
