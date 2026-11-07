@@ -10,9 +10,11 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, Stri
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
-CATALOG_KINDS = ("plan", "addon")
+CATALOG_KINDS = ("plan", "addon", "credits")
 CATALOG_STATUSES = ("draft", "published", "archived")
 SUBSCRIPTION_STATUSES = ("trialing", "active", "canceled")
+CREDIT_KINDS = ("purchase", "grant", "usage", "refund", "adjustment")
+REQUEST_STATUSES = ("open", "done", "declined")
 
 
 def _now() -> datetime:
@@ -25,12 +27,12 @@ def _id() -> str:
 
 class CatalogItem(Base):
     """
-    One version of something sold: a plan or an add-on. A published version never changes; changing it means a new
-    version with the same key, and organizations stay on theirs until they are moved. Nothing is ever deleted, only
-    archived.
+    One version of something sold: a plan, an add-on, or a pack of prepaid credits. A published version never changes;
+    changing it means a new version with the same key, and organizations stay on theirs until they are moved. Nothing is
+    ever deleted, only archived.
 
     `limits` names limits by their keys (app.services.billing.limits). For a plan it is the value of each one (null:
-    unlimited; a limit it doesn't name is unlimited too); for an add-on, what one unit adds.
+    unlimited; a limit it doesn't name is unlimited too); for an add-on, what one unit adds. A credit pack has `pages`.
     """
     __tablename__ = "billing_catalog"
     __table_args__ = (UniqueConstraint("kind", "key", "version", name="uq_billing_catalog_version"),)
@@ -48,6 +50,7 @@ class CatalogItem(Base):
     public: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)  # offered to customers, not only given by staff
     sort: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     limits: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    pages: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # a credit pack: the pages it adds
     provider_ref: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)  # its product and price at the payment provider
     created_by: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
@@ -69,6 +72,7 @@ class OrgSubscription(Base):
     pending_plan_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("billing_catalog.id"), nullable=True)  # from the next period
     paid_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     provider_ref: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    alerts: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)  # which usage alerts this period already sent
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
 
@@ -125,3 +129,58 @@ class UsageEvent(Base):
     idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
     period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class CreditEntry(Base):
+    """
+    One change to an organization's prepaid credits, in pages: bought or given (+), used by a document (-), refunded or
+    corrected. The balance is the sum. It only grows, like usage events: a correction is a new entry.
+    """
+    __tablename__ = "credit_ledger"
+    __table_args__ = (Index("ix_credit_ledger_tenant_created", "tenant_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    delta: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ref: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)  # the pack, payment, request or document it came from
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class BillingPayment(Base):
+    """Money received, as recorded by platform staff (until a payment provider records it). What it paid for is applied when it's recorded."""
+    __tablename__ = "billing_payments"
+    __table_args__ = (Index("ix_billing_payments_tenant_created", "tenant_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
+    item_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("billing_catalog.id"), nullable=True)
+    quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    reference: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # the bank transfer, invoice or receipt number
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recorded_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    recorded_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class BillingRequest(Base):
+    """A customer asking for a plan, an add-on or credits, while purchases go through staff (the manual payment provider)."""
+    __tablename__ = "billing_requests"
+    __table_args__ = (Index("ix_billing_requests_status_created", "status", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    tenant_id: Mapped[str] = mapped_column(String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_id: Mapped[str] = mapped_column(String(64), ForeignKey("billing_catalog.id"), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requested_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    requested_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)
+    handled_by_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    handled_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+    handled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

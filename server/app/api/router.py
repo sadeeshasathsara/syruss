@@ -3,6 +3,7 @@ from app.api.v1.account import router as account_router
 from app.api.v1.admin import router as admin_router
 from app.api.v1.sysadmin import router as sysadmin_router
 from app.api.v1.audit import router as audit_router
+from app.api.v1.billing import router as billing_router
 from app.api.v1.channels import router as channels_router
 from app.api.v1.connections import router as connections_router
 from app.api.v1.conversations import router as conversations_router
@@ -45,6 +46,7 @@ api_router.include_router(knowledge_sources_router)
 api_router.include_router(knowledge_router)
 api_router.include_router(conversations_router)
 api_router.include_router(audit_router)
+api_router.include_router(billing_router)
 api_router.include_router(settings_router)
 api_router.include_router(runs_router)
 api_router.include_router(memories_router)

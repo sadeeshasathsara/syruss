@@ -43,7 +43,6 @@ EVENT_TYPES: Dict[str, Dict[str, Any]] = {
     "agent.proposal": {"label": "The agent proposes a change", "permission": "template.publish", "notify": True},
     "agent.conversation": {"label": "The agent starts a conversation with you", "permission": "documents.review", "notify": True},
     "member.joined": {"label": "Someone joins the workspace", "permission": "members.manage", "notify": True},
-    "usage.limit": {"label": "The workspace reaches its plan limit", "permission": "billing.manage", "notify": True},
     "agent.budget": {"label": "The agent nears or reaches its monthly budget", "permission": "workspace.manage", "notify": True},
     "agent.evaluation": {"label": "An evaluation of the agent finishes", "permission": "template.publish", "notify": True},
     "agent.reflection": {"label": "The agent reflects on recent work", "permission": "knowledge.manage", "notify": False},
