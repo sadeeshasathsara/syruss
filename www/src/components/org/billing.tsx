@@ -22,7 +22,7 @@ function money(cents: number, currency = "USD"): string {
   }
 }
 
-const price = (o: Offer) => (o.price_cents ? `${money(o.price_cents, o.currency)}${o.interval === "month" ? " a month" : ""}` : "Free");
+const price = (o: Offer) => (o.price_cents ? `${money(o.price_cents, o.currency)}${o.interval === "month" ? " a month" : ""}` : "No charge");
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "long" });
 const amount = (v: number | null | undefined) => (v == null ? "Unlimited" : v.toLocaleString());
 
@@ -115,8 +115,9 @@ function PlanBody({ b }: { b: OrgBilling }) {
 function Limits({ limits }: { limits: OrgLimit[] }) {
   return (
     <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border @2xl:grid-cols-2">
-      {limits.map((l) => (
-        <div key={l.key} className="flex items-baseline justify-between gap-3 bg-card px-4 py-3">
+      {limits.map((l, i) => (
+        <div key={l.key} className={cn("flex items-baseline justify-between gap-3 bg-card px-4 py-3",
+          i === limits.length - 1 && limits.length % 2 === 1 && "@2xl:col-span-2")}>
           <dt className="text-body text-muted">{l.label}</dt>
           <dd className="num text-body font-medium text-ink">{amount(l.value)}</dd>
         </div>
