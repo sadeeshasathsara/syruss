@@ -169,7 +169,7 @@ def deliver(payload: Dict[str, Any]) -> None:
 
 async def publish_fact(kind: str, *, tenant_id: str, template_id: Optional[str], **fields) -> None:
     """A fact from the platform itself, sent to every server process like any live event."""
-    from app.services.ui_events import publish_ui_event  # ui_events sends through the bridge, which calls deliver()
+    from app.services.live.ui_events import publish_ui_event  # ui_events sends through the bridge, which calls deliver()
     data = {"kind": kind, "at": datetime.now(timezone.utc).isoformat(), "tenant_id": tenant_id, "template_id": template_id,
             **{k: v for k, v in fields.items() if v is not None}}
     try:

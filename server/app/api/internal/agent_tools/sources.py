@@ -10,7 +10,7 @@ from app.models.knowledge import Entity, KnowledgeProposal, KnowledgeProposalSta
 from app.models.knowledge_source import KnowledgeSource
 from app.services import source_service, workspace_events
 from app.services.source_data import record_sets
-from app.services.ui_events import publish_ui_event
+from app.services.live.ui_events import publish_ui_event
 from app.api.internal.agent_tools.scope import Workspace, get_workspace
 from app.api.internal.agent_tools.common import audit, proposal_dict
 

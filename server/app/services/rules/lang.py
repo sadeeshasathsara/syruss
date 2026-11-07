@@ -38,7 +38,7 @@ import re2
 
 from app.services import formula
 from app.services.formula import Blank
-from app.services.rule_engine import normalize_schema
+from app.services.rules.engine import normalize_schema
 
 MAX_LENGTH = 600
 MAX_NODES = 200

@@ -36,7 +36,7 @@ flowchart LR
 - **Events are never lost.** Business changes and the event that wakes the agent are committed in
   one transaction (outbox); a relay publishes them to Kafka.
 - **The agent decides, the core enforces.** Records must satisfy the active template version
-  (`server/app/services/rule_engine.py`); template changes and entity merges need human approval.
+  (`server/app/services/rules/engine.py`); template changes and entity merges need human approval.
 
 ## Sign-in and access
 

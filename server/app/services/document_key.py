@@ -16,7 +16,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.document import Document
-from app.services.rule_engine import normalize_schema
+from app.services.rules.engine import normalize_schema
 
 DEFAULT_SEPARATOR = "_"
 MAX_PARTS = 5

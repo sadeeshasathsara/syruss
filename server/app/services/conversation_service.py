@@ -25,7 +25,7 @@ from app.models.trace import AgentExecutionTrace
 from app.schemas.conversation import ChatMessageCreate, ConversationCreate, ConversationUpdate
 from app.services.agent_events import enqueue_agent_event, agent_event_relay
 from app.services import budget_service, document_key
-from app.services.ui_events import listen_channel, publish_ui_event
+from app.services.live.ui_events import listen_channel, publish_ui_event
 
 REPLY_TIMEOUT_SECONDS = 180
 

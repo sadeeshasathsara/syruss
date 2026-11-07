@@ -1,6 +1,6 @@
 """The identification key: how a document is named to people instead of by its file name."""
 from app.services.document_key import identification_key, identification_spec
-from app.services.rule_engine import check_rule_definitions
+from app.services.rules.engine import check_rule_definitions
 
 SCHEMA = {
     "objects": [

@@ -1,6 +1,6 @@
 import time
 import pytest
-from app.services.rule_lang import RuleError, compile_rule, language_help, problems
+from app.services.rules.lang import RuleError, compile_rule, language_help, problems
 from tests.conftest import SCHEMA, VALID_RECORD
 
 INVOICE = {

@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from app.models.outbox import AgentEventOutbox
 from app.models.trace import AgentExecutionTrace
-from app.services import budget_service, platform_feed, workspace_events
+from app.services import budget_service, workspace_events
+from app.services.live import platform_feed
 from app.api.internal.agent_tools.scope import Workspace, get_workspace
 from app.api.internal.agent_tools.common import document_in
 
