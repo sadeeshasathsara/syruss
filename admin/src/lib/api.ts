@@ -1,4 +1,5 @@
 import type {
+  BillingRequest, BillingSetup, CatalogDraft, CatalogItem, CatalogKind, FollowUp, OrgBilling, OrgBillingRow,
   Grant, GrantList, Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
   StaffActionPage, StaffList, StaffMe, StaffMember, StaffRole,
 } from "./types";
@@ -92,6 +93,29 @@ export const api = {
     list: () => request<GrantList>("/access"),
     open: (body: { tenant_id: string; reason: string; minutes: number }) => request<Grant>("/access", { method: "POST", body: json(body) }),
     end: (id: string) => request<void>(`/access/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  },
+  billing: {
+    setup: () => request<BillingSetup>("/billing/limits"),
+    catalog: (kind?: CatalogKind) => request<CatalogItem[]>(`/billing/catalog${kind ? `?kind=${kind}` : ""}`),
+    create: (body: CatalogDraft) => request<CatalogItem>("/billing/catalog", { method: "POST", body: json(body) }),
+    update: (id: string, body: CatalogDraft) => request<CatalogItem>(`/billing/catalog/${encodeURIComponent(id)}`, { method: "PATCH", body: json(body) }),
+    newVersion: (id: string, body: CatalogDraft) =>
+      request<CatalogItem>(`/billing/catalog/${encodeURIComponent(id)}/versions`, { method: "POST", body: json(body) }),
+    publish: (id: string, reason: string) => request<CatalogItem>(`/billing/catalog/${encodeURIComponent(id)}/publish`, { method: "POST", body: json({ reason }) }),
+    archive: (id: string, reason: string) => request<CatalogItem>(`/billing/catalog/${encodeURIComponent(id)}/archive`, { method: "POST", body: json({ reason }) }),
+    move: (id: string, body: { to_id: string; at_period_end: boolean; reason: string }) =>
+      request<{ moved: number }>(`/billing/catalog/${encodeURIComponent(id)}/move`, { method: "POST", body: json(body) }),
+    organizations: (q?: string) => request<OrgBillingRow[]>(`/billing/organizations${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+    organization: (id: string) => request<OrgBilling>(`/billing/organizations/${encodeURIComponent(id)}`),
+    /** One of the changes staff make to an organization's billing: plan, addons, overrides, trial, credits, payments. */
+    change: (id: string, what: "plan" | "addons" | "overrides" | "trial" | "credits" | "payments", body: Record<string, unknown>) =>
+      request<{ done: string }>(`/billing/organizations/${encodeURIComponent(id)}/${what}`, { method: "POST", body: json(body) }),
+    removeOverride: (id: string, overrideId: string, reason: string) =>
+      request<{ done: string }>(`/billing/organizations/${encodeURIComponent(id)}/overrides/${encodeURIComponent(overrideId)}/remove`, { method: "POST", body: json({ reason }) }),
+    requests: (status = "open") => request<BillingRequest[]>(`/billing/requests?status=${status}`),
+    handle: (id: string, body: { action: "fulfil" | "decline"; reason: string; note?: string; amount_cents?: number; reference?: string }) =>
+      request<{ done: string; status: string }>(`/billing/requests/${encodeURIComponent(id)}`, { method: "POST", body: json(body) }),
+    followUps: (days = 7) => request<FollowUp[]>(`/billing/expiring?days=${days}`),
   },
   /** The live view's address (an EventSource can't set headers; the proxy signs it in). */
   liveUrl: (params: Record<string, string | undefined>) => `${API}/live?${query(params)}`,
