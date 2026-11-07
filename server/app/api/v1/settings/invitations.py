@@ -12,7 +12,8 @@ from app.core.database import get_db_session
 from app.core.permissions import Access, require
 from app.core.secrets import token_hash
 from app.models.workspace_admin import WorkspaceInvitation
-from app.services import invitation_mail, settings_service
+from app.services import invitation_mail
+from app.services.billing import service as billing
 
 router = APIRouter()
 
@@ -72,7 +73,7 @@ async def invite(body: InviteIn, background: BackgroundTasks, access: Access = D
         WorkspaceInvitation.status == "PENDING", WorkspaceInvitation.expires_at > datetime.now(timezone.utc)))).scalar_one_or_none()
     if pending is not None:
         raise HTTPException(status_code=409, detail=f"{email} already has a pending invitation. Resend it, or revoke it first to change the role.")
-    await settings_service.check_limit(db, access.scope.template_id, "members")
+    await billing.check_limit(db, "members_per_workspace", template_id=access.scope.template_id)
     invitation = WorkspaceInvitation(
         tenant_id=access.scope.tenant_id, template_id=access.scope.template_id, email=email,
         role=role.id, invited_by=await invitation_mail.inviter_name(db, access.auth), token_hash="",

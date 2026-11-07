@@ -45,6 +45,12 @@ async def ensure_dev_organization(db) -> None:
     if not (await db.execute(select(OrgMember.id).where(OrgMember.tenant_id == TENANT, OrgMember.user_id == DEV_USER_ID))).first():
         db.add(OrgMember(tenant_id=TENANT, user_id=DEV_USER_ID, role="owner"))
     await db.commit()
+    # Every test shares this organization and its Free plan (so each workspace has the Free plan's limits), but the suite
+    # sends in far more pages than one month's allowance: they are unlimited here; tests of the allowance set their own.
+    from app.services.billing import catalog, service as billing
+    await catalog.ensure_default_catalog(db)
+    await billing.set_override(db, tenant_id=TENANT, key=billing.PAGES, value=None, reason="Tests share one organization", set_by="tests")
+    await db.commit()
 
 SCHEMA = {
     "document_type": "security_roster",
@@ -184,12 +190,19 @@ async def join(client: AsyncClient, template_id: str, headers: dict, role: str, 
 
 
 async def business_plan(template_id: str) -> None:
-    """Moves a workspace to the largest plan, so a test can use several channels, keys or destinations."""
-    from app.models.workspace_admin import WorkspaceSettings
+    """Gives one workspace the largest plan's workspace limits, so a test can use several channels, keys or destinations."""
+    from app.services.billing import catalog, service as billing
     async with AsyncSessionLocal() as db:
-        row = await db.get(WorkspaceSettings, template_id)
-        if row is None:
-            db.add(WorkspaceSettings(template_id=template_id, data={"plan": "business"}))
-        else:
-            row.data = {**row.data, "plan": "business"}
+        business = await catalog.latest(db, "plan", "business")
+        for key, value in business.limits.items():
+            if key.endswith("_per_workspace"):
+                await billing.set_override(db, tenant_id=TENANT, template_id=template_id, key=key, value=value, reason="test", set_by="tests")
+        await db.commit()
+
+
+async def pages_allowance(pages, tenant_id: str = TENANT) -> None:
+    """Sets an organization's pages for the period (None: unlimited, as the shared test organization has)."""
+    from app.services.billing import service as billing
+    async with AsyncSessionLocal() as db:
+        await billing.set_override(db, tenant_id=tenant_id, key=billing.PAGES, value=pages, reason="test", set_by="tests")
         await db.commit()
