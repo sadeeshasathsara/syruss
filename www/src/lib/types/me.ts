@@ -101,7 +101,8 @@ export interface Overview {
   hands_free_rate: number | null;
   avg_seconds_to_save: number | null;
   last_activity_at: string | null;
-  usage: { documents_this_month: number; documents_limit: number; members: number; members_limit: number; plan: string };
+  /** documents_limit and members_limit are the organization's plan's (pages are shared by its workspaces); null: unlimited. */
+  usage: { documents_this_month: number; pages_this_period: number; documents_limit: number | null; members: number; members_limit: number | null; plan: string };
 }
 
 export type OrgPeriod = 7 | 30 | 90;
@@ -140,8 +141,9 @@ export interface OrgWorkspaceHealth {
   open_threads: number;
   failed_now: number;
   last_activity_at: string | null;
+  /** Pages this workspace used this period, out of the organization's allowance (shared by its workspaces). */
   documents_this_month: number;
-  documents_limit: number;
+  documents_limit: number | null;
   plan: string;
   cost_usd: number | null;
   tokens: number | null;
