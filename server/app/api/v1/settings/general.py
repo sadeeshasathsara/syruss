@@ -80,9 +80,12 @@ async def billing_overview(access: Access = Depends(get_access), db: AsyncSessio
     current = await billing.standing(db, access.scope.tenant_id, access.scope.template_id)
     plans = {p.key: _plan_row(p) for p in await catalog.offered(db)}
     plans.setdefault(current.plan.key, _plan_row(current.plan))
+    pages = await billing.pages_by_workspace(db, access.scope.tenant_id, current.subscription.period_start)
     return {
         "plan": current.plan.key, "plans": plans, "usage": await settings_service.usage(db, access.scope.template_id),
         "pages": await billing.summary(db, access.scope.tenant_id),
+        # This workspace's share of the organization's pages, and its own limits (with any set for it alone).
+        "workspace_pages": pages.get(access.scope.template_id, 0), "limits": current.limits,
         # No payment provider is connected yet: nothing is charged, and nothing is pretended.
         "payment_method": None, "invoices": [], "payments_enabled": False,
     }

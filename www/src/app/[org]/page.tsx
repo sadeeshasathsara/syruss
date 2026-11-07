@@ -325,7 +325,7 @@ function WorkspaceHealth({ org, o, days, canCreate }: { org: string; o?: OrgOver
                 <th scope="col" className="text-right">Without a person</th>
                 <th scope="col" className="text-right">Waiting</th>
                 <th scope="col" className="text-right">Failed</th>
-                <th scope="col" className="w-44">This month</th>
+                <th scope="col" className="w-44">Pages this period</th>
                 {cost && <th scope="col" className="text-right">Cost <span className="num">({days} d)</span></th>}
                 <th scope="col" className="text-right">Last activity</th>
               </tr>
