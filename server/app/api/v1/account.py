@@ -2,7 +2,6 @@
 The signed-in person: their account, what they belong to, the invitations they accept, and their
 notifications. None of this is tied to one workspace.
 """
-import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -13,6 +12,7 @@ from app.core import ratelimit
 from app.core.auth import AuthContext, Identity, get_current_auth, get_identity
 from app.core.config import settings
 from app.core.database import get_db_session
+from app.core.secrets import token_hash
 from app.models.audit import AuditLog
 from app.models.identity import OrgMember, User, WorkspaceRole
 from app.models.notification import Notification
@@ -140,7 +140,7 @@ async def logout(_: Identity = Depends(get_identity)):
 
 async def _invitation(db: AsyncSession, token: str) -> WorkspaceInvitation:
     invitation = (await db.execute(select(WorkspaceInvitation).where(
-        WorkspaceInvitation.token_hash == hashlib.sha256(token.encode()).hexdigest(),
+        WorkspaceInvitation.token_hash == token_hash(token),
     ))).scalar_one_or_none()
     if invitation is None:
         raise HTTPException(status_code=404, detail="This invite link isn't valid. Ask for a new one.")
