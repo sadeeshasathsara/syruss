@@ -46,6 +46,7 @@ from app.models.evaluation import EvalRun, EvalRunItem
 from app.models.page_view import AgentPageView
 from app.models.system_lesson import SystemLesson
 from app.models.platform import PlatformAccessGrant, PlatformAuditEntry, PlatformStaff
+from app.models.billing import CatalogItem, OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, UsageEvent
 
 __all__ = [
     "Tenant",
@@ -93,4 +94,9 @@ __all__ = [
     "PlatformStaff",
     "PlatformAuditEntry",
     "PlatformAccessGrant",
+    "CatalogItem",
+    "OrgSubscription",
+    "OrgSubscriptionAddon",
+    "OrgLimitOverride",
+    "UsageEvent",
 ]

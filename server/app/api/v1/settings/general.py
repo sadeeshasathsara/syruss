@@ -5,10 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
 from app.core.permissions import Access, get_access, require
+from app.models.billing import CatalogItem
 from app.models.workspace_admin import WorkspaceMember
 from app.models.jobs import WorkspaceJob
 from app.models.template import DocumentTemplate
 from app.services import budget_service, scheduler, settings_service, workspace_events
+from app.services.billing import catalog
+from app.services.billing import service as billing
 
 router = APIRouter()
 
@@ -65,11 +68,21 @@ async def reflect_now(access: Access = Depends(require("workspace.manage")), db:
     return {"reflect": scheduler.job_dict(await db.get(WorkspaceJob, (template.id, "reflect"))), "result": result}
 
 
+def _plan_row(item: CatalogItem) -> Dict[str, Any]:
+    limits = item.limits or {}
+    return {"name": item.name, "price_per_month": item.price_cents / 100, "documents_per_month": limits.get(billing.PAGES),
+            **{k: limits.get(f"{k}_per_workspace") for k in ("members", "api_keys", "webhooks", "channels", "destinations")}}
+
+
 @router.get("/billing")
-async def billing(access: Access = Depends(get_access), db: AsyncSession = Depends(get_db_session)):
-    plan = (await settings_service.get_settings(db, access.scope.template_id)).plan
+async def billing_overview(access: Access = Depends(get_access), db: AsyncSession = Depends(get_db_session)):
+    """The organization's plan as this workspace sees it, and the plans on offer. The plan itself is the organization's."""
+    current = await billing.standing(db, access.scope.tenant_id, access.scope.template_id)
+    plans = {p.key: _plan_row(p) for p in await catalog.offered(db)}
+    plans.setdefault(current.plan.key, _plan_row(current.plan))
     return {
-        "plan": plan, "plans": settings_service.PLANS, "usage": await settings_service.usage(db, access.scope.template_id),
+        "plan": current.plan.key, "plans": plans, "usage": await settings_service.usage(db, access.scope.template_id),
+        "pages": await billing.summary(db, access.scope.tenant_id),
         # No payment provider is connected yet: nothing is charged, and nothing is pretended.
         "payment_method": None, "invoices": [], "payments_enabled": False,
     }

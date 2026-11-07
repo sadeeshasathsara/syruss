@@ -21,6 +21,7 @@ from app.models.identity import User
 from app.models.workspace import Workspace
 from app.models.workspace_admin import WorkspaceMember
 from app.services.agent_events import enqueue_agent_event, agent_event_relay
+from app.services.billing import service as billing
 from app.services.document_service import document_service
 from app.services.rules.engine import check_rule_definitions
 from app.services.workspace_service import unique_slug
@@ -53,6 +54,7 @@ class TemplateService:
         schema_definition: Optional[Dict[str, Any]] = None,
     ) -> DocumentTemplate:
         """Creates the template and its workspace. A schema with objects becomes version 1.0.0 (ACTIVE)."""
+        await billing.check_limit(db, "workspaces", tenant_id=tenant_id)
         schema = split_schema(schema_definition or {})
         doc_type = document_type or schema.get("document_type") or name.lower().replace(" ", "_")
         template = DocumentTemplate(
