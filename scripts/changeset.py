@@ -331,18 +331,72 @@ def parse_unpromoted_entries(source_text: str, target_text: str) -> Tuple[Dict[s
     return entries, base_versions
 
 
-def update_changelog_file(new_section_lines: Optional[List[str]], branch: str) -> None:
-    """Prepends the new release notes to this branch's own changelog file. Nothing else is ever written."""
-    if not new_section_lines:
-        return
+VERSIONS_HEADING = "## Current versions"
+
+
+def heading_slugs(text: str) -> List[Tuple[str, str]]:
+    """Every heading of a Markdown file with the anchor GitHub gives it: (heading text, slug), in order."""
+    seen: Dict[str, int] = {}
+    found: List[Tuple[str, str]] = []
+    for line in text.splitlines():
+        m = re.match(r"^#{1,6}\s+(.*?)\s*$", line)
+        if not m:
+            continue
+        slug = re.sub(r"[^\w\- ]", "", m.group(1).lower()).replace(" ", "-")
+        count = seen.get(slug, 0)
+        seen[slug] = count + 1
+        found.append((m.group(1), f"{slug}-{count}" if count else slug))
+    return found
+
+
+def latest_releases(body: str) -> Dict[str, Tuple[str, str, str]]:
+    """The newest release of each service in a changelog body: {service: (version, date, heading text)}."""
+    found: Dict[str, Tuple[str, str, str]] = {}
+    date = ""
+    for line in body.splitlines():
+        released = re.match(r"^##\s+\[([^\]]+)\]", line)
+        if released:
+            date = released.group(1)
+            continue
+        m = re.match(r"^###\s+((\w+)\s+\(([^)]+)\))\s*$", line)
+        if m and m.group(2) not in found:
+            found[m.group(2)] = (m.group(3).strip(), date, m.group(1))
+    return found
+
+
+def versions_table(branch: str, body: str) -> str:
+    """The table at the top of a changelog file: each service's newest version here, when it was released, and a link
+    to its notes further down the same file."""
+    slugs = dict(reversed(heading_slugs(changelog_header(branch) + VERSIONS_HEADING + "\n\n" + body)))  # first wins
+    releases = latest_releases(body)
+    lines = [VERSIONS_HEADING, "", "| Service | Version | Released | Notes |", "| :--- | :--- | :--- | :--- |"]
+    for s in sorted(SERVICES):
+        if s in releases:
+            version, date, heading = releases[s]
+            lines.append(f"| **{s}** | `{version}` | {date} | [What changed](#{slugs[heading]}) |")
+        else:
+            lines.append(f"| **{s}** | — | — | — |")
+    return "\n".join(lines)
+
+
+def update_changelog_file(new_section_lines: Optional[List[str]], branch: str) -> bool:
+    """Prepends the new release notes to this branch's own changelog file and refreshes the versions table on top.
+    Nothing else is ever written. With no new notes it only refreshes the table, and writes only if that changed it.
+    Returns whether the file changed."""
     existing = read_changelog(branch)
+    if not new_section_lines and not existing:
+        return False
     first_release = existing.find("## [")
     history = existing[first_release:].strip() if first_release != -1 else ""
-    section_text = "\n".join(new_section_lines).strip()
-    body = section_text + ("\n\n" + history if history else "")
+    section_text = "\n".join(new_section_lines or []).strip()
+    body = "\n\n".join(part for part in (section_text, history) if part)
+    text = changelog_header(branch) + versions_table(branch, body) + "\n\n" + body.rstrip() + "\n"
+    if text == existing:
+        return False
     CHANGELOG_DIR.mkdir(parents=True, exist_ok=True)
-    changelog_path(branch).write_text(changelog_header(branch) + body.rstrip() + "\n", encoding="utf-8")
+    changelog_path(branch).write_text(text, encoding="utf-8")
     print(f"[OK] Updated _changelog/{branch}.md")
+    return True
 
 
 # ------------------------------------------------------------------------------
@@ -627,7 +681,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
 
         if not entries:
             print(f"[INFO] Nothing to promote from _changelog/{source}.md to {branch}.")
-            _write_gh_output({})
+            _write_gh_output({}, update_changelog_file(None, branch))
             return 0
 
         changelog_section.append(f"## [{today}] - {rel_title}\n")
@@ -643,11 +697,10 @@ def cmd_apply(args: argparse.Namespace) -> int:
 
     else:
         print("[INFO] No changesets to apply.")
-        _write_gh_output({})
+        _write_gh_output({}, update_changelog_file(None, branch))
         return 0
 
-    update_changelog_file(changelog_section, branch)
-    _write_gh_output(new_versions)
+    _write_gh_output(new_versions, update_changelog_file(changelog_section, branch))
 
     print("\n[SUCCESS] Applied Releases successfully:")
     for s, v in new_versions.items():
@@ -710,12 +763,13 @@ def cmd_guard(args: argparse.Namespace) -> int:
     return 1
 
 
-def _write_gh_output(new_versions: Dict[str, str]) -> None:
+def _write_gh_output(new_versions: Dict[str, str], changelog_changed: bool = False) -> None:
     """Writes release variables to $GITHUB_OUTPUT if running in GitHub Actions."""
     gh_output = os.environ.get("GITHUB_OUTPUT")
     if gh_output and Path(gh_output).exists():
         with open(gh_output, "a", encoding="utf-8") as f:
             f.write(f"has_releases={'true' if new_versions else 'false'}\n")
+            f.write(f"changelog_changed={'true' if changelog_changed else 'false'}\n")
             for s in SERVICES:
                 if s in new_versions:
                     f.write(f"{s}_version={new_versions[s]}\n")
