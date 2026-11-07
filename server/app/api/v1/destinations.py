@@ -22,7 +22,7 @@ from app.models.tenant import Tenant
 from app.models.workspace import Workspace
 from app.services import delivery_service, formula, mapping_service, settings_service
 from app.services.destinations import ADAPTERS, http, oauth
-from app.services.source_data import SourceError, _check_host
+from app.services.source_data import SourceError, check_host
 
 router = APIRouter(prefix="/destinations", tags=["Connections: publish"])
 
@@ -58,7 +58,7 @@ async def _check_addresses(adapter, config: Dict[str, Any]) -> None:
     for f in adapter.fields:
         if f.kind == "url" and config.get(f.key):
             try:
-                await _check_host(config[f.key])
+                await check_host(config[f.key])
             except SourceError as exc:
                 raise HTTPException(status_code=422, detail=f"{f.label}: {exc}")
 
