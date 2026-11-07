@@ -8,8 +8,8 @@ from sqlalchemy import select, func
 from app.models.outbox import AgentEventOutbox
 from app.services import workspace_events
 from app.models.rule import TemplateRule
-from app.services import rule_service
-from app.services.rule_engine import schema_rules
+from app.services.rules import service as rule_service
+from app.services.rules.engine import schema_rules
 from app.api.internal.agent_tools.scope import Workspace, get_workspace
 from app.api.internal.agent_tools.common import document_in, on_a_persons_request
 

@@ -23,7 +23,7 @@ Supported rules (all take "object": "<ObjectType>"):
   expression     expression over field names (per record), e.g. "hours <= 16"
 
 These come with the template version. Rules people and the agent add later live in their own table
-(models/rule.py), are written in the rule language (services/rule_lang.py) and are passed in as `rules`.
+(models/rule.py), are written in the rule language (services/rules/lang.py) and are passed in as `rules`.
 """
 import ast
 import re
@@ -267,7 +267,7 @@ def _check_rule(rule: Dict[str, Any], data: Dict[str, Any], schema: Optional[Dic
             seen[k] = i
 
     elif rtype == "expression":
-        from app.services.rule_lang import RuleError, compile_rule
+        from app.services.rules.lang import RuleError, compile_rule
         try:
             compiled = compile_rule({"scope": obj, "check": rule.get("expression", "")}, schema)
         except RuleError:
@@ -280,7 +280,7 @@ def _check_rule(rule: Dict[str, Any], data: Dict[str, Any], schema: Optional[Dic
 
 def run_rule(rule: Dict[str, Any], schema: Optional[Dict[str, Any]], data: Dict[str, Any]) -> List[Dict[str, Any]]:
     """One rule-language rule (a dict with id, name, scope, check, when, message) on a record: an entry per failing row."""
-    from app.services.rule_lang import RuleError, compile_rule
+    from app.services.rules.lang import RuleError, compile_rule
     try:
         compiled = compile_rule(rule, schema)
     except RuleError:

@@ -21,8 +21,8 @@ from app.models.template import DocumentTemplate
 from app.services import extraction_log, settings_service
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
 from app.services.document_service import document_service
-from app.services.intake_rules import IntakeRejected, SUPPORTED, scan_for_malware
-from app.services.ui_events import publish_ui_event
+from app.services.intake.rules import IntakeRejected, SUPPORTED, scan_for_malware
+from app.services.live.ui_events import publish_ui_event
 
 EXTERNAL_ID = re.compile(r"^[\w .:/#@+=,-]{1,200}$")
 MAX_METADATA_BYTES = 4000

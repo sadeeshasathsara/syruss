@@ -22,7 +22,7 @@ import math
 import operator
 from datetime import date, datetime
 from typing import Any, Callable, Dict, FrozenSet, List, Optional, Set
-from app.services.rule_engine import parse_number, parse_time_minutes
+from app.services.rules.engine import parse_number, parse_time_minutes
 
 MAX_LENGTH = 400
 MAX_NODES = 150

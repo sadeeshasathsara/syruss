@@ -13,8 +13,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 from app.core.config import settings
 from app.services.agent_events import agent_event_relay
-from app.services.event_broadcaster import broadcaster
-from app.services.kafka_ws_bridge import KafkaWebSocketBridge
+from app.services.live.broadcaster import broadcaster
+from app.services.live.bridge import KafkaWebSocketBridge
 
 logger = logging.getLogger("core.ui_events")
 

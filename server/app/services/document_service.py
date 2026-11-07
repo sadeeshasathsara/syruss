@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.audit import AuditLog
 from app.models.document import Document, DocumentStatus, DocumentRole
-from app.services.intake_rules import IntakeRejected, SUPPORTED, clean_filename, inspect_image
+from app.services.intake.rules import IntakeRejected, SUPPORTED, clean_filename, inspect_image
 from app.services.storage_service import storage_service
 
 SUPPORTED_CONTENT_TYPES = set(SUPPORTED)

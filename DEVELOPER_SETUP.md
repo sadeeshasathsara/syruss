@@ -40,7 +40,7 @@ flowchart LR
 Keep to the layers that are already there; don't add new ones (no repositories, base classes or interfaces with one implementation).
 
 - **`server/app/api/v1/`**: a route checks who may call it, reads simple data, and shapes the response. When an area grows past one screenful of routes, make it a package with one module per part and an `__init__.py` that joins their routers (see `api/v1/sysadmin/`).
-- **`server/app/services/`**: business rules, and anything two places need. Routes and the agent API call these.
+- **`server/app/services/`**: business rules, and anything two places need. Routes and the agent API call these. Services that belong together share a folder (`intake/`, `rules/`, `live/`, `destinations/`, `notifications/`).
 - **`server/app/models/`**: tables only. Every change to them comes with a migration in `server/migrations/versions/`.
 - **`server/app/api/internal/agent_tools/`**: the only way the agent reads or changes business data. `scope.py` checks the token; each other module is one area (documents, records, conversations, …).
 - **`agentic_framework/agent/tools/`**: one file per group of tools the agent can call; `registry.py` decides which tools a run gets.

@@ -33,7 +33,7 @@ from app.models.extraction import ExtractionResult
 from app.models.graph import EntitySighting
 from app.models.jobs import WorkspaceJob
 from app.services.identity_check import normalize_id, normalize_label
-from app.services.rule_engine import normalize_schema
+from app.services.rules.engine import normalize_schema
 
 logger = logging.getLogger("core.graph")
 

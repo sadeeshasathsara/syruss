@@ -20,7 +20,7 @@ from app.models.extraction import ExtractionResult
 from app.models.graph import EntitySighting
 from app.services.benchmark_service import _flatten
 from app.services.graph_service import rows_of, signal_id, things_in_row
-from app.services.rule_engine import normalize_schema
+from app.services.rules.engine import normalize_schema
 
 THRESHOLD = 0.75
 MAX_CANDIDATES = 20

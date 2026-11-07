@@ -24,8 +24,8 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.intake import IntakeChannel
-from app.services import intake_service
-from app.services.intake_rules import IntakeRejected
+from app.services.intake import service as intake_service
+from app.services.intake.rules import IntakeRejected
 
 logger = logging.getLogger("core.intake.email")
 MAX_MESSAGE_BYTES = 40_000_000

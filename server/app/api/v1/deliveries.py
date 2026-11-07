@@ -15,7 +15,7 @@ from app.models.delivery import Delivery, DeliveryAttempt, Destination
 from app.models.document import Document, DocumentStatus
 from app.services import delivery_service
 from app.services.destinations import ADAPTERS
-from app.services.ui_events import publish_ui_event
+from app.services.live.ui_events import publish_ui_event
 
 router = APIRouter(prefix="/deliveries", tags=["Connections: publish"])
 

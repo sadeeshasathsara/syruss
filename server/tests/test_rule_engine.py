@@ -1,5 +1,5 @@
 import copy
-from app.services.rule_engine import check_rule_definitions, validate_record
+from app.services.rules.engine import check_rule_definitions, validate_record
 from tests.conftest import SCHEMA, VALID_RECORD
 
 

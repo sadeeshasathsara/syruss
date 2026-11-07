@@ -20,7 +20,7 @@ from app.schemas.trace import (
     AgentTraceListResponse,
 )
 from app.services.storage_service import storage_service
-from app.services.event_broadcaster import broadcaster
+from app.services.live.broadcaster import broadcaster
 import app.models  # noqa: F401 - ensure all SQLAlchemy models registered
 
 logger = logging.getLogger(__name__)
