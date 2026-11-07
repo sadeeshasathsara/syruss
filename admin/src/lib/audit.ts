@@ -24,6 +24,34 @@ export function describeAction(a: StaffAction): string {
       return `sent a document to the agent again (${a.target_id.slice(0, 8)}, was ${String(d.from ?? "").toLowerCase()})`;
     case "event.resent":
       return `sent a waiting event again (${d.type ?? a.target_id.slice(0, 8)})`;
+    case "billing.catalog_created":
+      return `drafted ${d.key ?? "a catalog item"} version ${d.version ?? ""}`.trim();
+    case "billing.catalog_changed":
+      return `changed the draft ${a.target_id.slice(0, 8)}`;
+    case "billing.catalog_published":
+      return `put ${d.key ?? "a catalog item"} version ${d.version ?? ""} on sale`;
+    case "billing.catalog_archived":
+      return `took ${d.key ?? "a catalog item"} version ${d.version ?? ""} off sale`;
+    case "billing.plan_moved":
+      return `moved ${d.organizations ?? "the"} organizations to another plan version`;
+    case "billing.plan_changed":
+      return "changed an organization's plan";
+    case "billing.addon_set":
+      return `set an organization's add-on to ${d.quantity ?? "a new quantity"}`;
+    case "billing.override_set":
+      return `set a custom limit (${d.key ?? "a limit"}) for an organization`;
+    case "billing.override_removed":
+      return `removed a custom limit (${d.key ?? "a limit"}) for an organization`;
+    case "billing.trial_started":
+      return `started a ${d.days ?? ""}-day trial for an organization`;
+    case "billing.credits_changed":
+      return `changed an organization's prepaid credits by ${d.pages ?? "some"} pages`;
+    case "billing.payment_recorded":
+      return `recorded a payment of ${(Number(d.amount_cents ?? 0) / 100).toFixed(2)} ${d.currency ?? ""}`.trim();
+    case "billing.request_fulfilled":
+      return "completed a customer's billing request";
+    case "billing.request_declined":
+      return "declined a customer's billing request";
     default:
       return `${a.action.replace(/[._]/g, " ")} (${a.target_type} ${a.target_id})`;
   }
@@ -36,4 +64,5 @@ export const ACTION_GROUPS = [
   { key: "access", label: "Content access" },
   { key: "content", label: "Content viewed" },
   { key: "run,document,event", label: "Operations" },
+  { key: "billing", label: "Billing" },
 ] as const;

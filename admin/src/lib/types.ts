@@ -280,3 +280,149 @@ export interface LiveFact {
   data?: Record<string, unknown>;
   [key: string]: unknown;
 }
+
+// ---- Billing (/sysadmin/billing) ----
+
+export type CatalogKind = "plan" | "addon" | "credits";
+export type Limits = Record<string, number | null>;
+
+export interface LimitInfo {
+  key: string;
+  label: string;
+  noun: string;
+  scope: "workspace" | "organization";
+  metered: boolean;
+}
+
+export interface BillingSetup {
+  limits: LimitInfo[];
+  provider: { kind: string; label: string; takes_payments: boolean };
+}
+
+/** One version of a plan, an add-on or a credit pack. A published one never changes. */
+export interface CatalogItem {
+  id: string;
+  kind: CatalogKind;
+  key: string;
+  version: number;
+  name: string;
+  description: string | null;
+  status: "draft" | "published" | "archived";
+  price_cents: number;
+  currency: string;
+  interval: "month" | "once";
+  public: boolean;
+  sort: number;
+  limits: Limits;
+  pages: number | null;
+  created_by: string;
+  created_at: string;
+  published_at: string | null;
+  archived_at: string | null;
+  organizations: number;
+}
+
+export interface CatalogDraft {
+  kind?: CatalogKind;
+  key?: string;
+  name?: string;
+  description?: string | null;
+  price_cents?: number;
+  currency?: string;
+  public?: boolean;
+  sort?: number;
+  limits?: Limits;
+  pages?: number | null;
+  reason: string;
+}
+
+export interface OrgBillingRow {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  plan: string;
+  plan_key: string;
+  subscription_status: "trialing" | "active" | "canceled";
+  trial_ends_at: string | null;
+  paid_until: string | null;
+  pages_used: number;
+  pages_limit: number | null;
+  credits: number;
+  period_end: string;
+  open_requests: number;
+}
+
+export interface BillingRequest {
+  id: string;
+  tenant_id: string;
+  item: CatalogItem;
+  quantity: number;
+  note: string | null;
+  requested_by_name: string;
+  status: "open" | "done" | "declined";
+  handled_by_name: string | null;
+  handled_note: string | null;
+  created_at: string;
+  handled_at: string | null;
+  organization?: { name: string; slug: string; status: string };
+}
+
+export interface BillingPayment {
+  id: string;
+  amount_cents: number;
+  currency: string;
+  item_id: string | null;
+  quantity: number;
+  reference: string | null;
+  note: string | null;
+  recorded_by_name: string;
+  created_at: string;
+}
+
+export interface LimitOverride {
+  id: string;
+  key: string;
+  value: number | null;
+  template_id: string | null;
+  workspace: string | null;
+  reason: string;
+  set_by: string;
+  created_at: string;
+  expires_at: string | null;
+}
+
+export interface OrgBilling {
+  organization: { id: string; name: string; slug: string; status: string };
+  workspaces: { id: string; name: string }[];
+  subscription: {
+    plan: CatalogItem;
+    pending_plan: CatalogItem | null;
+    status: "trialing" | "active" | "canceled";
+    period_start: string;
+    period_end: string;
+    anchor_day: number;
+    trial_ends_at: string | null;
+    paid_until: string | null;
+  };
+  limits: {
+    plan: Limits;
+    effective: Limits;
+    addons: { id: string; addon: CatalogItem; quantity: number; added_at: string }[];
+    overrides: LimitOverride[];
+  };
+  usage: { pages_used: number; pages_limit: number | null; by_workspace: { id: string; name: string | null; pages: number }[] };
+  credits: { balance: number; history: { id: string; delta: number; kind: string; reason: string | null; ref: string | null; created_by: string; created_at: string }[] };
+  payments: BillingPayment[];
+  requests: BillingRequest[];
+}
+
+export interface FollowUp {
+  tenant_id: string;
+  organization?: { name: string; slug: string };
+  plan: string;
+  status: string;
+  trial_ends_at: string | null;
+  paid_until: string | null;
+  period_end: string;
+}
