@@ -23,6 +23,7 @@ from app.models.workspace_admin import ApiKey
 from app.services import settings_service
 from app.services.intake import email as intake_email, service as intake_service, sftp as intake_sftp
 from app.services.intake.rules import SUPPORTED, IntakeRejected
+from app.services.billing import service as billing
 
 router = APIRouter(prefix="/channels", tags=["Connections: receive"])
 
@@ -165,7 +166,7 @@ async def list_channels(access: Access = Depends(require("integrations.manage"))
 
 @router.post("", status_code=201, dependencies=[Depends(require_recent_login)])
 async def create_channel(body: ChannelIn, access: Access = Depends(require("integrations.manage")), db: AsyncSession = Depends(get_db_session)):
-    await settings_service.check_limit(db, access.scope.template_id, "channels")
+    await billing.check_limit(db, "channels_per_workspace", template_id=access.scope.template_id)
     taken = {s for (s,) in (await db.execute(select(IntakeChannel.slug).where(IntakeChannel.template_id == access.scope.template_id))).all()}
     slug, n = _slug(body.name), 2
     while slug in taken:

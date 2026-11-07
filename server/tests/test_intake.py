@@ -14,7 +14,7 @@ from app.core.database import AsyncSessionLocal
 from app.models.document import Document
 from app.models.intake import IntakeEvent
 from app.services import settings_service
-from tests.conftest import VALID_RECORD, business_plan, create_template, png_bytes, ws
+from tests.conftest import TENANT, VALID_RECORD, business_plan, create_template, png_bytes, ws
 
 API = "/api/v1"
 AGENT = "/internal/agent/v1"
@@ -260,19 +260,21 @@ async def test_a_paused_channel_refuses_documents_until_it_is_turned_back_on(cli
     assert (await send(client, secret)).status_code == 202
 
 
-async def test_the_plans_document_allowance_applies_to_documents_sent_in(client):
-    tpl = await create_template(client)  # free plan: 200 a month
+async def test_the_plans_page_allowance_applies_to_documents_sent_in(client):
+    from tests.conftest import pages_allowance
+    from app.services.billing import service as billing
+    tpl = await create_template(client)
     ch = await channel(client, tpl)
     secret = (await key(client, tpl, ch["id"]))["secret"]
-    free = settings_service.PLANS["free"]
-    original = free["documents_per_month"]
-    free["documents_per_month"] = 1
+    async with AsyncSessionLocal() as db:
+        used = (await billing.summary(db, TENANT))["pages_used"]
+    await pages_allowance(used + 1)
     try:
         assert (await send(client, secret)).status_code == 202
         res = await send(client, secret)
         assert res.status_code == 402 and res.json()["detail"]["code"] == "plan_limit_reached"
     finally:
-        free["documents_per_month"] = original
+        await pages_allowance(None)
 
 
 async def test_a_document_is_queued_for_the_agent_unless_the_sender_says_not_to(client):

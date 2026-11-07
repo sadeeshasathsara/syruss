@@ -11,7 +11,7 @@ from app.core.database import get_db_session
 from app.core.permissions import Access, require
 from app.core.secrets import token_hash
 from app.models.workspace_admin import ApiKey
-from app.services import settings_service
+from app.services.billing import service as billing
 
 router = APIRouter()
 
@@ -37,7 +37,7 @@ async def list_api_keys(access: Access = Depends(require("integrations.manage"))
 @router.post("/api-keys", status_code=201, dependencies=[Depends(require_recent_login)])
 async def create_api_key(body: ApiKeyIn, access: Access = Depends(require("integrations.manage")), db: AsyncSession = Depends(get_db_session)):
     """The key is returned once. Send it as `Authorization: Bearer <key>` with `X-Template-ID`."""
-    await settings_service.check_limit(db, access.scope.template_id, "api_keys")
+    await billing.check_limit(db, "api_keys_per_workspace", template_id=access.scope.template_id)
     plain = f"sk_{secrets.token_urlsafe(32)}"
     key = ApiKey(
         tenant_id=access.scope.tenant_id, template_id=access.scope.template_id, name=body.name.strip(),

@@ -43,8 +43,8 @@ def clean_filename(name: Optional[str]) -> str:
     return base[:200] or "document"
 
 
-def inspect_image(content: bytes, allowed: Iterable[str]) -> Tuple[str, str]:
-    """(content type, extension) of a file that really is an allowed image, or IntakeRejected."""
+def inspect_image(content: bytes, allowed: Iterable[str]) -> Tuple[str, str, int]:
+    """(content type, extension, pages) of a file that really is an allowed image, or IntakeRejected. A TIFF can hold several pages."""
     if not content:
         raise IntakeRejected(400, "The file is empty.")
     kind = filetype.guess(content)
@@ -60,12 +60,13 @@ def inspect_image(content: bytes, allowed: Iterable[str]) -> Tuple[str, str]:
             width, height = image.size
             if width * height > settings.INTAKE_MAX_PIXELS:
                 raise IntakeRejected(413, f"The picture is {width} x {height} pixels, larger than the {settings.INTAKE_MAX_PIXELS // 1_000_000} megapixels allowed.")
+            pages = max(1, int(getattr(image, "n_frames", 1)))
             image.verify()
     except IntakeRejected:
         raise
     except Exception:
         raise IntakeRejected(422, "The picture is damaged or incomplete and cannot be opened.")
-    return found, SUPPORTED[found]
+    return found, SUPPORTED[found], pages
 
 
 async def read_capped(upload, max_bytes: int) -> bytes:
