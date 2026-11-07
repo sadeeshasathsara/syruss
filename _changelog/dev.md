@@ -10,6 +10,16 @@
 
 > Generated file. Do not edit.
 
+## Current versions
+
+| Service | Version | Released | Notes |
+| :--- | :--- | :--- | :--- |
+| **admin** | `0.3.0-dev.1` | 2026-11-06 | [What changed](#admin-030-dev1) |
+| **agent** | `0.6.0-dev.1` | 2026-11-06 | [What changed](#agent-060-dev1) |
+| **server** | `0.8.3-dev.1` | 2026-11-07 | [What changed](#server-083-dev1) |
+| **site** | `0.2.2-dev.1` | 2026-11-05 | [What changed](#site-022-dev1) |
+| **www** | `0.6.3-dev.1` | 2026-11-07 | [What changed](#www-063-dev1) |
+
 ## [2026-11-07] - Release via dev
 
 ### server (0.8.3-dev.1)
