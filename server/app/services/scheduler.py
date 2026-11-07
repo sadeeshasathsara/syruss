@@ -27,6 +27,7 @@ from app.models.outbox import AgentEventOutbox
 from app.models.template import DocumentTemplate
 from app.services import graph_service, memory_service, run_watch, settings_service, workspace_events
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
+from app.services.billing import service as billing
 
 logger = logging.getLogger("core.scheduler")
 
@@ -211,7 +212,7 @@ def job_dict(job: Optional[WorkspaceJob]) -> Optional[Dict[str, Any]]:
 
 async def tick(now: Optional[datetime] = None) -> None:
     """One pass over every published workspace; each workspace's jobs commit on their own."""
-    for watch in (run_watch.mark_lost, run_watch.prune_steps):  # the platform's own, across every workspace
+    for watch in (run_watch.mark_lost, run_watch.prune_steps, billing.roll_periods):  # the platform's own, across every workspace
         async with AsyncSessionLocal() as db:
             try:
                 await watch(db, now)

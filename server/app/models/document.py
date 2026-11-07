@@ -39,6 +39,7 @@ class Document(Base):
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(100), nullable=False)
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    page_count: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)  # what reading it is charged
     file_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)  # SHA-256
     minio_object_key: Mapped[str] = mapped_column(String(512), nullable=False)
 

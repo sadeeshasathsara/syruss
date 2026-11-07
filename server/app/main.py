@@ -18,6 +18,7 @@ from app.services.live.bridge import kafka_ws_bridge
 from app.services.scheduler import scheduler
 from app.services.storage_service import storage_service
 from app.services import system_lessons
+from app.services.billing import catalog as billing_catalog
 from app.core.auth import validate_auth_config
 from app.core.security_headers import RequestSizeLimit, SecurityHeaders
 from app.core.permissions import ensure_system_roles
@@ -34,6 +35,7 @@ async def lifespan(_: FastAPI):
     async with AsyncSessionLocal() as session:
         await ensure_system_roles(session)
         await system_lessons.ensure_seeded(session)
+        await billing_catalog.ensure_default_catalog(session)
 
     storage_service.ensure_bucket_exists()
     await agent_event_relay.start()

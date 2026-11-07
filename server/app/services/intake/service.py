@@ -139,11 +139,6 @@ async def accept(db: AsyncSession, *, channel: IntakeChannel, template: Document
 
     if daily_quota is not None and sender.key_id and await _daily_count(db, sender.key_id) >= daily_quota:
         raise IntakeRejected(429, f"This key's limit of {daily_quota} documents a day has been reached. It resets at midnight UTC.", "quota_exceeded")
-    if not sender.test:
-        try:
-            await settings_service.check_limit(db, template.id, "documents_per_month")
-        except Exception as exc:  # the plan's monthly allowance
-            raise IntakeRejected(402, getattr(exc, "detail", "The plan's monthly document allowance has been reached."))
     want_processing = limits["process"] if process is None else process
     if want_processing and not template.active_version_id:
         raise IntakeRejected(409, "This workspace has no published template yet, so it cannot read documents.")
