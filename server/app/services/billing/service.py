@@ -2,9 +2,13 @@
 Billing for an organization, the one door the rest of the server uses:
 
     check_limit(db, key, ...)     refuses what would take it past a limit (402, a sentence people can act on)
-    reserve_pages / charge_pages  the pages of each document accepted for reading come out of the monthly allowance
+    reserve_pages / charge_pages  the pages of each document accepted for reading come out of the monthly allowance,
+                                  then out of prepaid credits
     standing(db, tenant_id)       its plan, period and every limit now
     roll_periods(db)              moves periods on, applies a downgrade at the period's end, ends trials
+    set_override, change_plan, set_addon, start_trial   what staff change by hand
+    apply_item, record_payment, create_request, handle_request   buying: until a payment provider is connected,
+                                  customers ask (a request) and staff record the payment, which applies what it paid for
 
 An organization's workspaces share its plan: pages are counted for the organization, a workspace limit (members,
 channels, ...) applies to each workspace on its own. Every organization has a subscription; one without (a new
@@ -12,16 +16,18 @@ organization) gets the Free plan, starting now, the first time it is needed.
 """
 import calendar
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Dict, Optional, Set
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Optional, Set, Tuple
 from fastapi import HTTPException
 from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.billing import CatalogItem, OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, UsageEvent
+from app.models.billing import (
+    BillingPayment, BillingRequest, CatalogItem, OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, UsageEvent,
+)
 from app.models.document import Document
 from app.models.template import DocumentTemplate
-from app.services.billing import catalog
+from app.services.billing import catalog, credits
 from app.services.billing.entitlements import Limits, compose
 from app.services.billing.limits import LIMITS, Where
 from app.services.intake.rules import IntakeRejected
@@ -119,36 +125,50 @@ async def _pages_left(db: AsyncSession, s: Standing) -> Optional[int]:
     return None if allowed is None else max(0, allowed - await LIMITS[PAGES].used(db, s.where))
 
 
-def _out_of_pages(s: Standing, pages: int, left: int) -> IntakeRejected:
+def _out_of_pages(s: Standing, pages: int, left: int, balance: int) -> IntakeRejected:
     allowance = f"the {s.plan.name} plan's {s.limits[PAGES]} pages for this period"
-    said = (f"This document has {pages} pages, but only {left} of {allowance} {'is' if left == 1 else 'are'} left." if left
-            else f"{allowance[0].upper()}{allowance[1:]} are used up.")
-    return IntakeRejected(402, f"{said} They renew on {s.subscription.period_end:%d %B}.", "plan_limit_reached")
+    if left or balance:
+        have = " and ".join(p for p in (f"{left} of {allowance}" if left else "", f"{balance} prepaid credits" if balance else "") if p)
+        said = f"This document has {pages} pages, but only {have} {'is' if left + balance == 1 else 'are'} left."
+    else:
+        said = f"{allowance[0].upper()}{allowance[1:]} are used up, and there are no prepaid credits."
+    return IntakeRejected(402, f"{said} An owner can buy credits in Billing; the plan's pages renew on {s.subscription.period_end:%d %B}.",
+                          "plan_limit_reached")
+
+
+async def _cover(db: AsyncSession, s: Standing, pages: int) -> int:
+    """How many of a document's pages need credits (the plan's pages go first), or IntakeRejected when it doesn't fit."""
+    left = await _pages_left(db, s)
+    if left is None or pages <= left:
+        return 0
+    balance = await credits.balance(db, s.subscription.tenant_id)
+    if pages - left > balance:
+        raise _out_of_pages(s, pages, left, balance)
+    return pages - left
 
 
 async def reserve_pages(db: AsyncSession, *, tenant_id: str, pages: int) -> None:
     """Refuses a document whose pages don't fit, before it is stored. charge_pages checks again, under a lock."""
-    s = await standing(db, tenant_id)
-    left = await _pages_left(db, s)
-    if left is not None and pages > left:
-        raise _out_of_pages(s, pages, left)
+    await _cover(db, await standing(db, tenant_id), pages)
 
 
 async def charge_pages(db: AsyncSession, document: Document) -> None:
     """
-    Charges a document's pages, once (its usage event is keyed by the document). The organization's charges are taken one
-    at a time until the caller commits, so two documents at once can't both take the last pages.
+    Charges a document's pages, once (its usage event is keyed by the document): from the plan's pages for the period
+    first, then from prepaid credits. The organization's charges are taken one at a time until the caller commits, so
+    two documents at once can't both take the last pages.
     """
     key = f"pages:{document.id}"
     await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"billing:{document.tenant_id}"})
     if (await db.execute(select(UsageEvent.id).where(UsageEvent.idempotency_key == key))).first():
         return
     s = await standing(db, document.tenant_id)
-    left = await _pages_left(db, s)
-    if left is not None and document.page_count > left:
-        raise _out_of_pages(s, document.page_count, left)
+    from_credits = await _cover(db, s, document.page_count)
+    if from_credits:
+        await credits.add(db, tenant_id=document.tenant_id, delta=-from_credits, kind="usage", created_by="system", ref=f"document:{document.id}")
     db.add(UsageEvent(tenant_id=document.tenant_id, template_id=document.template_id, metric="pages", quantity=document.page_count,
-                      source_type="document", source_id=document.id, idempotency_key=key, period_start=s.subscription.period_start))
+                      from_credits=from_credits, source_type="document", source_id=document.id, idempotency_key=key,
+                      period_start=s.subscription.period_start))
     await db.flush()
 
 
@@ -160,10 +180,11 @@ async def pages_by_workspace(db: AsyncSession, tenant_id: str, period_start: dat
 
 
 async def summary(db: AsyncSession, tenant_id: str) -> Dict[str, object]:
-    """What people see: the plan, the period and the pages used out of the allowance."""
+    """What people see: the plan, the period, the pages used out of the allowance, and the prepaid credits left."""
     s = await standing(db, tenant_id)
     return {"plan": s.plan.name, "plan_key": s.plan.key, "period_start": s.subscription.period_start, "period_end": s.subscription.period_end,
-            "pages_used": await LIMITS[PAGES].used(db, s.where), "pages_limit": s.limits.get(PAGES), "limits": s.limits}
+            "pages_used": await LIMITS[PAGES].used(db, s.where), "pages_limit": s.limits.get(PAGES), "limits": s.limits,
+            "credits": await credits.balance(db, tenant_id)}
 
 
 async def set_override(db: AsyncSession, *, tenant_id: str, key: str, value: Optional[int], reason: str, set_by: str,
@@ -206,3 +227,99 @@ async def roll_periods(db: AsyncSession, now: Optional[datetime] = None) -> int:
         await _settle(db, sub, now)
     await db.commit()
     return len(due)
+
+
+async def set_addon(db: AsyncSession, tenant_id: str, addon: CatalogItem, quantity: int, added_by: str) -> Optional[OrgSubscriptionAddon]:
+    """How many of an add-on the organization has from now on; 0 removes it."""
+    if addon.kind != "addon":
+        raise ValueError("That isn't an add-on")
+    row = (await db.execute(select(OrgSubscriptionAddon).where(
+        OrgSubscriptionAddon.tenant_id == tenant_id, OrgSubscriptionAddon.addon_id == addon.id))).scalar_one_or_none()
+    if quantity <= 0:
+        if row:
+            await db.delete(row)
+        return None
+    if addon.status != "published" and row is None:
+        raise ValueError("Only a published add-on can be added")
+    if row is None:
+        row = OrgSubscriptionAddon(tenant_id=tenant_id, addon_id=addon.id, quantity=quantity, added_by=added_by)
+        db.add(row)
+    else:
+        row.quantity = quantity
+    await db.flush()
+    return row
+
+
+async def start_trial(db: AsyncSession, tenant_id: str, plan: CatalogItem, days: int) -> OrgSubscription:
+    """Gives the organization a plan for a number of days; unless it is paid for by then, it goes back to Free."""
+    sub = await change_plan(db, tenant_id, plan)
+    sub.status, sub.trial_ends_at = "trialing", _now() + timedelta(days=days)
+    await db.flush()
+    return sub
+
+
+async def apply_item(db: AsyncSession, tenant_id: str, item: CatalogItem, quantity: int, by: str) -> str:
+    """Gives the organization what it bought or asked for; says what was done, for the record."""
+    if item.kind == "plan":
+        sub = await change_plan(db, tenant_id, item)
+        sub.status = "active"
+        return f"moved the organization to the {item.name} plan"
+    if item.kind == "addon":
+        current = (await db.execute(select(OrgSubscriptionAddon.quantity).where(
+            OrgSubscriptionAddon.tenant_id == tenant_id, OrgSubscriptionAddon.addon_id == item.id))).scalar() or 0
+        await set_addon(db, tenant_id, item, current + quantity, by)
+        return f"added {quantity} × {item.name}"
+    pages = (item.pages or 0) * quantity
+    await credits.add(db, tenant_id=tenant_id, delta=pages, kind="purchase", created_by=by, ref=f"item:{item.id}", reason=item.name)
+    return f"added {pages:,} prepaid pages ({quantity} × {item.name})"
+
+
+async def record_payment(db: AsyncSession, tenant_id: str, *, amount_cents: int, currency: str, by_id: str, by_name: str,
+                         item: Optional[CatalogItem] = None, quantity: int = 1, reference: Optional[str] = None,
+                         note: Optional[str] = None) -> Tuple[BillingPayment, Optional[str]]:
+    """
+    Writes down money received and applies what it paid for: a plan is paid through the current period (a trial ends as
+    paid), an add-on is added, a credit pack's pages are added. Returns the payment and what was done.
+    """
+    payment = BillingPayment(tenant_id=tenant_id, amount_cents=amount_cents, currency=currency.upper(), item_id=item.id if item else None,
+                             quantity=quantity, reference=reference, note=note, recorded_by=by_id, recorded_by_name=by_name)
+    db.add(payment)
+    await db.flush()
+    done = await apply_item(db, tenant_id, item, quantity, by_id) if item else None
+    if item and item.kind == "plan":
+        sub = await subscription(db, tenant_id)
+        sub.paid_until = max(filter(None, (sub.paid_until, sub.period_end)))
+    return payment, done
+
+
+async def create_request(db: AsyncSession, tenant_id: str, item: CatalogItem, *, quantity: int, note: Optional[str],
+                         user_id: str, user_name: str) -> BillingRequest:
+    """A customer asks for something on offer; staff complete it (the manual payment provider)."""
+    if item.status != "published" or not item.public:
+        raise ValueError("That isn't on offer")
+    if item.kind == "plan":
+        quantity = 1
+    row = BillingRequest(tenant_id=tenant_id, item_id=item.id, quantity=quantity, note=(note or "").strip() or None,
+                         requested_by=user_id, requested_by_name=user_name)
+    db.add(row)
+    await db.flush()
+    return row
+
+
+async def handle_request(db: AsyncSession, request: BillingRequest, *, fulfil: bool, note: Optional[str], by_id: str, by_name: str,
+                         amount_cents: Optional[int] = None, reference: Optional[str] = None) -> Optional[str]:
+    """Completes a request (applying it, with its payment when one is given) or declines it. Returns what was done."""
+    if request.status != "open":
+        raise ValueError("This request was already handled")
+    done = None
+    if fulfil:
+        item = await db.get(CatalogItem, request.item_id)
+        if amount_cents is not None:
+            _, done = await record_payment(db, request.tenant_id, amount_cents=amount_cents, currency=item.currency, by_id=by_id, by_name=by_name,
+                                           item=item, quantity=request.quantity, reference=reference, note=note)
+        else:
+            done = await apply_item(db, request.tenant_id, item, request.quantity, by_id)
+    request.status, request.handled_note, request.handled_by_name, request.handled_at = (
+        "done" if fulfil else "declined", (note or "").strip() or None, by_name, _now())
+    await db.flush()
+    return done

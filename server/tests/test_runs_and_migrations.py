@@ -93,7 +93,10 @@ async def test_migrations_build_the_same_schema_as_the_models():
             # So are the pages an organization was charged.
             await conn.execute(text("INSERT INTO usage_events (id, tenant_id, metric, quantity, from_credits, source_type, source_id, "
                                     "idempotency_key, period_start, occurred_at) VALUES ('u1', 't', 'pages', 1, 0, 'document', 'd', 'k', now(), now())"))
-            for change in ("UPDATE usage_events SET quantity = 0", "DELETE FROM usage_events"):
+            await conn.execute(text("INSERT INTO credit_ledger (id, tenant_id, delta, kind, created_by, created_at) "
+                                    "VALUES ('c1', 't', 100, 'grant', 'tests', now())"))
+            for change in ("UPDATE usage_events SET quantity = 0", "DELETE FROM usage_events",
+                           "UPDATE credit_ledger SET delta = 1000", "DELETE FROM credit_ledger"):
                 with pytest.raises(Exception, match="append-only"):
                     async with conn.begin_nested():
                         await conn.execute(text(change))

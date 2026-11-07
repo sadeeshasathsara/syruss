@@ -86,4 +86,20 @@ DEVICE_ADDED = Kind(
     ),
 )
 
-KINDS: Dict[str, Kind] = {k.key: k for k in (INVITATION, EMAIL_CODE, DEVICE_CODE, DEVICE_ADDED)}
+BILLING_ALERT = Kind(
+    key="billing_alert",
+    variables=("organization", "title", "body", "url", "alert"),
+    email=EmailSpec("billing_alert", "{{ title }} ({{ organization }})"),
+    in_app=InAppSpec(
+        type="billing.usage",
+        title="{{ title }}",
+        body="{{ body }}",
+        link="{{ url }}",
+        severity="warning",
+        scope="tenant",
+        keep=("alert",),
+        replace_by="alert",
+    ),
+)
+
+KINDS: Dict[str, Kind] = {k.key: k for k in (INVITATION, EMAIL_CODE, DEVICE_CODE, DEVICE_ADDED, BILLING_ALERT)}
