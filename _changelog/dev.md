@@ -10,6 +10,11 @@
 
 > Generated file. Do not edit.
 
+## [2026-11-07] - Release via dev
+
+### server (0.8.1-dev.1)
+- The agent tool API is split into a package, one module per area (documents, records, conversations, screens, memory, traces, rules and so on). No change to its routes.
+
 ## [2026-11-06] - Release via dev
 
 ### admin (0.3.0-dev.1)
