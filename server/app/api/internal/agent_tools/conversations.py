@@ -11,7 +11,7 @@ from app.models.outbox import AgentEventOutbox
 from app.models.question import AgentQuestion, AgentQuestionStatus
 from app.services import memory_service, workspace_events
 from app.services.display_names import name_documents
-from app.services.ui_events import publish_ui_event
+from app.services.live.ui_events import publish_ui_event
 from app.api.internal.agent_tools.scope import Workspace, get_workspace
 from app.api.internal.agent_tools.common import audit, conversation_dict, document_in, question_dict
 

@@ -19,7 +19,7 @@ from app.services import eval_service, extraction_log, system_lessons, settings_
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
 from app.services.document_key import document_label, identification_key, identification_spec
 from app.services.storage_service import storage_service
-from app.services.ui_events import publish_ui_event
+from app.services.live.ui_events import publish_ui_event
 from app.api.internal.agent_tools.scope import Workspace, get_workspace
 from app.api.internal.agent_tools.common import audit, document_in
 

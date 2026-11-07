@@ -12,7 +12,7 @@ def _now() -> datetime:
 
 class TemplateRule(Base):
     """
-    A check that runs on every record after a document is read, written in the rule language (services/rule_lang.py)
+    A check that runs on every record after a document is read, written in the rule language (services/rules/lang.py)
     over the template's own objects and fields. People write them, or ask Syruss to; Syruss also suggests them when it
     notices a relation that holds. A suggestion does nothing until a person adds it.
 

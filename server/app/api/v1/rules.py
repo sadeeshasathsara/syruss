@@ -1,6 +1,6 @@
 """
 Template rules: checks written in the rule language that run on every record after a document is read (see
-services/rule_lang.py for the language and services/rule_service.py for their life). Anyone who can see documents can
+services/rules/lang.py for the language and services/rules/service.py for their life). Anyone who can see documents can
 see them; writing, changing and accepting them takes `template.publish`, like the template itself.
 """
 from typing import Any, Dict, Optional
@@ -10,9 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
 from app.core.permissions import Access, get_access, require
 from app.core.scope import TemplateScope, get_template_scope
-from app.services import rule_service
-from app.services.rule_engine import schema_rules
-from app.services.rule_lang import MAX_LENGTH, catalogue, language_help
+from app.services.rules import service as rule_service
+from app.services.rules.engine import schema_rules
+from app.services.rules.lang import MAX_LENGTH, catalogue, language_help
 
 router = APIRouter(prefix="/rules", tags=["Rules"], dependencies=[Depends(require("documents.view"))])
 

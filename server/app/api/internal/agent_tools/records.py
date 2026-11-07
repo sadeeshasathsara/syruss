@@ -17,9 +17,9 @@ from app.services import (
 from app.services.document_key import label_for
 from app.services.identity_check import normalize_id
 from app.services.record_service import record_service
-from app.services import rule_service
-from app.services.rule_engine import normalize_schema, validate_record
-from app.services.ui_events import publish_ui_event
+from app.services.rules import service as rule_service
+from app.services.rules.engine import normalize_schema, validate_record
+from app.services.live.ui_events import publish_ui_event
 from app.api.internal.agent_tools.scope import Workspace, get_workspace
 from app.api.internal.agent_tools.common import document_in
 

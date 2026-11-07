@@ -18,8 +18,8 @@ from app.models.rule import TemplateRule
 from app.models.template import DocumentTemplate
 from app.services.agent_events import enqueue_agent_event
 from app.services.document_key import document_label
-from app.services.rule_lang import MAX_LENGTH, SEVERITIES, RuleError, compile_rule
-from app.services.ui_events import publish_ui_event
+from app.services.rules.lang import MAX_LENGTH, SEVERITIES, RuleError, compile_rule
+from app.services.live.ui_events import publish_ui_event
 
 MAX_RULES = 100
 DRY_RUN_RECORDS = 50

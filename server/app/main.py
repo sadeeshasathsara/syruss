@@ -12,9 +12,9 @@ from app.core.database import AsyncSessionLocal, engine
 from app.core.migrations import migrate
 from app.services.agent_events import agent_event_relay
 from app.services.delivery_service import delivery_worker
-from app.services.intake_email import email_receiver
-from app.services.intake_sftp import sftp_receiver
-from app.services.kafka_ws_bridge import kafka_ws_bridge
+from app.services.intake.email import email_receiver
+from app.services.intake.sftp import sftp_receiver
+from app.services.live.bridge import kafka_ws_bridge
 from app.services.scheduler import scheduler
 from app.services.storage_service import storage_service
 from app.services import system_lessons
