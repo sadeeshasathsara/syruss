@@ -16,9 +16,17 @@
 | :--- | :--- | :--- | :--- |
 | **admin** | `0.3.0-dev.1` | 2026-11-06 | [What changed](#admin-030-dev1) |
 | **agent** | `0.6.0-dev.1` | 2026-11-06 | [What changed](#agent-060-dev1) |
-| **server** | `0.8.3-dev.1` | 2026-11-07 | [What changed](#server-083-dev1) |
+| **server** | `0.9.0-dev.1` | 2026-11-07 | [What changed](#server-090-dev1) |
 | **site** | `0.2.2-dev.1` | 2026-11-05 | [What changed](#site-022-dev1) |
 | **www** | `0.6.3-dev.1` | 2026-11-07 | [What changed](#www-063-dev1) |
+
+## [2026-11-07] - Release via dev
+
+### server (0.9.0-dev.1)
+- Plans belong to the organization: one subscription per organization, and its workspaces share the plan's monthly page allowance. Workspace limits (members, API keys, webhooks, channels, destinations) still apply to each workspace.
+- Every document accepted for reading is charged its pages (a multi-page TIFF counts each page); test-key documents, samples and repeats cost nothing. When the period's pages are used, new documents are refused with when they renew.
+- The plans are now a versioned catalog in the database (plans and add-ons), and every limit a plan can set is registered in code, so only limits the platform enforces can be sold. Overrides set a limit by hand for an organization or one workspace.
+- Existing organizations move onto the highest plan any of their workspaces had, and keep any extra monthly capacity their workspaces had together.
 
 ## [2026-11-07] - Release via dev
 
