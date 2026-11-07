@@ -90,6 +90,13 @@ async def test_migrations_build_the_same_schema_as_the_models():
                 with pytest.raises(Exception, match="append-only"):
                     async with conn.begin_nested():
                         await conn.execute(text(change))
+            # So are the pages an organization was charged.
+            await conn.execute(text("INSERT INTO usage_events (id, tenant_id, metric, quantity, from_credits, source_type, source_id, "
+                                    "idempotency_key, period_start, occurred_at) VALUES ('u1', 't', 'pages', 1, 0, 'document', 'd', 'k', now(), now())"))
+            for change in ("UPDATE usage_events SET quantity = 0", "DELETE FROM usage_events"):
+                with pytest.raises(Exception, match="append-only"):
+                    async with conn.begin_nested():
+                        await conn.execute(text(change))
         await fresh.dispose()
         assert diff == []
     finally:

@@ -20,9 +20,10 @@ from app.models.delivery import Delivery, Destination
 from app.models.document import Document, DocumentRole, DocumentStatus
 from app.models.tenant import Tenant
 from app.models.workspace import Workspace
-from app.services import delivery_service, formula, mapping_service, settings_service
+from app.services import delivery_service, formula, mapping_service
 from app.services.destinations import ADAPTERS, http, oauth
 from app.services.source_data import SourceError, check_host
+from app.services.billing import service as billing
 
 router = APIRouter(prefix="/destinations", tags=["Connections: publish"])
 
@@ -182,7 +183,7 @@ async def get_destination(dest_id: str, access: Access = Depends(require("integr
 async def create_destination(body: DestinationIn, access: Access = Depends(require("integrations.manage")), db: AsyncSession = Depends(get_db_session)):
     """Connects a system. A webhook's signing secret is returned once, here."""
     adapter = _adapter(body.kind)
-    await settings_service.check_limit(db, access.scope.template_id, "destinations")
+    await billing.check_limit(db, "destinations_per_workspace", template_id=access.scope.template_id)
     config = adapter.normalise(body.config)
     stored = {k: v for k, v in body.secrets.items() if v not in (None, "")}
     if adapter.kind == "webhook":

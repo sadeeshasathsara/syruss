@@ -11,8 +11,9 @@ from app.core.database import get_db_session
 from app.core.permissions import Access, require
 from app.core.secrets import seal
 from app.models.workspace_admin import Webhook, WebhookDelivery
-from app.services import settings_service, workspace_events
+from app.services import workspace_events
 from app.services.source_data import SourceError, check_host
+from app.services.billing import service as billing
 
 router = APIRouter()
 
@@ -68,7 +69,7 @@ async def list_webhooks(access: Access = Depends(require("integrations.manage"))
 async def create_webhook(body: WebhookIn, access: Access = Depends(require("integrations.manage")), db: AsyncSession = Depends(get_db_session)):
     """The signing secret is returned once."""
     await _check_webhook(body.url, body.events)
-    await settings_service.check_limit(db, access.scope.template_id, "webhooks")
+    await billing.check_limit(db, "webhooks_per_workspace", template_id=access.scope.template_id)
     secret = f"whsec_{secrets.token_urlsafe(24)}"
     hook = Webhook(
         tenant_id=access.scope.tenant_id, template_id=access.scope.template_id, url=body.url.strip(),

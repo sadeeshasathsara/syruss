@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.audit import AuditLog
 from app.models.document import Document, DocumentStatus, DocumentRole
+from app.services.billing import service as billing
 from app.services.intake.rules import IntakeRejected, SUPPORTED, clean_filename, inspect_image
 from app.services.storage_service import storage_service
 
@@ -55,8 +56,13 @@ class DocumentService:
         Saves a file to object storage and records it in the workspace (caller commits). The file's type is read from its bytes, never
         from what the sender called it, and the storage key is built from the new id and the real type, never from the file name.
         Raises IntakeRejected with a sentence the sender can act on.
+
+        A document to read (not a sample, not sent with a test key) is charged its pages from the organization's plan.
         """
-        content_type, ext = inspect_image(content, allowed_types or SUPPORTED)
+        content_type, ext, pages = inspect_image(content, allowed_types or SUPPORTED)
+        charged = role == DocumentRole.DOCUMENT and not is_test
+        if charged:
+            await billing.reserve_pages(db, tenant_id=tenant_id, pages=pages)
         doc_id = str(uuid.uuid4())
         key = f"tenants/{tenant_id}/templates/{template_id}/{role.value.lower()}s/{doc_id}.{ext}"
         storage_service.upload_file(object_name=key, data=content, content_type=content_type)
@@ -70,6 +76,7 @@ class DocumentService:
             original_filename=name,
             content_type=content_type,
             file_size_bytes=len(content),
+            page_count=pages,
             file_hash=hashlib.sha256(content).hexdigest(),
             minio_object_key=key,
             status=DocumentStatus.PENDING,
@@ -87,6 +94,12 @@ class DocumentService:
                      **({"channel_id": channel_id} if channel_id else {})},
         ))
         await db.flush()
+        if charged:
+            try:
+                await billing.charge_pages(db, document)
+            except IntakeRejected:
+                storage_service.remove_object(key)  # another document took the last pages meanwhile
+                raise
         return document
 
     @staticmethod
