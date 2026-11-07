@@ -19,16 +19,16 @@ export function compact(n: number): string {
   return n.toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 1 });
 }
 
-/** Used against a limit, turning amber then red as it fills. */
-export function Meter({ label, used, limit, format = (n) => n.toLocaleString() }: { label: string; used: number; limit: number; format?: (n: number) => string }) {
-  const share = limit > 0 ? Math.min(1, used / limit) : 0;
+/** Used against a limit, turning amber then red as it fills. A null limit is unlimited: the bar stays empty. */
+export function Meter({ label, used, limit, format = (n) => n.toLocaleString() }: { label: string; used: number; limit: number | null; format?: (n: number) => string }) {
+  const share = limit ? Math.min(1, used / limit) : 0;
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between gap-3 text-body">
         <span className="min-w-0 truncate text-muted">{label}</span>
-        <span className="num flex-none text-ink">{format(used)} <span className="text-muted">of {format(limit)}</span></span>
+        <span className="num flex-none text-ink">{format(used)} <span className="text-muted">{limit == null ? "· unlimited" : `of ${format(limit)}`}</span></span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-active" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={limit} aria-valuenow={used}>
+      <div className="h-1.5 overflow-hidden rounded-full bg-active" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={limit ?? undefined} aria-valuenow={used}>
         <div className={cn("h-full rounded-full", share >= 0.9 ? "bg-negative" : share >= 0.7 ? "bg-[var(--pill-warning-ink)]" : "bg-accent")} style={{ width: `${share * 100}%` }} />
       </div>
     </div>
