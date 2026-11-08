@@ -20,6 +20,8 @@ export const ORG_SETTINGS: OrgSettingsSection[] = [
   { key: "billing", label: "Billing", icon: CreditCard, subs: [
     { key: "plan", label: "Plan and usage" },
     { key: "buy", label: "Plans and credits" },
+    { key: "invoices", label: "Invoices" },
+    { key: "details", label: "Billing details" },
     { key: "history", label: "History" },
   ] },
   { key: "profile", label: "Your profile", icon: UserRound, subs: [{ key: "details", label: "Details" }] },
