@@ -8,7 +8,7 @@ import type {
   NewDestination, TryResult,
   WorkspaceJobInfo, LiveQuality, GoldenDocument, EvalRunInfo, FlagAnswer, ConversationPage, SystemLesson,
   Rule, RuleCheckResult, RuleDraft, RuleInput, RuleLanguage, ValidationRule,
-  Offers, OrgBilling, PurchaseStarted,
+  Offers, OrgBilling, PurchaseStarted, BillingDetails, Invoice, SentPayment,
 } from "./types";
 
 /**
@@ -139,6 +139,28 @@ export const api = {
     get: () => request<OrgBilling>("/billing"),
     offers: () => request<Offers>("/billing/catalog"),
     buy: (body: { item_id: string; quantity?: number; note?: string }) => request<PurchaseStarted>("/billing/purchases", { method: "POST", body: json(body) }),
+    details: () => request<{ profile: BillingDetails | null; missing: string[] }>("/billing/profile"),
+    saveDetails: (body: BillingDetails) => request<{ profile: BillingDetails; missing: string[] }>("/billing/profile", { method: "PUT", body: json(body) }),
+    invoices: () => request<Invoice[]>("/billing/invoices"),
+    invoice: (id: string) => request<Invoice>(`/billing/invoices/${encodeURIComponent(id)}`),
+    /** Proof of a bank transfer: the slip (PDF or photo), what was paid, when, and the bank's reference. */
+    sendPayment: (id: string, body: { method: string; amount_cents: number; paid_on: string; reference?: string; note?: string; files: File[] }) => {
+      const fd = new FormData();
+      fd.append("method", body.method);
+      fd.append("amount_cents", String(body.amount_cents));
+      fd.append("paid_on", body.paid_on);
+      if (body.reference) fd.append("reference", body.reference);
+      if (body.note) fd.append("note", body.note);
+      body.files.forEach((f) => fd.append("files", f));
+      return request<SentPayment>(`/billing/invoices/${encodeURIComponent(id)}/payments`, { method: "POST", body: fd });
+    },
+    withdraw: (submissionId: string) => request<SentPayment>(`/billing/submissions/${encodeURIComponent(submissionId)}/withdraw`, { method: "POST" }),
+    checkout: (id: string, saveCard: boolean) =>
+      request<{ url: string }>(`/billing/invoices/${encodeURIComponent(id)}/checkout`, { method: "POST", body: json({ save_card: saveCard }) }),
+    cardPortal: () => request<{ url: string }>("/billing/card/portal", { method: "POST" }),
+    forgetCard: () => request<OrgBilling["card"]>("/billing/card/forget", { method: "POST" }),
+    // Files opened in a tab can't carry headers, so the organization rides in the address (the app's proxy reads it).
+    fileUrl: (path: string) => `${API}/billing/${path}${activeOrg ? `?org=${encodeURIComponent(activeOrg)}` : ""}`,
   },
   org: {
     rename: (name: string) => request<Organization>("/organization", { method: "PATCH", body: json({ name }) }),
