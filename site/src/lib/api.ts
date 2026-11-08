@@ -37,11 +37,23 @@ export async function requireSession(returnTo: string): Promise<Session> {
   return session;
 }
 
+/** fetch, with the API not answering at all (down, or out of reach) turned into an ApiError pages can recognise. */
+export async function reach(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch {
+    throw new ApiError(503, "Syruss can't be reached right now. Please try again in a few minutes.", "unreachable");
+  }
+}
+
+/** A page shows that the API can't be reached (see Unavailable) rather than failing. */
+export const unreachable = (e: unknown) => e instanceof ApiError && e.code === "unreachable";
+
 type Options = { method?: string; body?: unknown; org?: string; returnTo?: string };
 
 export async function api<T>(session: Session, path: string, opts: Options = {}): Promise<T> {
   const device = await deviceToken();
-  const response = await fetch(`${API}/api/v1${path}`, {
+  const response = await reach(`${API}/api/v1${path}`, {
     method: opts.method ?? (opts.body ? "POST" : "GET"),
     headers: {
       Authorization: `Bearer ${session.accessToken}`,
