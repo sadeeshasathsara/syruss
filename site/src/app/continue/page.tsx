@@ -1,15 +1,22 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Loader } from "@/components/Loader";
-import { api, appLogin, requireSession, type Context } from "@/lib/api";
+import { Unavailable } from "@/components/Unavailable";
+import { api, appLogin, requireSession, unreachable, type Context } from "@/lib/api";
 import { safeReturnTo } from "@/lib/auth/config";
 
 export const dynamic = "force-dynamic";
 
-async function Resolve({ next }: { next?: string }): Promise<never> {
+async function Resolve({ next }: { next?: string }) {
   const here = next ? `/continue?next=${encodeURIComponent(next)}` : "/continue";
   const session = await requireSession(here);
-  const ctx = await api<Context>(session, "/me/context", { returnTo: here });
+  let ctx: Context;
+  try {
+    ctx = await api<Context>(session, "/me/context", { returnTo: here });
+  } catch (e) {
+    if (unreachable(e)) return <Unavailable again={here} />;
+    throw e;
+  }
   const org = ctx.organizations[0];
   if (!ctx.onboarded || !org) redirect("/onboarding");
   const wanted = safeReturnTo(next, "");

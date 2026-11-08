@@ -31,6 +31,7 @@ async function proxy(request: NextRequest, ctx: { params: Promise<{ path: string
   let renewed = false;
   if (needsRefresh(session)) {
     const fresh = await refresh(session);
+    if (fresh === "unreachable") return problem(502, "The server can't be reached right now.");
     if (!fresh) {
       await clearSession();
       return problem(401, { code: "signed_out", message: "Your session ended. Sign in again." });

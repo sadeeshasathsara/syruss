@@ -72,10 +72,22 @@ export async function completeLogin(currentUrl: URL, tx: Transaction): Promise<S
   return toSession(result);
 }
 
-const inflight = new Map<string, Promise<Session | null>>();
+/**
+ * Keycloak didn't answer (down, or out of reach), as opposed to answering no. fetch's own failure is a TypeError with
+ * no code (this library's argument errors carry one); a proxy in front of a stopped Keycloak answers 5xx.
+ */
+export function unreachable(e: unknown): boolean {
+  if (e instanceof TypeError) return !("code" in e);
+  return e instanceof o.OperationProcessingError && e.cause instanceof Response && e.cause.status >= 500;
+}
 
-/** A new access token from the refresh token. Concurrent callers share one request (refresh tokens rotate). */
-export function refresh(session: Session): Promise<Session | null> {
+const inflight = new Map<string, Promise<Session | null | "unreachable">>();
+
+/**
+ * A new access token from the refresh token: null when the session has ended, "unreachable" when Keycloak can't be
+ * asked (nobody is signed out for an outage). Concurrent callers share one request (refresh tokens rotate).
+ */
+export function refresh(session: Session): Promise<Session | null | "unreachable"> {
   const existing = inflight.get(session.refreshToken);
   if (existing) return existing;
   const run = (async () => {
@@ -86,8 +98,8 @@ export function refresh(session: Session): Promise<Session | null> {
       });
       const result = await o.processRefreshTokenResponse(as, client(), response);
       return toSession({ ...result, refresh_token: result.refresh_token ?? session.refreshToken, id_token: result.id_token ?? session.idToken });
-    } catch {
-      return null; // the Keycloak session ended or the token was revoked: sign in again
+    } catch (e) {
+      return unreachable(e) ? "unreachable" : null; // else the Keycloak session ended or the token was revoked: sign in again
     } finally {
       setTimeout(() => inflight.delete(session.refreshToken), 5000);
     }

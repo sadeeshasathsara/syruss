@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { authConfig, safeReturnTo } from "@/lib/auth/config";
 import { checkDevice, ensureDeviceToken } from "@/lib/auth/device";
-import { beginLogin, completeLogin, logoutUrl, refresh, type Transaction } from "@/lib/auth/oidc";
+import { beginLogin, completeLogin, logoutUrl, refresh, unreachable, type Transaction } from "@/lib/auth/oidc";
 import { clearSealed, clearSession, readSealed, readSession, writeSealed, writeSession } from "@/lib/auth/session";
 
 // login, callback and logout for this app. The browser only ever holds an encrypted, httpOnly cookie.
@@ -15,16 +15,21 @@ function go(path: string): NextResponse {
 }
 
 /** A sign-in problem is explained on the site's front page: sending it back into the app could loop forever. */
-function failed(reason: "expired" | "signin"): NextResponse {
+function failed(reason: "expired" | "signin" | "unavailable"): NextResponse {
   return NextResponse.redirect(new URL(`/?error=${reason}`, authConfig().siteOrigin), { status: 303 });
 }
 
 async function login(request: NextRequest) {
   const q = request.nextUrl.searchParams;
   const mode = q.get("mode") === "signup" ? "signup" : "signin";
-  const { url, tx } = await beginLogin({ mode, returnTo: q.get("returnTo"), idpHint: q.get("idp"), reauth: q.get("reauth") === "1" });
-  await writeSealed(await cookies(), txName(), tx, TX_MAX_AGE);
-  return NextResponse.redirect(url, { status: 303 });
+  let started;
+  try {
+    started = await beginLogin({ mode, returnTo: q.get("returnTo"), idpHint: q.get("idp"), reauth: q.get("reauth") === "1" });
+  } catch {
+    return failed("unavailable"); // Keycloak didn't answer, so there is no sign-in page to send them to
+  }
+  await writeSealed(await cookies(), txName(), started.tx, TX_MAX_AGE);
+  return NextResponse.redirect(started.url, { status: 303 });
 }
 
 async function callback(request: NextRequest) {
@@ -40,8 +45,8 @@ async function callback(request: NextRequest) {
     const current = new URL(`${authConfig().appOrigin}/api/auth/callback${request.nextUrl.search}`);
     session = await completeLogin(current, tx);
     await writeSession(session);
-  } catch {
-    return failed("signin");
+  } catch (e) {
+    return failed(unreachable(e) ? "unavailable" : "signin");
   }
   const returnTo = safeReturnTo(tx.returnTo, "/");
   // Is this a browser the person has confirmed? A new one is sent to the site for the code before anything opens.
@@ -59,6 +64,7 @@ async function renew(request: NextRequest) {
   const returnTo = safeReturnTo(request.nextUrl.searchParams.get("returnTo"), "/");
   const session = await readSession();
   const fresh = session ? await refresh(session) : null;
+  if (fresh === "unreachable") return failed("unavailable");
   if (!fresh) {
     await clearSession();
     return go(`/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`);
@@ -72,7 +78,9 @@ async function logout(request: NextRequest) {
   if (request.headers.get("origin") !== authConfig().appOrigin) return new NextResponse("Not allowed", { status: 403 });
   const session = await readSession();
   await clearSession();
-  return NextResponse.redirect(await logoutUrl(session?.idToken), { status: 303 });
+  // Keycloak not answering can't keep anyone signed in here: this app's session has already ended.
+  const to = await logoutUrl(session?.idToken).catch(() => `${authConfig().siteOrigin}/signed-out`);
+  return NextResponse.redirect(to, { status: 303 });
 }
 
 /** Called by the signed-out page: whichever app a person signed out from, this app's own session ends too. */

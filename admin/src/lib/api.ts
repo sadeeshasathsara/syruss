@@ -24,10 +24,16 @@ function messageFrom(detail: unknown, fallback: string): string {
 const here = () => window.location.pathname + window.location.search;
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API}${path}`, {
-    ...init,
-    headers: { ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API}${path}`, {
+      ...init,
+      headers: { ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers },
+    });
+  } catch {
+    // No answer at all: this browser is offline, or the admin app's own server is down.
+    throw new ApiError(0, "Can't reach Syruss. Check your connection and try again.");
+  }
   if (res.status === 401 && typeof window !== "undefined") {
     // Signed out, or the session ended: sign in again (with the one-time code) and come back to this page.
     window.location.assign(`/api/auth/login?returnTo=${encodeURIComponent(here())}`);

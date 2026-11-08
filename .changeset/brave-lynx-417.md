@@ -10,3 +10,4 @@ server: minor
 - Payment methods are adapters (BILLING_METHODS: bank_transfer and staff_recorded by default). They replace the earlier payment providers and billing requests; open requests become draft invoices.
 - Moving from a free plan to a paid one starts a whole new period once it is paid. Moving to a free plan isn't invoiced: it happens when the current period ends.
 - Billing alert emails now link to the main app (PUBLIC_APP_URL) instead of the public site.
+- A limit's refusal reads "The Free plan allows 1 intake channel", not "1 intake channels".
