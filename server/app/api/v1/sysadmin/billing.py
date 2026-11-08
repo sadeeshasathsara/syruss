@@ -6,24 +6,30 @@ drafting one for a custom deal, issuing, voiding, switching one on before it is 
 Every change needs a reason and a fresh sign-in. It is written to the platform audit log and shown in the organization's
 own activity ("… of Syruss support moved the organization to the Team plan, because: …").
 """
+import asyncio
+import csv
+import io
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.api.v1.billing import file_response
 from app.api.v1.sysadmin.access import Staff, record, require_staff
 from app.api.v1.sysadmin.common import names, tell_organization
 from app.core.database import get_db_session
 from app.models.billing import (
-    BankAccount, BillingPayment, CatalogItem, Invoice, OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, TaxRate,
+    BankAccount, BillingPayment, CatalogItem, CreditNote, Invoice, OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, PaymentFile,
+    PaymentSubmission, TaxRate,
 )
 from app.models.tenant import Tenant
 from app.models.workspace import Workspace
-from app.services.billing import credits, invoices, notices, parties, service as billing
+from app.services.billing import corrections, credits, invoices, notices, parties, payments, proofs, service as billing
 from app.services.billing.limits import LIMITS
 from app.services.billing.methods import enabled
 from app.services.billing.pdf import money
+from app.services.storage_service import storage_service
 
 router = APIRouter(prefix="/billing")
 VIEW = Depends(require_staff())
@@ -594,8 +600,15 @@ async def list_invoices(status: Optional[str] = None, tenant_id: Optional[str] =
 async def get_invoice(invoice_id: str, db: AsyncSession = Depends(get_db_session)):
     invoice = await _invoice(db, invoice_id)
     named = await names(db, [invoice.tenant_id])
-    return {**invoices.describe(invoice, await invoices.lines_of(db, invoice.id), await invoices.payments_of(db, invoice.id)),
-            "organization": named["organizations"].get(invoice.tenant_id),
+    out = invoices.describe(invoice, await invoices.lines_of(db, invoice.id), await invoices.payments_of(db, invoice.id))
+    for p in out["payments"]:
+        p["files"] = [payments.file_dict(f) for f in await proofs.files_of(db, payment_id=p["id"])]
+    sent = (await db.execute(select(PaymentSubmission).where(PaymentSubmission.invoice_id == invoice.id)
+                             .order_by(PaymentSubmission.created_at.desc()))).scalars().all()
+    return {**out, "organization": named["organizations"].get(invoice.tenant_id),
+            "submissions": [payments.describe(s, await proofs.files_of(db, submission_id=s.id)) for s in sent],
+            "credit_notes": [corrections.note_dict(n, await corrections.refunds_of(db, credit_note_id=n.id))
+                             for n in await corrections.notes_of(db, invoice.id)],
             "billing_details_missing": parties.profile_missing(await parties.profile(db, invoice.tenant_id))}
 
 
@@ -763,12 +776,221 @@ async def record_payment(invoice_id: str, body: InvoicePaymentIn, staff: Staff =
     return {**_payment_dict(payment, invoice.number), "invoice_status": invoice.status, "done": text}
 
 
+class CreditNoteIn(BaseModel):
+    amount_cents: int = Field(..., gt=0)
+    reason: str = Field(..., min_length=5, max_length=1000, description="Printed on the credit note")
+    refund_payment_id: Optional[str] = Field(None, description="Give the amount back from this payment (a card payment through Stripe)")
+    refund_reference: Optional[str] = Field(None, max_length=200, description="For a refund staff made: the transfer or receipt number")
+
+
+@router.post("/invoices/{invoice_id}/credit-notes", status_code=201)
+async def issue_credit_note(invoice_id: str, body: CreditNoteIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """Corrects an issued invoice by an amount, with its own number and PDF; optionally refunding it from a payment."""
+    invoice = await _invoice(db, invoice_id)
+    payment = await db.get(BillingPayment, body.refund_payment_id) if body.refund_payment_id else None
+    if body.refund_payment_id and payment is None:
+        raise HTTPException(status_code=404, detail="No such payment.")
+    try:
+        note = await corrections.credit_note(db, invoice, amount_cents=body.amount_cents, reason=body.reason, by_id=staff.user_id, by_name=staff.name,
+                                             refund_from=payment, refund_reference=body.refund_reference)
+    except ValueError as exc:
+        raise _refused(exc)
+    text = f"issued credit note {note.number} for {money(note.amount_cents, note.currency)} on invoice {invoice.number}"
+    if payment:
+        text += ", refunded to the customer"
+    record(db, staff, "billing.credit_note_issued", "invoice", invoice.id, tenant_id=invoice.tenant_id, reason=body.reason,
+           details={"credit_note": note.number, "amount_cents": note.amount_cents, "refund_payment_id": body.refund_payment_id})
+    tell_organization(db, staff, invoice.tenant_id, text, body.reason)
+    await db.commit()
+    await notices.credit_note_issued(note.id)
+    return corrections.note_dict(note, await corrections.refunds_of(db, credit_note_id=note.id))
+
+
+@router.get("/credit-notes/{note_id}/pdf", dependencies=[VIEW])
+async def credit_note_pdf(note_id: str, db: AsyncSession = Depends(get_db_session)):
+    note = await db.get(CreditNote, note_id)
+    if note is None or not note.pdf_key:
+        raise HTTPException(status_code=404, detail="No such credit note.")
+    data = await asyncio.to_thread(storage_service.download_file, note.pdf_key)
+    return Response(content=data, media_type="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="Credit note {note.number}.pdf"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/export", dependencies=[VIEW])
+async def export(what: Literal["invoices", "payments", "credit_notes"] = "invoices", date_from: Optional[date] = None, date_to: Optional[date] = None,
+                 db: AsyncSession = Depends(get_db_session)):
+    """A CSV for the accountants: invoices issued, payments received or credit notes, between two days (inclusive)."""
+    start = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc) if date_from else None
+    end = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc) + timedelta(days=1) if date_to else None
+    out = io.StringIO()
+    w = csv.writer(out)
+    cents = lambda c: f"{c / 100:.2f}"  # noqa: E731
+    if what == "invoices":
+        stmt = select(Invoice).where(Invoice.status != "draft").order_by(Invoice.issued_at)
+        stmt = stmt.where(Invoice.issued_at >= start) if start else stmt
+        stmt = stmt.where(Invoice.issued_at < end) if end else stmt
+        rows = (await db.execute(stmt)).scalars().all()
+        w.writerow(["number", "issued", "due", "status", "buyer", "buyer_tax_id", "country", "currency", "subtotal", "tax", "total",
+                    "paid", "credited", "refunded"])
+        for i in rows:
+            b = i.buyer or {}
+            w.writerow([i.number, f"{i.issued_at:%Y-%m-%d}", f"{i.due_at:%Y-%m-%d}" if i.due_at else "", i.status, b.get("legal_name"), b.get("tax_id"),
+                        b.get("country"), i.currency, cents(i.subtotal_cents), cents(i.tax_cents), cents(i.total_cents), cents(i.amount_paid_cents),
+                        cents(i.amount_credited_cents), cents(i.amount_refunded_cents)])
+    elif what == "payments":
+        stmt = select(BillingPayment, Invoice.number).outerjoin(Invoice, Invoice.id == BillingPayment.invoice_id).order_by(BillingPayment.created_at)
+        stmt = stmt.where(BillingPayment.created_at >= start) if start else stmt
+        stmt = stmt.where(BillingPayment.created_at < end) if end else stmt
+        w.writerow(["recorded", "received_on", "invoice", "method", "currency", "amount", "reference", "recorded_by"])
+        for p, number in (await db.execute(stmt)).all():
+            w.writerow([f"{p.created_at:%Y-%m-%d}", p.received_on or "", number or "", p.method, p.currency, cents(p.amount_cents), p.reference or "",
+                        p.recorded_by_name])
+    else:
+        stmt = select(CreditNote, Invoice.number).join(Invoice, Invoice.id == CreditNote.invoice_id).order_by(CreditNote.created_at)
+        stmt = stmt.where(CreditNote.created_at >= start) if start else stmt
+        stmt = stmt.where(CreditNote.created_at < end) if end else stmt
+        w.writerow(["number", "issued", "invoice", "currency", "amount", "reason"])
+        for n, number in (await db.execute(stmt)).all():
+            w.writerow([n.number, f"{n.created_at:%Y-%m-%d}", number, n.currency, cents(n.amount_cents), n.reason])
+    return Response(content=out.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="syruss-{what}.csv"', "Cache-Control": "no-store"})
+
+
+@router.post("/payments/{payment_id}/files", status_code=201)
+async def attach_payment_files(payment_id: str, reason: str = Form(..., min_length=5, max_length=1000), files: List[UploadFile] = File(...),
+                               staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """Keeps a receipt staff issued (or a scan of the cheque) with a payment they recorded."""
+    payment = await db.get(BillingPayment, payment_id)
+    if payment is None:
+        raise HTTPException(status_code=404, detail="No such payment.")
+    if len(files) > proofs.MAX_FILES:
+        raise HTTPException(status_code=422, detail=f"Attach up to {proofs.MAX_FILES} files.")
+    uploads = [(f.filename, await f.read(proofs.MAX_BYTES + 1)) for f in files]
+    try:
+        for _, data in uploads:
+            proofs.check(data)
+        kept = [await proofs.store(db, tenant_id=payment.tenant_id, filename=name, data=data, uploaded_by=staff.user_id, payment_id=payment.id)
+                for name, data in uploads]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    record(db, staff, "billing.payment_files_added", "billing_payment", payment.id, tenant_id=payment.tenant_id, reason=reason,
+           details={"files": [f.filename for f in kept]})
+    await db.commit()
+    return [payments.file_dict(f) for f in kept]
+
+
+@router.get("/payments/{payment_id}/files/{file_id}", dependencies=[VIEW])
+async def payment_file(payment_id: str, file_id: str, db: AsyncSession = Depends(get_db_session)):
+    f = await db.get(PaymentFile, file_id)
+    if f is None or f.payment_id != payment_id:
+        raise HTTPException(status_code=404, detail="No such file.")
+    return file_response(f, await proofs.read(f))
+
+
+# ---------------------------------------------------------------------------
+# Payments customers sent proof of, to check
+# ---------------------------------------------------------------------------
+
+async def _submission_view(db: AsyncSession, s: PaymentSubmission, invoice: Invoice, organization: Optional[dict]) -> Dict[str, Any]:
+    due = invoices.amount_due(invoice)
+    return {**payments.describe(s, await proofs.files_of(db, submission_id=s.id)), "invoice": invoices.describe(invoice),
+            "organization": organization, "warnings": await proofs.warnings(db, s, due) if s.status == "submitted" else []}
+
+
+@router.get("/submissions", dependencies=[VIEW])
+async def list_submissions(status: str = "submitted", tenant_id: Optional[str] = None, limit: int = Query(100, le=500),
+                           db: AsyncSession = Depends(get_db_session)):
+    """Payments customers sent proof of: those waiting to be checked (oldest first), or those already checked."""
+    stmt = select(PaymentSubmission, Invoice).join(Invoice, Invoice.id == PaymentSubmission.invoice_id).where(PaymentSubmission.status == status)
+    if tenant_id:
+        stmt = stmt.where(PaymentSubmission.tenant_id == tenant_id)
+    order = PaymentSubmission.created_at if status == "submitted" else PaymentSubmission.created_at.desc()
+    rows = (await db.execute(stmt.order_by(order).limit(limit))).all()
+    named = await names(db, [s.tenant_id for s, _ in rows])
+    return [await _submission_view(db, s, i, named["organizations"].get(s.tenant_id)) for s, i in rows]
+
+
+async def _submission(db: AsyncSession, submission_id: str) -> PaymentSubmission:
+    s = await db.get(PaymentSubmission, submission_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="No such payment.")
+    return s
+
+
+@router.get("/submissions/{submission_id}", dependencies=[VIEW])
+async def get_submission(submission_id: str, db: AsyncSession = Depends(get_db_session)):
+    s = await _submission(db, submission_id)
+    named = await names(db, [s.tenant_id])
+    return await _submission_view(db, s, await db.get(Invoice, s.invoice_id), named["organizations"].get(s.tenant_id))
+
+
+@router.get("/submissions/{submission_id}/files/{file_id}", dependencies=[VIEW])
+async def submission_file(submission_id: str, file_id: str, db: AsyncSession = Depends(get_db_session)):
+    """The slip itself, shown in the browser and unable to run anything."""
+    f = await db.get(PaymentFile, file_id)
+    if f is None or f.submission_id != submission_id:
+        raise HTTPException(status_code=404, detail="No such file.")
+    return file_response(f, await proofs.read(f))
+
+
+class ApproveIn(BaseModel):
+    amount_cents: Optional[int] = Field(None, gt=0, description="What actually arrived (default: what the customer said)")
+    received_on: Optional[date] = None
+    overpaid_ok: bool = Field(False, description="Record it although it is more than is due")
+    reason: str = Field(..., min_length=5, max_length=1000)
+
+
+@router.post("/submissions/{submission_id}/approve")
+async def approve_submission(submission_id: str, body: ApproveIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """The money is on the account: records the payment for what arrived; the invoice is paid once it is covered."""
+    s = await _submission(db, submission_id)
+    try:
+        payment, done, invoice = await payments.approve(db, s, by_id=staff.user_id, by_name=staff.name, amount_cents=body.amount_cents,
+                                                        received_on=body.received_on, overpaid_ok=body.overpaid_ok)
+    except payments.NeedsConfirmation as exc:
+        raise HTTPException(status_code=409, detail={"code": "overpayment", "message": str(exc)})
+    except ValueError as exc:
+        raise _refused(exc)
+    text = f"confirmed a bank transfer of {money(payment.amount_cents, payment.currency)} for invoice {invoice.number}"
+    if invoice.status == "paid":
+        text += ", which is now paid" + (f": {done}" if done else "")
+    record(db, staff, "billing.payment_approved", "payment_submission", s.id, tenant_id=s.tenant_id, reason=body.reason,
+           details={"payment_id": payment.id, "amount_cents": payment.amount_cents, "number": invoice.number})
+    tell_organization(db, staff, s.tenant_id, text, body.reason)
+    await db.commit()
+    if invoice.status == "paid":
+        await notices.invoice_paid(invoice.id, done)
+    return {"status": "approved", "payment_id": payment.id, "invoice_status": invoice.status, "done": text}
+
+
+class RejectIn(BaseModel):
+    reason: str = Field(..., min_length=5, max_length=1000, description="Shown to the customer: what didn't match")
+
+
+@router.post("/submissions/{submission_id}/reject")
+async def reject_submission(submission_id: str, body: RejectIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """The money isn't on the account, or the slip doesn't show it. The customer sees the reason and can send it again."""
+    s = await _submission(db, submission_id)
+    try:
+        await payments.reject(db, s, by_id=staff.user_id, by_name=staff.name, reason=body.reason)
+    except ValueError as exc:
+        raise _refused(exc)
+    invoice = await db.get(Invoice, s.invoice_id)
+    record(db, staff, "billing.payment_rejected", "payment_submission", s.id, tenant_id=s.tenant_id, reason=body.reason,
+           details={"number": invoice.number, "amount_cents": s.amount_cents})
+    tell_organization(db, staff, s.tenant_id, f"couldn't confirm the payment sent for invoice {invoice.number}", body.reason)
+    await db.commit()
+    await notices.payment_rejected(s.id)
+    return {"status": "rejected"}
+
+
 @router.get("/expiring", dependencies=[VIEW])
 async def expiring(days: int = Query(7, ge=1, le=60), db: AsyncSession = Depends(get_db_session)) -> List[Dict[str, Any]]:
-    """Trials that end soon, and paid plans whose payment doesn't cover the current period: who to follow up with."""
+    """Trials that end soon, renewals past due, and paid plans whose payment doesn't cover the current period: who to follow up with."""
     soon = datetime.now(timezone.utc) + timedelta(days=days)
     rows = (await db.execute(select(OrgSubscription, CatalogItem).join(CatalogItem, CatalogItem.id == OrgSubscription.plan_id).where(or_(
         (OrgSubscription.status == "trialing") & (OrgSubscription.trial_ends_at <= soon),
+        OrgSubscription.status == "past_due",
         (CatalogItem.price_cents > 0) & (OrgSubscription.status == "active")
         & or_(OrgSubscription.paid_until.is_(None), OrgSubscription.paid_until < OrgSubscription.period_end),
     )))).all()

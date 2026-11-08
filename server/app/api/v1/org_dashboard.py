@@ -25,7 +25,7 @@ ORG_EVENTS = (
     "ORG_ROLE_CHANGED", "ORG_MEMBER_REMOVED", "ORG_INVITATION_SENT", "ORG_INVITATION_REVOKED", "ORG_INVITATION_ACCEPTED",
     "ORG_RENAMED", "ORG_DELETED", "WORKSPACE_CREATED", "WORKSPACE_DELETED", "ORG_ADMIN_JOINED_WORKSPACE",
     "PLATFORM_ACCESS_OPENED", "PLATFORM_ACCESS_ENDED", "PLATFORM_ACTION", "BILLING_REQUESTED", "BILLING_INVOICED",
-    "BILLING_DETAILS_CHANGED",
+    "BILLING_DETAILS_CHANGED", "BILLING_PAYMENT_SENT", "BILLING_CARD_PAID", "BILLING_CARD_FORGOTTEN",
 )
 
 
@@ -51,6 +51,9 @@ def describe(event: str, who: str, d: Dict[str, Any], names: Dict[str, str]) -> 
         "BILLING_INVOICED": lambda: f"{who} bought {d.get('item', 'something')}"
                                     + (f" (× {d['quantity']})" if (d.get('quantity') or 1) > 1 else "") + f": invoice {d.get('invoice', '')}.",
         "BILLING_DETAILS_CHANGED": lambda: f"{who} changed the organization's billing details.",
+        "BILLING_PAYMENT_SENT": lambda: f"{who} sent proof of a payment for invoice {d.get('invoice', '')} for Syruss to check.",
+        "BILLING_CARD_PAID": lambda: f"Invoice {d.get('invoice', '')} was paid by card.",
+        "BILLING_CARD_FORGOTTEN": lambda: f"{who} stopped paying renewals with the kept card.",
         # Syruss's own staff, from the system admin app (see api/v1/sysadmin)
         "PLATFORM_ACCESS_OPENED": lambda: f"{d.get('staff', 'Syruss support')} of Syruss support opened the organization's content "
                                           f"until {d.get('until', 'later')}, because: {d.get('reason', '')}",

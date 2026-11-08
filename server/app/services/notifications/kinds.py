@@ -134,4 +134,66 @@ PAYMENT_RECEIVED = Kind(
     ),
 )
 
-KINDS: Dict[str, Kind] = {k.key: k for k in (INVITATION, EMAIL_CODE, DEVICE_CODE, DEVICE_ADDED, BILLING_ALERT, INVOICE_ISSUED, PAYMENT_RECEIVED)}
+PAYMENT_SUBMITTED = Kind(
+    key="payment_submitted",
+    variables=("organization", "number", "amount", "method", "url"),
+    email=EmailSpec("payment_submitted", "{{ organization }} sent a payment for invoice {{ number }}"),
+)
+
+PAYMENT_REJECTED = Kind(
+    key="payment_rejected",
+    variables=("organization", "number", "amount", "reason", "url", "invoice"),
+    email=EmailSpec("payment_rejected", "We couldn't confirm the payment for invoice {{ number }}"),
+    in_app=InAppSpec(
+        type="billing.invoice",
+        title="We couldn't confirm the payment for invoice {{ number }}",
+        body="{{ reason }}",
+        link="{{ url }}",
+        severity="warning",
+        scope="tenant",
+        keep=("invoice",),
+        replace_by="invoice",
+    ),
+)
+
+INVOICE_REMINDER = Kind(
+    key="invoice_reminder",
+    variables=("organization", "number", "due", "due_on", "headline", "body", "url", "invoice"),
+    email=EmailSpec("invoice_reminder", "{{ headline }} ({{ organization }})"),
+    in_app=InAppSpec(
+        type="billing.invoice",
+        title="{{ headline }}",
+        body="{{ body }}",
+        link="{{ url }}",
+        severity="warning",
+        scope="tenant",
+        keep=("invoice",),
+        replace_by="invoice",
+    ),
+)
+
+PLAN_LAPSED = Kind(
+    key="plan_lapsed",
+    variables=("organization", "number", "plan", "url", "invoice"),
+    email=EmailSpec("plan_lapsed", "{{ organization }} is on the Free plan now"),
+    in_app=InAppSpec(
+        type="billing.invoice",
+        title="{{ organization }} is on the Free plan now",
+        body="Invoice {{ number }} for the {{ plan }} plan wasn't paid. Paying it puts the plan back.",
+        link="{{ url }}",
+        severity="error",
+        scope="tenant",
+        keep=("invoice",),
+        replace_by="invoice",
+    ),
+)
+
+CREDIT_NOTE_ISSUED = Kind(
+    key="credit_note_issued",
+    variables=("organization", "number", "invoice_number", "amount", "reason", "url"),
+    optional=("refunded",),
+    email=EmailSpec("credit_note_issued", "Credit note {{ number }} for invoice {{ invoice_number }}"),
+)
+
+KINDS: Dict[str, Kind] = {k.key: k for k in (INVITATION, EMAIL_CODE, DEVICE_CODE, DEVICE_ADDED, BILLING_ALERT, INVOICE_ISSUED, PAYMENT_RECEIVED,
+                                             PAYMENT_SUBMITTED, PAYMENT_REJECTED, INVOICE_REMINDER, PLAN_LAPSED, CREDIT_NOTE_ISSUED)}
