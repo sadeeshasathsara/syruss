@@ -290,6 +290,8 @@ export interface LimitInfo {
   key: string;
   label: string;
   noun: string;
+  /** The noun for exactly one: "API key". */
+  one: string;
   scope: "workspace" | "organization";
   metered: boolean;
 }

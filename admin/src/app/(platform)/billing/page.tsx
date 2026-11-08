@@ -138,7 +138,7 @@ function Catalog() {
   const setup = useQuery({ queryKey: ["billing", "setup"], queryFn: api.billing.setup, staleTime: 300_000 });
   const items = useQuery({ queryKey: ["billing", "catalog"], queryFn: () => api.billing.catalog() });
   const [editing, setEditing] = useState<Editing>(null);
-  const labels = useMemo(() => Object.fromEntries((setup.data?.limits ?? []).map((l) => [l.key, l.noun])), [setup.data]);
+  const labels = useMemo(() => Object.fromEntries((setup.data?.limits ?? []).map((l) => [l.key, l])), [setup.data]);
   const grouped = useMemo(() => {
     const byKind: Record<CatalogKind, Record<string, CatalogItem[]>> = { plan: {}, addon: {}, credits: {} };
     for (const i of items.data ?? []) (byKind[i.kind][i.key] ??= []).push(i);

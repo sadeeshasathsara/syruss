@@ -20,6 +20,8 @@ export interface OrgLimit {
   key: string;
   label: string;
   noun: string;
+  /** The noun for exactly one: "API key". */
+  one: string;
   scope: "workspace" | "organization";
   metered: boolean;
   /** Null: unlimited. */

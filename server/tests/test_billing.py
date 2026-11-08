@@ -140,7 +140,7 @@ async def test_workspace_limits_apply_to_each_workspace_and_an_override_can_rais
     for tpl in (first, second):
         assert (await client.post(f"{API}/channels", headers={**org, "X-Template-ID": tpl}, json={"name": "One"})).status_code == 201
     again = await client.post(f"{API}/channels", headers={**org, "X-Template-ID": first}, json={"name": "Two"})
-    assert again.status_code == 402 and again.json()["detail"] == "The Free plan allows 1 intake channels; this would make 2."
+    assert again.status_code == 402 and again.json()["detail"] == "The Free plan allows 1 intake channel; this would make 2."
 
     async with AsyncSessionLocal() as db:
         await billing.set_override(db, tenant_id=tenant, template_id=first, key="channels_per_workspace", value=2, reason="test", set_by="tests")

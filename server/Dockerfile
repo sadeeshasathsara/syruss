@@ -9,11 +9,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system dependencies (build-essential and libmagic for filetype checks)
+# Install system dependencies (build-essential, libmagic for filetype checks, DejaVu so invoice PDFs print most scripts)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     libmagic1 \
+    fonts-dejavu-core \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

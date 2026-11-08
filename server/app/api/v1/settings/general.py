@@ -86,7 +86,7 @@ async def billing_overview(access: Access = Depends(get_access), db: AsyncSessio
         "pages": await billing.summary(db, access.scope.tenant_id),
         # This workspace's share of the organization's pages, and its own limits (with any set for it alone).
         "workspace_pages": pages.get(access.scope.template_id, 0), "limits": current.limits,
-        # No payment provider is connected yet: nothing is charged, and nothing is pretended.
+        # Invoices and payments are the organization's: its owners see them in the organization's billing, not here.
         "payment_method": None, "invoices": [], "payments_enabled": False,
     }
 
