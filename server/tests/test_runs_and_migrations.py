@@ -74,7 +74,7 @@ async def test_migrations_build_the_same_schema_as_the_models():
     name = f"{engine.url.database}_migrations"
     admin = create_async_engine(engine.url.set(database="postgres"), isolation_level="AUTOCOMMIT")
     async with admin.connect() as conn:
-        await conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
+        await conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
         await conn.execute(text(f'CREATE DATABASE "{name}"'))
     url = engine.url.set(database=name).render_as_string(hide_password=False)
     try:
@@ -102,8 +102,9 @@ async def test_migrations_build_the_same_schema_as_the_models():
                         await conn.execute(text(change))
             # A draft invoice can change; once issued, what it says is fixed, and payments against it only grow.
             await conn.execute(text("INSERT INTO invoices (id, tenant_id, kind, status, currency, subtotal_cents, tax_cents, total_cents, "
-                                    "amount_paid_cents, seller, buyer, bank, tax_lines, created_by, created_at, updated_at) VALUES "
-                                    "('i1', 't', 'purchase', 'draft', 'USD', 100, 0, 100, 0, '{}', '{}', '[]', '[]', 'tests', now(), now())"))
+                                    "amount_paid_cents, amount_credited_cents, amount_refunded_cents, reminders, seller, buyer, bank, tax_lines, "
+                                    "created_by, created_at, updated_at) VALUES ('i1', 't', 'purchase', 'draft', 'USD', 100, 0, 100, 0, 0, 0, '[]', "
+                                    "'{}', '{}', '[]', '[]', 'tests', now(), now())"))
             line = ("INSERT INTO invoice_lines (id, invoice_id, position, kind, description, quantity, unit_cents, amount_cents, tax_rate_bp) "
                     "VALUES ('{}', 'i1', 0, 'custom', 'Setup', 1, 200, 200, 0)")
             await conn.execute(text(line.format("l1")))
@@ -130,11 +131,22 @@ async def test_migrations_build_the_same_schema_as_the_models():
                 with pytest.raises(Exception, match="append-only"):
                     async with conn.begin_nested():
                         await conn.execute(text(change))
+            # So are credit notes (their PDF is filled in once) and refunds.
+            await conn.execute(text("INSERT INTO credit_notes (id, number, invoice_id, tenant_id, currency, amount_cents, reason, created_by, "
+                                    "created_by_name, created_at) VALUES ('n1', 'T-CN-1', 'i1', 't', 'USD', 20, 'Too much', 'u', 'U', now())"))
+            await conn.execute(text("UPDATE credit_notes SET pdf_key = 'billing/t/credit-notes/n1.pdf' WHERE id = 'n1'"))
+            await conn.execute(text("INSERT INTO billing_refunds (id, payment_id, credit_note_id, tenant_id, amount_cents, currency, method, "
+                                    "created_by, created_by_name, created_at) VALUES ('r1', 'p1', 'n1', 't', 20, 'USD', 'staff_recorded', 'u', 'U', now())"))
+            for change in ("UPDATE credit_notes SET amount_cents = 1", "UPDATE credit_notes SET pdf_key = 'other.pdf'", "DELETE FROM credit_notes",
+                           "UPDATE billing_refunds SET amount_cents = 1", "DELETE FROM billing_refunds"):
+                with pytest.raises(Exception, match="append-only"):
+                    async with conn.begin_nested():
+                        await conn.execute(text(change))
         await fresh.dispose()
         assert diff == []
     finally:
-        async with admin.connect() as conn:
-            await conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
+        async with admin.connect() as conn:  # (a connection the test closed may not have gone yet)
+            await conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
         await admin.dispose()
 
 

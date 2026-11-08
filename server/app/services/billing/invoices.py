@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.billing import BillingPayment, CatalogItem, Invoice, InvoiceLine
+from app.models.billing import BillingPayment, CatalogItem, Invoice, InvoiceLine, OrgSubscriptionAddon
 from app.services.billing import parties, pdf, service as billing
 from app.services.billing.methods import method as payment_method
 from app.services.billing.numbering import invoice_number, next_number
@@ -50,6 +50,19 @@ def item_line(item: CatalogItem, quantity: int = 1) -> Line:
     if item.kind == "addon":
         return Line(f"{item.name} (monthly add-on)", quantity, item.price_cents, "addon", item)
     return Line(f"{item.name}: {(item.pages or 0):,} prepaid pages", quantity, item.price_cents, "credits", item)
+
+
+def prorated(item: CatalogItem, current: CatalogItem, sub, now: datetime) -> List[Line]:
+    """
+    Moving up from one paid plan to a dearer one, mid-period: the new plan for the rest of this period, less the
+    unused rest of the current one when it was paid for. The next period renews at the new plan's full price.
+    """
+    whole = (sub.period_end - sub.period_start).total_seconds()
+    share = max(0.0, (sub.period_end - now).total_seconds()) / whole if whole > 0 else 0.0
+    lines = [Line(f"{item.name} plan for the rest of this period", 1, round(item.price_cents * share), "plan", item, now, sub.period_end)]
+    if sub.paid_until and sub.paid_until >= sub.period_end:
+        lines.append(Line(f"Unused time on the {current.name} plan", 1, -round(current.price_cents * share), "proration", current, now, sub.period_end))
+    return lines
 
 
 async def lines_of(db: AsyncSession, invoice_id: str) -> List[InvoiceLine]:
@@ -90,11 +103,11 @@ async def _store(key: str, data: bytes) -> str:
     return key
 
 
-async def issue(db: AsyncSession, invoice: Invoice) -> Invoice:
+async def issue(db: AsyncSession, invoice: Invoice, due_at: Optional[datetime] = None) -> Invoice:
     """
     Issues a draft: refuses (parties.NotReady) while either side's billing details are missing. It takes the next
     number of the year, copies in the seller, the buyer, the bank accounts in its currency and the tax, sets the due date
-    from the payment terms and stores its PDF. An invoice for nothing (all free) is paid as it is issued.
+    (from the payment terms unless given) and stores its PDF. An invoice for nothing (all free) is paid as it is issued.
     """
     if invoice.status != "draft":
         raise ValueError("Only a draft can be issued.")
@@ -111,7 +124,7 @@ async def issue(db: AsyncSession, invoice: Invoice) -> Invoice:
     invoice.seller, invoice.buyer = parties.seller_snapshot(seller), parties.buyer_snapshot(buyer)
     invoice.bank = [parties.bank_dict(a) for a in await parties.bank_accounts(db, invoice.currency)]
     invoice.subtotal_cents, invoice.tax_cents, invoice.total_cents, invoice.tax_lines = subtotal, tax.total_cents, subtotal + tax.total_cents, tax.lines
-    invoice.issued_at, invoice.due_at, invoice.status = now, now + timedelta(days=seller.payment_terms_days), "open"
+    invoice.issued_at, invoice.due_at, invoice.status = now, due_at or now + timedelta(days=seller.payment_terms_days), "open"
     await db.flush()
     invoice.pdf_key = await _store(f"billing/{invoice.tenant_id}/invoices/{invoice.id}.pdf", pdf.render(invoice, lines))
     await db.flush()
@@ -143,16 +156,39 @@ async def record_payment(db: AsyncSession, invoice: Invoice, *, method: str, amo
     return payment, await settle(db, invoice, by=by_id)
 
 
+async def _renew(db: AsyncSession, invoice: Invoice, by: str) -> List[str]:
+    """A renewal paid: the plan and add-ons it was for carry on (and come back, if it was paid after they lapsed)."""
+    done = []
+    sub = await billing.subscription(db, invoice.tenant_id)
+    for line in await lines_of(db, invoice.id):
+        item = await db.get(CatalogItem, line.item_id) if line.item_id else None
+        if item is None:
+            continue
+        if line.kind == "plan" and sub.plan_id != item.id and sub.pending_plan_id != item.id:
+            await billing.change_plan(db, invoice.tenant_id, item)
+            done.append(f"put the organization back on the {item.name} plan")
+        elif line.kind == "addon":
+            have = (await db.execute(select(OrgSubscriptionAddon.quantity).where(
+                OrgSubscriptionAddon.tenant_id == invoice.tenant_id, OrgSubscriptionAddon.addon_id == item.id))).scalar() or 0
+            if have < line.quantity:
+                await billing.set_addon(db, invoice.tenant_id, item, line.quantity, by)
+                done.append(f"put back {line.quantity} × {item.name}")
+    return done
+
+
 async def fulfil(db: AsyncSession, invoice: Invoice, by: str) -> str:
     """Switches on what the invoice sells, once. Returns what was done."""
     if invoice.fulfilled_at:
         return ""
-    done = []
-    for line in await lines_of(db, invoice.id):
-        item = await db.get(CatalogItem, line.item_id) if line.item_id else None
-        if item is not None and line.kind in ("plan", "addon", "credits"):
-            done.append(await billing.apply_item(db, invoice.tenant_id, item, line.quantity, by, ref=f"invoice:{invoice.id}",
-                                                 reason=f"{item.name} ({invoice.number})"))
+    if invoice.kind == "renewal":
+        done = await _renew(db, invoice, by)
+    else:
+        done = []
+        for line in await lines_of(db, invoice.id):
+            item = await db.get(CatalogItem, line.item_id) if line.item_id else None
+            if item is not None and line.kind in ("plan", "addon", "credits"):
+                done.append(await billing.apply_item(db, invoice.tenant_id, item, line.quantity, by, ref=f"invoice:{invoice.id}",
+                                                     reason=f"{item.name} ({invoice.number})"))
     invoice.fulfilled_at = _now()
     await db.flush()
     return "; ".join(done)
@@ -160,19 +196,26 @@ async def fulfil(db: AsyncSession, invoice: Invoice, by: str) -> str:
 
 async def settle(db: AsyncSession, invoice: Invoice, by: str) -> Optional[str]:
     """
-    Brings what has been paid up to date. Once payments cover the total: paid, what it sells is switched on (unless it
-    already was), a plan counts as paid for the period, and the receipt is printed. Returns what was switched on.
+    Brings what has been paid up to date. Once payments (less refunds) and credit notes cover the total: paid, what it
+    sells is switched on (unless it already was), a plan counts as paid (a renewal: for its period), and the receipt is
+    printed. Returns what was switched on.
     """
     paid = int((await db.execute(select(func.coalesce(func.sum(BillingPayment.amount_cents), 0))
                                  .where(BillingPayment.invoice_id == invoice.id))).scalar() or 0)
     invoice.amount_paid_cents = paid
-    if invoice.status not in PAYABLE or paid < invoice.total_cents:
+    covered = paid - invoice.amount_refunded_cents + invoice.amount_credited_cents
+    if invoice.status not in PAYABLE or covered < invoice.total_cents:
         await db.flush()
         return None
     invoice.status, invoice.paid_at = "paid", _now()
     done = await fulfil(db, invoice, by)
     lines = await lines_of(db, invoice.id)
-    if any(line.kind == "plan" for line in lines):
+    if invoice.kind == "renewal":
+        sub = await billing.subscription(db, invoice.tenant_id)
+        sub.paid_until = max(filter(None, (sub.paid_until, invoice.period_end)))
+        if sub.status == "past_due":
+            sub.status = "active"
+    elif any(line.kind == "plan" for line in lines):
         await billing.paid_through_period(db, invoice.tenant_id)
     invoice.receipt_key = await _store(f"billing/{invoice.tenant_id}/invoices/{invoice.id}-receipt.pdf",
                                        pdf.render(invoice, lines, await payments_of(db, invoice.id)))
@@ -223,23 +266,34 @@ async def purchase(db: AsyncSession, tenant_id: str, item: CatalogItem, quantity
     """
     if item.status != "published" or not item.public:
         raise ValueError("That isn't on offer.")
+    lines, kind = [item_line(item, quantity)], "purchase"
     if item.kind == "plan":
         quantity = 1
         sub = await billing.subscription(db, tenant_id)
-        if sub.plan_id == item.id or (await db.get(CatalogItem, sub.plan_id)).key == item.key:
+        current = await db.get(CatalogItem, sub.plan_id)
+        if sub.plan_id == item.id or current.key == item.key:
             raise ValueError("That is already the organization's plan.")
-        if not item.price_cents:
+        if item.price_cents < current.price_cents or not item.price_cents:
             await billing.change_plan(db, tenant_id, item, at_period_end=True)
             return None, f"The organization moves to the {item.name} plan on {sub.period_end:%d %B}, when this period ends.", False
+        if current.price_cents and sub.status != "trialing":
+            lines, kind = prorated(item, current, sub, _now()), "upgrade"
     waiting = (await db.execute(select(Invoice).join(InvoiceLine, InvoiceLine.invoice_id == Invoice.id).where(
-        Invoice.tenant_id == tenant_id, Invoice.status == "open", Invoice.kind == "purchase", InvoiceLine.item_id == item.id,
+        Invoice.tenant_id == tenant_id, Invoice.status == "open", Invoice.kind.in_(("purchase", "upgrade")), InvoiceLine.item_id == item.id,
         InvoiceLine.quantity == quantity))).scalars().first()
     if waiting:
         return waiting, f"Invoice {waiting.number} for this is already waiting for payment.", False
     await parties.ready(db, tenant_id)
-    invoice = await issue(db, await draft(db, tenant_id, [item_line(item, quantity)], kind="purchase", created_by=by, note=note))
+    invoice = await issue(db, await draft(db, tenant_id, lines, kind=kind, created_by=by, note=note))
     return invoice, (f"Invoice {invoice.number} is ready. {item.name} is switched on as soon as it's paid."
                      if invoice.status == "open" else f"{item.name} is switched on."), True
+
+
+def amount_due(invoice: Invoice) -> int:
+    """What is still owed: the total, less payments (net of refunds) and credit notes. Nothing once void or paid."""
+    if invoice.status not in PAYABLE:
+        return 0
+    return max(0, invoice.total_cents - (invoice.amount_paid_cents - invoice.amount_refunded_cents) - invoice.amount_credited_cents)
 
 
 def describe(invoice: Invoice, lines: Optional[List[InvoiceLine]] = None, payments: Optional[List[BillingPayment]] = None) -> dict:
@@ -247,7 +301,8 @@ def describe(invoice: Invoice, lines: Optional[List[InvoiceLine]] = None, paymen
     out = {
         "id": invoice.id, "number": invoice.number, "tenant_id": invoice.tenant_id, "kind": invoice.kind, "status": invoice.status,
         "currency": invoice.currency, "subtotal_cents": invoice.subtotal_cents, "tax_cents": invoice.tax_cents, "total_cents": invoice.total_cents,
-        "amount_paid_cents": invoice.amount_paid_cents, "amount_due_cents": max(0, invoice.total_cents - invoice.amount_paid_cents),
+        "amount_paid_cents": invoice.amount_paid_cents, "amount_credited_cents": invoice.amount_credited_cents,
+        "amount_refunded_cents": invoice.amount_refunded_cents, "amount_due_cents": amount_due(invoice),
         "issued_at": invoice.issued_at, "due_at": invoice.due_at, "paid_at": invoice.paid_at, "voided_at": invoice.voided_at,
         "void_reason": invoice.void_reason, "period_start": invoice.period_start, "period_end": invoice.period_end,
         "overdue": invoice.status == "open" and invoice.due_at is not None and invoice.due_at < _now(),

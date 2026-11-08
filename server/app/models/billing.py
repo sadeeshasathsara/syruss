@@ -276,6 +276,7 @@ class Invoice(Base):
     __table_args__ = (
         Index("ix_invoices_tenant_created", "tenant_id", "created_at"),
         Index("ix_invoices_status_due", "status", "due_at"),
+        UniqueConstraint("tenant_id", "kind", "period_start", name="uq_invoices_period"),  # one renewal a period
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
@@ -288,6 +289,9 @@ class Invoice(Base):
     tax_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     amount_paid_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    amount_credited_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)   # by credit notes
+    amount_refunded_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)   # money given back
+    reminders: Mapped[list] = mapped_column(JSON, default=list, nullable=False)              # reminder_days already sent
     issued_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -386,6 +390,44 @@ class CardCheckout(Base):
     save_card: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)  # open | completed | expired
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class CreditNote(Base):
+    """
+    A correction to an issued invoice: it takes an amount off what the organization owes (and, when money is given
+    back, goes with a refund). Numbered in its own gapless series and kept like an invoice: never changed or removed.
+    """
+    __tablename__ = "credit_notes"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    number: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    invoice_id: Mapped[str] = mapped_column(String(64), ForeignKey("invoices.id"), nullable=False, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)  # printed on it
+    pdf_key: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class BillingRefund(Base):
+    """Money given back from a payment: through the card processor, or by transfer or in cash (recorded by staff). Only grows."""
+    __tablename__ = "billing_refunds"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    payment_id: Mapped[str] = mapped_column(String(64), ForeignKey("billing_payments.id"), nullable=False, index=True)
+    credit_note_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("credit_notes.id"), nullable=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    method: Mapped[str] = mapped_column(String(32), nullable=False)
+    reference: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    external_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, unique=True)  # the refund at the card processor
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
 
 

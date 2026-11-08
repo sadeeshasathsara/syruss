@@ -91,7 +91,7 @@ async def approve(db: AsyncSession, submission: PaymentSubmission, *, by_id: str
         raise Conflict("This payment was already checked." if submission else "No such payment.")
     invoice = await db.get(Invoice, submission.invoice_id)
     amount = amount_cents or submission.amount_cents
-    due = invoice.total_cents - invoice.amount_paid_cents
+    due = invoices.amount_due(invoice)
     if amount > due and not overpaid_ok:
         raise NeedsConfirmation(f"That's more than the {money(due, invoice.currency)} due. Confirm it to record it anyway.")
     payment, done = await invoices.record_payment(db, invoice, method=submission.method, amount_cents=amount, by_id=by_id, by_name=by_name,

@@ -39,7 +39,7 @@ async def checkout(db: AsyncSession, invoice: Invoice, *, slug: str, save_card: 
     invoice = await invoices.locked(db, invoice.id)
     if invoice.status not in invoices.PAYABLE:
         raise ValueError("This invoice isn't waiting for payment.")
-    due = invoice.total_cents - invoice.amount_paid_cents
+    due = invoices.amount_due(invoice)
     reusable = (await db.execute(select(CardCheckout).where(
         CardCheckout.invoice_id == invoice.id, CardCheckout.status == "open", CardCheckout.amount_cents == due,
         CardCheckout.save_card.is_(save_card), CardCheckout.expires_at > _now() + timedelta(minutes=10)))).scalars().first()
@@ -106,6 +106,11 @@ async def handle(db: AsyncSession, event: Dict[str, Any]) -> Paid:
         page = (await db.execute(select(CardCheckout).where(CardCheckout.session_id == obj["id"]))).scalar_one_or_none()
         if page and page.status == "open":
             page.status = "expired"
+    if kind == "charge.refunded" and obj.get("payment_intent"):
+        from app.services.billing.corrections import refunded_by_stripe  # (corrections uses this module's card calls)
+        made = await refunded_by_stripe(db, obj["payment_intent"], ((obj.get("refunds") or {}).get("data")) or [])
+        if made and not any(r.credit_note_id for r in made):
+            logger.warning("A refund of %s was made in Stripe without a credit note: issue one for the invoice", obj["payment_intent"])
     return None
 
 
@@ -114,7 +119,7 @@ async def charge_saved_card(db: AsyncSession, invoice: Invoice) -> Paid:
     profile = await parties.profile(db, invoice.tenant_id)
     if not (profile and profile.card_payment_method and profile.stripe_customer_id):
         raise ValueError("No card is kept for renewals.")
-    due = invoice.total_cents - invoice.amount_paid_cents
+    due = invoices.amount_due(invoice)
     try:
         result = card_api.charge(amount_cents=due, currency=invoice.currency, customer=profile.stripe_customer_id,
                                  payment_method=profile.card_payment_method, invoice_id=invoice.id, tenant_id=invoice.tenant_id)

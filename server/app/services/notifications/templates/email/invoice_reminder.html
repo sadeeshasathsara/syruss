@@ -1,0 +1,11 @@
+{#- An open invoice is due soon, due today, or overdue. Variables: organization, number, due, due_on, headline, body, url, invoice -#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+{% block preheader %}{{ headline }}{% endblock %}
+{% block heading %}{{ headline }}{% endblock %}
+{% block content %}
+{{ ui.paragraph(body) }}
+{{ ui.facts([("Invoice", number), ("Amount due", due), ("Due by", due_on)]) }}
+{{ ui.button("View and pay", url) }}
+{% endblock %}
+{% block footer %}You get this because it is the billing address of {{ organization }} on Syruss.{% endblock %}
