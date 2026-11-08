@@ -7,7 +7,7 @@ Buying issues an invoice at once; what it sells is switched on once it is paid (
 """
 from datetime import date
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,10 +15,12 @@ from app.core.auth import AuthContext, require_org_permission
 from app.core.database import get_db_session
 from app.models.audit import AuditLog
 from app.models.billing import BillingPayment, BillingProfile, CatalogItem, Invoice, OrgSubscriptionAddon, PaymentFile, PaymentSubmission
+from app.models.tenant import Tenant
 from app.models.workspace import Workspace
-from app.services.billing import catalog, credits, invoices, notices, parties, payments, proofs, service as billing
+from app.services.billing import cards, catalog, credits, invoices, notices, parties, payments, proofs, service as billing
 from app.services.billing.limits import LIMITS
-from app.services.billing.methods import enabled
+from app.services.billing.methods import METHODS, enabled
+from app.services.billing.methods import card as card_api
 
 router = APIRouter(prefix="/billing", tags=["Billing"])
 BILLING = Depends(require_org_permission("billing.manage"))
@@ -32,6 +34,12 @@ def _offer(i: CatalogItem) -> Dict[str, Any]:
 
 def _profile(p: Optional[BillingProfile]) -> Optional[Dict[str, Any]]:
     return parties.buyer_snapshot(p) | {"updated_at": p.updated_at} if p else None
+
+
+def _card(p: Optional[BillingProfile]) -> Dict[str, Any]:
+    """The card kept for renewals, and whether Stripe's page for managing it can be opened."""
+    return {"kept": bool(p and p.card_payment_method), "label": p.card_label if p and p.card_payment_method else None,
+            "can_manage": bool(p and p.stripe_customer_id and METHODS["card"].available())}
 
 
 def _not_ready(exc: parties.NotReady) -> HTTPException:
@@ -71,6 +79,7 @@ async def overview(auth: AuthContext = BILLING, db: AsyncSession = Depends(get_d
         "invoices_waiting": [invoices.describe(i) for i in waiting],
         "billing_details_missing": parties.profile_missing(await parties.profile(db, tenant_id)),
         "methods": [m.describe() for m in enabled() if m.customer_can_use],
+        "card": _card(await parties.profile(db, tenant_id)),
     }
     await db.commit()  # the subscription may have been created or brought up to date
     return result
@@ -236,6 +245,67 @@ async def payment_file(submission_id: str, file_id: str, auth: AuthContext = BIL
     if f is None or f.submission_id != s.id:
         raise HTTPException(status_code=404, detail="No such file.")
     return file_response(f, await proofs.read(f))
+
+
+# ---- Paying by card (Stripe) -------------------------------------------------------------------
+
+class CheckoutIn(BaseModel):
+    save_card: bool = Field(False, description="Keep the card to pay renewals by themselves")
+
+
+@router.post("/invoices/{invoice_id}/checkout")
+async def card_checkout(invoice_id: str, body: CheckoutIn, auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
+    """The address of Stripe's page to pay what is due on the invoice by card."""
+    invoice = await _invoice(db, auth, invoice_id)
+    tenant = await db.get(Tenant, auth.tenant_id)
+    try:
+        url = await cards.checkout(db, invoice, slug=tenant.slug, save_card=body.save_card)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    await db.commit()
+    return {"url": url}
+
+
+@router.post("/card/portal")
+async def card_portal(auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
+    """Stripe's page where the kept card is changed or removed."""
+    tenant = await db.get(Tenant, auth.tenant_id)
+    try:
+        return {"url": await cards.portal_url(db, auth.tenant_id, tenant.slug)}
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.post("/card/forget")
+async def forget_card(auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
+    """Stops paying renewals with the kept card; they are invoiced to pay by hand instead."""
+    p = await parties.profile(db, auth.tenant_id)
+    if p and p.card_payment_method:
+        p.card_payment_method, p.card_label = None, None
+        db.add(AuditLog(tenant_id=auth.tenant_id, template_id=None, event_type="BILLING_CARD_FORGOTTEN", entity_type="Organization",
+                        entity_id=auth.tenant_id, actor=auth.user_id, details={}))
+        await db.commit()
+    return _card(p)
+
+
+@router.post("/webhooks/stripe", include_in_schema=False)
+async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Header(None, alias="Stripe-Signature"),
+                         db: AsyncSession = Depends(get_db_session)):
+    """Stripe telling us about a payment. Not signed in: the signature (STRIPE_WEBHOOK_SECRET) is what proves it is Stripe."""
+    if not METHODS["card"].available():
+        raise HTTPException(status_code=404, detail="Card payments aren't set up.")
+    try:
+        event = card_api.event_from(await request.body(), stripe_signature or "")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    paid = await cards.handle(db, event)
+    if paid:
+        db.add(AuditLog(tenant_id=paid[0].tenant_id, template_id=None, event_type="BILLING_CARD_PAID", entity_type="Organization",
+                        entity_id=paid[0].tenant_id, actor="stripe", details={"invoice": paid[0].number}))
+    await db.commit()
+    if paid:
+        await notices.invoice_paid(paid[0].id, paid[1])
+    return {"received": True}
 
 
 # ---- Buying ------------------------------------------------------------------------------------

@@ -25,6 +25,10 @@ class Method:
         """What the customer sees on the invoice for paying this way; None when there is nothing to show."""
         return None
 
+    def available(self) -> bool:
+        """Whether it is set up well enough to offer (a card processor needs its keys)."""
+        return True
+
     def describe(self) -> Dict[str, Any]:
         return {"key": self.key, "label": self.label, "customer_can_use": self.customer_can_use, "needs_proof": self.needs_proof,
                 "online": self.online}
@@ -39,12 +43,12 @@ def register(method: Method) -> Method:
 
 
 def enabled() -> List[Method]:
-    """The ways to pay this deployment offers (BILLING_METHODS), in that order."""
+    """The ways to pay this deployment offers (BILLING_METHODS, those set up well enough to use), in that order."""
     keys = [k.strip() for k in settings.BILLING_METHODS.split(",") if k.strip()]
     unknown = [k for k in keys if k not in METHODS]
     if unknown:
         raise RuntimeError(f"Unknown BILLING_METHODS: {', '.join(unknown)}. Known: {', '.join(sorted(METHODS))}.")
-    return [METHODS[k] for k in keys]
+    return [METHODS[k] for k in keys if METHODS[k].available()]
 
 
 def method(key: str) -> Method:
