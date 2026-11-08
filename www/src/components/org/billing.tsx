@@ -166,7 +166,10 @@ export function BillingBuy() {
                   <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
                     {o.addon.map((a) => (
                       <OfferCard key={a.id} offer={a} quantity
-                        detail={Object.entries(a.limits).map(([k, v]) => `+${amount(v)} ${b.limits.find((l) => l.key === k)?.noun ?? k}`).join(" · ")} />
+                        detail={Object.entries(a.limits).map(([k, v]) => {
+                          const l = b.limits.find((x) => x.key === k);
+                          return `+${amount(v)} ${l ? (v === 1 ? l.one : l.noun) : k}`;
+                        }).join(" · ")} />
                     ))}
                   </div>
                 </Section>

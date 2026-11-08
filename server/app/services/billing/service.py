@@ -103,7 +103,7 @@ async def standing(db: AsyncSession, tenant_id: str, template_id: Optional[str] 
 
 def _refusal(s: Standing, key: str, allowed: int, would_be: int) -> str:
     whose = "This organization's limit is" if key in s.overridden else f"The {s.plan.name} plan allows"
-    return f"{whose} {allowed} {LIMITS[key].noun}; this would make {would_be}."
+    return f"{whose} {LIMITS[key].count(allowed)}; this would make {would_be}."
 
 
 async def check_limit(db: AsyncSession, key: str, *, template_id: Optional[str] = None, tenant_id: Optional[str] = None,
