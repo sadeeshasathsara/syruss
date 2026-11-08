@@ -1,0 +1,11 @@
+{{ headline }}
+
+{{ body }}
+
+Invoice: {{ number }}
+Amount due: {{ due }}
+Due by: {{ due_on }}
+
+View and pay: {{ url }}
+
+You get this because it is the billing address of {{ organization }} on Syruss.
