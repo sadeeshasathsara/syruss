@@ -1,0 +1,12 @@
+{#- Staff couldn't accept a payment slip sent for an invoice. Variables: organization, number, amount, reason, url, invoice -#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+{% block preheader %}We couldn't confirm the payment for invoice {{ number }}{% endblock %}
+{% block heading %}We couldn't confirm your payment{% endblock %}
+{% block content %}
+{{ ui.paragraph("We checked the payment of " ~ amount ~ " sent for invoice " ~ number ~ " and couldn't match it to money received. Syruss said:") }}
+{{ ui.quote(reason) }}
+{{ ui.paragraph("The invoice is still waiting for payment. You can send the slip again from the invoice page.") }}
+{{ ui.button("Open the invoice", url) }}
+{% endblock %}
+{% block footer %}You get this because it is the billing address of {{ organization }} on Syruss.{% endblock %}

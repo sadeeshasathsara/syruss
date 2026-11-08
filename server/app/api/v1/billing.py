@@ -5,17 +5,18 @@ invoices are made out to, and the invoices themselves.
 
 Buying issues an invoice at once; what it sells is switched on once it is paid (app/services/billing/invoices.py).
 """
-from typing import Any, Dict, Optional
-from fastapi import APIRouter, Depends, HTTPException, Response
+from datetime import date
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import AuthContext, require_org_permission
 from app.core.database import get_db_session
 from app.models.audit import AuditLog
-from app.models.billing import BillingPayment, BillingProfile, CatalogItem, Invoice, OrgSubscriptionAddon
+from app.models.billing import BillingPayment, BillingProfile, CatalogItem, Invoice, OrgSubscriptionAddon, PaymentFile, PaymentSubmission
 from app.models.workspace import Workspace
-from app.services.billing import catalog, credits, invoices, notices, parties, service as billing
+from app.services.billing import catalog, credits, invoices, notices, parties, payments, proofs, service as billing
 from app.services.billing.limits import LIMITS
 from app.services.billing.methods import enabled
 
@@ -146,6 +147,9 @@ async def get_invoice(invoice_id: str, auth: AuthContext = BILLING, db: AsyncSes
     out = invoices.describe(invoice, await invoices.lines_of(db, invoice.id), await invoices.payments_of(db, invoice.id))
     out["how_to_pay"] = [{**m.describe(), "instructions": m.instructions(invoice)} for m in enabled()
                          if m.customer_can_use] if invoice.status in invoices.PAYABLE else []
+    sent = (await db.execute(select(PaymentSubmission).where(PaymentSubmission.invoice_id == invoice.id)
+                             .order_by(PaymentSubmission.created_at.desc()))).scalars().all()
+    out["submissions"] = [payments.describe(s, await proofs.files_of(db, submission_id=s.id)) for s in sent]
     return out
 
 
@@ -166,6 +170,72 @@ async def invoice_pdf(invoice_id: str, auth: AuthContext = BILLING, db: AsyncSes
 @router.get("/invoices/{invoice_id}/receipt")
 async def invoice_receipt(invoice_id: str, auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
     return await _pdf(await _invoice(db, auth, invoice_id), "receipt")
+
+
+# ---- Paying: proof of a payment made outside the app (a bank transfer) --------------------------
+
+@router.post("/invoices/{invoice_id}/payments", status_code=201)
+async def send_payment(
+    invoice_id: str,
+    method: str = Form(..., description="A way of paying that takes proof (bank_transfer)"),
+    amount_cents: int = Form(..., gt=0),
+    paid_on: date = Form(...),
+    reference: Optional[str] = Form(None, max_length=200, description="The reference on the bank transfer"),
+    note: Optional[str] = Form(None, max_length=2000),
+    files: List[UploadFile] = File(..., description="The bank slip or transfer confirmation: PDF, JPEG, PNG or WebP"),
+    auth: AuthContext = BILLING,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Sends proof of a payment for an invoice. It counts once Syruss has checked it against the account."""
+    invoice = await _invoice(db, auth, invoice_id)
+    uploads = [payments.Upload(f.filename, await f.read(proofs.MAX_BYTES + 1)) for f in files[:proofs.MAX_FILES + 1]]
+    try:
+        sent = await payments.submit(db, invoice, method=method, amount_cents=amount_cents, paid_on=paid_on, reference=reference, note=note,
+                                     files=uploads, by_id=auth.user_id, by_name=auth.username or auth.user_id)
+    except payments.Conflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    db.add(AuditLog(tenant_id=auth.tenant_id, template_id=None, event_type="BILLING_PAYMENT_SENT", entity_type="Organization",
+                    entity_id=auth.tenant_id, actor=auth.user_id, details={"invoice": invoice.number, "amount_cents": amount_cents,
+                                                                            "currency": invoice.currency}))
+    await db.commit()
+    await notices.payment_submitted(sent.id)
+    return payments.describe(sent, await proofs.files_of(db, submission_id=sent.id))
+
+
+async def _submission(db: AsyncSession, auth: AuthContext, submission_id: str) -> PaymentSubmission:
+    s = await db.get(PaymentSubmission, submission_id)
+    if s is None or s.tenant_id != auth.tenant_id:
+        raise HTTPException(status_code=404, detail="No such payment.")
+    return s
+
+
+@router.post("/submissions/{submission_id}/withdraw")
+async def withdraw_payment(submission_id: str, auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
+    """Takes back proof of a payment that hasn't been checked yet (to send it again, corrected)."""
+    try:
+        s = await payments.withdraw(db, await _submission(db, auth, submission_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    await db.commit()
+    return payments.describe(s, await proofs.files_of(db, submission_id=s.id))
+
+
+def file_response(f: PaymentFile, data: bytes) -> Response:
+    """A slip shown in the browser: its own type, never sniffed as anything else, and unable to run anything."""
+    return Response(content=data, media_type=f.content_type, headers={
+        "Content-Disposition": f'inline; filename="{f.filename}"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"})
+
+
+@router.get("/submissions/{submission_id}/files/{file_id}")
+async def payment_file(submission_id: str, file_id: str, auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
+    s = await _submission(db, auth, submission_id)
+    f = await db.get(PaymentFile, file_id)
+    if f is None or f.submission_id != s.id:
+        raise HTTPException(status_code=404, detail="No such file.")
+    return file_response(f, await proofs.read(f))
 
 
 # ---- Buying ------------------------------------------------------------------------------------
