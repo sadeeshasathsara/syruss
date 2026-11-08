@@ -14,11 +14,16 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.5.0-dev.1` | 2026-11-08 | [What changed](#admin-050-dev1) |
+| **admin** | `0.5.1-dev.1` | 2026-11-08 | [What changed](#admin-051-dev1) |
 | **agent** | `0.6.0-dev.1` | 2026-11-06 | [What changed](#agent-060-dev1) |
 | **server** | `0.12.0-dev.1` | 2026-11-08 | [What changed](#server-0120-dev1) |
 | **site** | `0.2.3-dev.1` | 2026-11-08 | [What changed](#site-023-dev1) |
 | **www** | `0.8.0-dev.1` | 2026-11-08 | [What changed](#www-080-dev1) |
+
+## [2026-11-08] - Release via dev
+
+### admin (0.5.1-dev.1)
+- A draft invoice shows nothing owed yet ("not issued yet") instead of $0.00, and says when it can't be issued because Syruss's own billing details aren't filled in, with a link to Billing settings.
 
 ## [2026-11-08] - Release via dev
 
