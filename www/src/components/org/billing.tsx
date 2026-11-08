@@ -167,6 +167,7 @@ export function BillingBuy() {
   const b = billing.data;
   const o = offers.data;
   const href = useBillingHref();
+  const blocked = !!b && (!b.invoicing_ready || b.billing_details_missing.length > 0);
   return (
     <div className="flex flex-col">
       <SettingsHeader title="Plans and credits"
@@ -176,6 +177,11 @@ export function BillingBuy() {
           : !o || !b ? <Loading /> : (
             <>
               <Waiting b={b} />
+              {!b.invoicing_ready && (
+                <p className="mt-6 rounded-card bg-raised px-4 py-3 text-body text-ink">
+                  Syruss can&apos;t take orders here yet: its own billing details aren&apos;t filled in. Ask Syruss to finish setting up billing.
+                </p>
+              )}
               {b.billing_details_missing.length > 0 && (
                 <p className="mt-6 rounded-card bg-raised px-4 py-3 text-body text-ink">
                   Invoices are made out to the organization: <Link href={href.details} className="font-medium underline">add its billing details</Link> before buying.
@@ -183,13 +189,13 @@ export function BillingBuy() {
               )}
               <Section title="Prepaid pages" description="Read beyond the plan's pages. They're kept until used.">
                 {o.credits.length === 0 ? <p className="text-body text-muted">No credit packs are on offer yet. Ask Syruss if you need more pages.</p> : (
-                  <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">{o.credits.map((c) => <OfferCard key={c.id} offer={c} detail={`${(c.pages ?? 0).toLocaleString()} pages`} quantity />)}</div>
+                  <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">{o.credits.map((c) => <OfferCard key={c.id} offer={c} blocked={blocked} detail={`${(c.pages ?? 0).toLocaleString()} pages`} quantity />)}</div>
                 )}
               </Section>
               <Section title="Plans" description="Limits are for the whole organization (pages) or for each workspace.">
                 <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
                   {o.plan.map((p) => (
-                    <OfferCard key={p.id} offer={p} current={p.key === b.plan.key}
+                    <OfferCard key={p.id} offer={p} blocked={blocked} current={p.key === b.plan.key}
                       detail={`${amount(p.limits.pages_per_month)} pages a period · ${amount(p.limits.members_per_workspace)} members a workspace`} />
                   ))}
                 </div>
@@ -198,7 +204,7 @@ export function BillingBuy() {
                 <Section title="Add-ons" description="On top of the plan, each month. Several stack.">
                   <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
                     {o.addon.map((a) => (
-                      <OfferCard key={a.id} offer={a} quantity
+                      <OfferCard key={a.id} offer={a} blocked={blocked} quantity
                         detail={Object.entries(a.limits).map(([k, v]) => {
                           const l = b.limits.find((x) => x.key === k);
                           return `+${amount(v)} ${l ? (v === 1 ? l.one : l.noun) : k}`;
@@ -214,7 +220,8 @@ export function BillingBuy() {
   );
 }
 
-function OfferCard({ offer, detail, current, quantity }: { offer: Offer; detail: string; current?: boolean; quantity?: boolean }) {
+/** blocked: an invoice can't be issued yet (billing details missing on either side), so nothing is offered to click. */
+function OfferCard({ offer, detail, current, quantity, blocked }: { offer: Offer; detail: string; current?: boolean; quantity?: boolean; blocked?: boolean }) {
   const queryClient = useQueryClient();
   const router = useRouter();
   const href = useBillingHref();
@@ -239,14 +246,14 @@ function OfferCard({ offer, detail, current, quantity }: { offer: Offer; detail:
         <p className="mt-1 text-meta text-muted">{detail}</p>
         {offer.description && <p className="mt-1 text-meta text-muted">{offer.description}</p>}
       </div>
-      {buy.isSuccess && !asking ? <p className="text-body text-positive">{buy.data.message}</p> : current ? null : !asking ? (
+      {buy.isSuccess && !asking ? <p className="text-body text-positive">{buy.data.message}</p> : current || blocked ? null : !asking ? (
         <div><Button variant="secondary" onClick={() => setAsking(true)}>{offer.kind === "plan" ? "Switch to this plan" : "Buy"}</Button></div>
       ) : (
         <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); buy.mutate(); }}>
           {quantity && <Field label="How many">{(id) => <Input id={id} type="number" min={1} max={1000} value={count} onChange={(e) => setCount(Math.max(1, Number(e.target.value)))} />}</Field>}
           <Field label="Note printed on the invoice (optional)">{(id) => <Input id={id} value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} placeholder="Purchase order number" />}</Field>
           {buy.error && <p className="text-body text-negative">{buy.error.message}{needsDetails && <> <Link href={href.details} className="underline">Add them</Link>.</>}</p>}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button type="submit" variant="primary" disabled={buy.isPending}>{buy.isPending ? "Issuing the invoice…" : `Get the invoice (${money(offer.price_cents * count, offer.currency)} before tax)`}</Button>
             <Button variant="secondary" onClick={() => setAsking(false)}>Cancel</Button>
           </div>

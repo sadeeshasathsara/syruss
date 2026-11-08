@@ -55,6 +55,8 @@ export interface OrgBilling {
   invoices_waiting: Invoice[];
   /** What the billing details still need before an invoice can be issued (empty: complete). */
   billing_details_missing: string[];
+  /** Syruss's own billing details are in, so invoices can be issued at all. */
+  invoicing_ready: boolean;
   methods: PayMethod[];
   /** A card kept to pay renewals by itself. */
   card: { kept: boolean; label: string | null; can_manage: boolean };
