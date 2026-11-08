@@ -14,11 +14,36 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.3.0-dev.1` | 2026-11-06 | [What changed](#admin-030-dev1) |
+| **admin** | `0.4.0-dev.1` | 2026-11-08 | [What changed](#admin-040-dev1) |
 | **agent** | `0.6.0-dev.1` | 2026-11-06 | [What changed](#agent-060-dev1) |
-| **server** | `0.9.0-dev.1` | 2026-11-07 | [What changed](#server-090-dev1) |
+| **server** | `0.10.0-dev.1` | 2026-11-08 | [What changed](#server-0100-dev1) |
 | **site** | `0.2.2-dev.1` | 2026-11-05 | [What changed](#site-022-dev1) |
-| **www** | `0.6.3-dev.1` | 2026-11-07 | [What changed](#www-063-dev1) |
+| **www** | `0.7.0-dev.1` | 2026-11-08 | [What changed](#www-070-dev1) |
+
+## [2026-11-08] - Release via dev
+
+### admin (0.4.0-dev.1)
+- A Billing page for platform staff: every organization's plan, pages this period, credits and open requests, and who to follow up with (trials ending, plans not paid this period).
+- Plans and packs: create plans, add-ons and credit packs as drafts with the platform's own limits, put them on sale, make new versions, take them off sale, and move organizations from one plan version to another.
+- One organization's billing: where each limit comes from (plan, add-ons, custom), pages by workspace, credit history and payments, and the changes staff make (record a payment, change the plan, add-ons, credits, a custom limit, a trial), each with a reason.
+- Requests: complete what customers asked for (recording the payment with it) or decline it. The audit log has a Billing filter.
+
+### server (0.10.0-dev.1)
+- Prepaid credits: once the plan's pages for the period are used, documents are read on credits (pages bought in packs), kept in a ledger that only grows. With neither left, new documents are refused with what to do.
+- The catalog now sells credit packs as well as plans and add-ons. Platform staff create drafts, publish them (a published version never changes), make new versions, archive them and move organizations between plan versions.
+- Staff change an organization's plan (now or from its next period), add-ons, custom limits (for the organization or one workspace), trial and credits, and record the payments they receive, which switch on what was paid for. Every change needs a reason and a fresh sign-in, and shows in the organization's activity.
+- Owners see their plan, pages used by each workspace, credits and history at /billing, and ask for a plan, add-on or credits on offer; until a payment provider is connected, the request goes to Syruss staff. Payment providers are adapters (BILLING_PROVIDER, manual by default).
+- The people who manage an organization's billing get an email and an in-app notice at 80% and 100% of the plan's pages, and when credits run low or out, once a period each.
+- A Billing page for platform staff: every organization's plan, pages this period, credits and open requests, and who to follow up with (trials ending, plans not paid this period).
+- Plans and packs: create plans, add-ons and credit packs as drafts with the platform's own limits, put them on sale, make new versions, take them off sale, and move organizations from one plan version to another.
+- One organization's billing: where each limit comes from (plan, add-ons, custom), pages by workspace, credit history and payments, and the changes staff make (record a payment, change the plan, add-ons, credits, a custom limit, a trial), each with a reason.
+- Requests: complete what customers asked for (recording the payment with it) or decline it. The audit log has a Billing filter.
+- Billing in organization settings, for its owners: the plan and period, pages read against the allowance its workspaces share (and by which workspace), prepaid credits, what the plan allows with its add-ons, plans and credit packs on offer to ask for, and the history of payments, requests and credits.
+- A workspace's Plan and usage page shows the organization's plan, this workspace's share of its pages and the workspace's own limits; the workspace home and the organization dashboard count pages this period.
+
+### www (0.7.0-dev.1)
+- Billing in organization settings, for its owners: the plan and period, pages read against the allowance its workspaces share (and by which workspace), prepaid credits, what the plan allows with its add-ons, plans and credit packs on offer to ask for, and the history of payments, requests and credits.
+- A workspace's Plan and usage page shows the organization's plan, this workspace's share of its pages and the workspace's own limits; the workspace home and the organization dashboard count pages this period.
 
 ## [2026-11-07] - Release via dev
 
