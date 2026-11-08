@@ -10,6 +10,69 @@
 
 > Generated file. Do not edit.
 
+## Current versions
+
+| Service | Version | Released | Notes |
+| :--- | :--- | :--- | :--- |
+| **admin** | `0.4.1-dev.1` | 2026-11-08 | [What changed](#admin-041-dev1) |
+| **agent** | `0.6.0-dev.1` | 2026-11-06 | [What changed](#agent-060-dev1) |
+| **server** | `0.10.0-dev.1` | 2026-11-08 | [What changed](#server-0100-dev1) |
+| **site** | `0.2.3-dev.1` | 2026-11-08 | [What changed](#site-023-dev1) |
+| **www** | `0.7.1-dev.1` | 2026-11-08 | [What changed](#www-071-dev1) |
+
+## [2026-11-08] - Release via dev
+
+### admin (0.4.1-dev.1)
+- When the server can't be reached, signing in and the account pages (continue, onboarding, invitations, confirming a browser) say "Syruss can't be reached right now" with a way to try again, instead of showing the web framework's error. Forms on those pages show the same sentence.
+- When the sign-in service is down, signing in comes back to the front page with that message, signing out still ends the session, and a short outage no longer signs anyone out of the apps.
+- Every app has an error page of its own: a page that fails to load says so plainly and offers Try again.
+- When the browser gets no answer at all (offline), the apps say "Can't reach Syruss. Check your connection and try again."
+
+### site (0.2.3-dev.1)
+- When the server can't be reached, signing in and the account pages (continue, onboarding, invitations, confirming a browser) say "Syruss can't be reached right now" with a way to try again, instead of showing the web framework's error. Forms on those pages show the same sentence.
+- When the sign-in service is down, signing in comes back to the front page with that message, signing out still ends the session, and a short outage no longer signs anyone out of the apps.
+- Every app has an error page of its own: a page that fails to load says so plainly and offers Try again.
+- When the browser gets no answer at all (offline), the apps say "Can't reach Syruss. Check your connection and try again."
+
+### www (0.7.1-dev.1)
+- When the server can't be reached, signing in and the account pages (continue, onboarding, invitations, confirming a browser) say "Syruss can't be reached right now" with a way to try again, instead of showing the web framework's error. Forms on those pages show the same sentence.
+- When the sign-in service is down, signing in comes back to the front page with that message, signing out still ends the session, and a short outage no longer signs anyone out of the apps.
+- Every app has an error page of its own: a page that fails to load says so plainly and offers Try again.
+- When the browser gets no answer at all (offline), the apps say "Can't reach Syruss. Check your connection and try again."
+
+## [2026-11-08] - Release via dev
+
+### admin (0.4.0-dev.1)
+- A Billing page for platform staff: every organization's plan, pages this period, credits and open requests, and who to follow up with (trials ending, plans not paid this period).
+- Plans and packs: create plans, add-ons and credit packs as drafts with the platform's own limits, put them on sale, make new versions, take them off sale, and move organizations from one plan version to another.
+- One organization's billing: where each limit comes from (plan, add-ons, custom), pages by workspace, credit history and payments, and the changes staff make (record a payment, change the plan, add-ons, credits, a custom limit, a trial), each with a reason.
+- Requests: complete what customers asked for (recording the payment with it) or decline it. The audit log has a Billing filter.
+
+### server (0.10.0-dev.1)
+- Prepaid credits: once the plan's pages for the period are used, documents are read on credits (pages bought in packs), kept in a ledger that only grows. With neither left, new documents are refused with what to do.
+- The catalog now sells credit packs as well as plans and add-ons. Platform staff create drafts, publish them (a published version never changes), make new versions, archive them and move organizations between plan versions.
+- Staff change an organization's plan (now or from its next period), add-ons, custom limits (for the organization or one workspace), trial and credits, and record the payments they receive, which switch on what was paid for. Every change needs a reason and a fresh sign-in, and shows in the organization's activity.
+- Owners see their plan, pages used by each workspace, credits and history at /billing, and ask for a plan, add-on or credits on offer; until a payment provider is connected, the request goes to Syruss staff. Payment providers are adapters (BILLING_PROVIDER, manual by default).
+- The people who manage an organization's billing get an email and an in-app notice at 80% and 100% of the plan's pages, and when credits run low or out, once a period each.
+- A Billing page for platform staff: every organization's plan, pages this period, credits and open requests, and who to follow up with (trials ending, plans not paid this period).
+- Plans and packs: create plans, add-ons and credit packs as drafts with the platform's own limits, put them on sale, make new versions, take them off sale, and move organizations from one plan version to another.
+- One organization's billing: where each limit comes from (plan, add-ons, custom), pages by workspace, credit history and payments, and the changes staff make (record a payment, change the plan, add-ons, credits, a custom limit, a trial), each with a reason.
+- Requests: complete what customers asked for (recording the payment with it) or decline it. The audit log has a Billing filter.
+- Billing in organization settings, for its owners: the plan and period, pages read against the allowance its workspaces share (and by which workspace), prepaid credits, what the plan allows with its add-ons, plans and credit packs on offer to ask for, and the history of payments, requests and credits.
+- A workspace's Plan and usage page shows the organization's plan, this workspace's share of its pages and the workspace's own limits; the workspace home and the organization dashboard count pages this period.
+
+### www (0.7.0-dev.1)
+- Billing in organization settings, for its owners: the plan and period, pages read against the allowance its workspaces share (and by which workspace), prepaid credits, what the plan allows with its add-ons, plans and credit packs on offer to ask for, and the history of payments, requests and credits.
+- A workspace's Plan and usage page shows the organization's plan, this workspace's share of its pages and the workspace's own limits; the workspace home and the organization dashboard count pages this period.
+
+## [2026-11-07] - Release via dev
+
+### server (0.9.0-dev.1)
+- Plans belong to the organization: one subscription per organization, and its workspaces share the plan's monthly page allowance. Workspace limits (members, API keys, webhooks, channels, destinations) still apply to each workspace.
+- Every document accepted for reading is charged its pages (a multi-page TIFF counts each page); test-key documents, samples and repeats cost nothing. When the period's pages are used, new documents are refused with when they renew.
+- The plans are now a versioned catalog in the database (plans and add-ons), and every limit a plan can set is registered in code, so only limits the platform enforces can be sold. Overrides set a limit by hand for an organization or one workspace.
+- Existing organizations move onto the highest plan any of their workspaces had, and keep any extra monthly capacity their workspaces had together.
+
 ## [2026-11-07] - Release via dev
 
 ### server (0.8.3-dev.1)
