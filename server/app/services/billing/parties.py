@@ -72,10 +72,10 @@ async def rates(db: AsyncSession) -> List[Rate]:
 
 
 async def ready(db: AsyncSession, tenant_id: str) -> None:
-    """Refuses (NotReady) when either side's billing details are incomplete."""
-    missing = seller_missing(await seller(db))
-    if missing:
-        raise NotReady("seller", missing, "Syruss isn't ready to invoice yet: its billing details aren't filled in. Please try again later.")
+    """Refuses (NotReady) when either side's billing details are incomplete: the organization's first (they can fix it)."""
     missing = profile_missing(await profile(db, tenant_id))
     if missing:
         raise NotReady("buyer", missing, f"Add the organization's billing details first ({', '.join(missing)}): invoices are made out to them.")
+    missing = seller_missing(await seller(db))
+    if missing:
+        raise NotReady("seller", missing, "Syruss can't take orders yet: its own billing details aren't filled in. Please try again later.")
