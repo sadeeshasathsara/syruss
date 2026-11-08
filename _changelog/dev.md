@@ -14,11 +14,45 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.4.2-dev.1` | 2026-11-08 | [What changed](#admin-042-dev1) |
+| **admin** | `0.5.0-dev.1` | 2026-11-08 | [What changed](#admin-050-dev1) |
 | **agent** | `0.6.0-dev.1` | 2026-11-06 | [What changed](#agent-060-dev1) |
-| **server** | `0.11.0-dev.1` | 2026-11-08 | [What changed](#server-0110-dev1) |
+| **server** | `0.12.0-dev.1` | 2026-11-08 | [What changed](#server-0120-dev1) |
 | **site** | `0.2.3-dev.1` | 2026-11-08 | [What changed](#site-023-dev1) |
-| **www** | `0.7.2-dev.1` | 2026-11-08 | [What changed](#www-072-dev1) |
+| **www** | `0.8.0-dev.1` | 2026-11-08 | [What changed](#www-080-dev1) |
+
+## [2026-11-08] - Release via dev
+
+### admin (0.5.0-dev.1)
+- Billing has new tabs: Invoices, Payments to check and Settings; the Requests tab is gone (purchases are invoices now).
+- Payments to check: each slip a customer sent, shown beside what its invoice asks for, with warnings (an amount that isn't what is due, a slip or bank reference sent before). Approve it for what actually arrived (more than is due asks to confirm) or reject it with a reason the customer sees. A count shows on the tab.
+- Invoices: filter by state (waiting, overdue, paid, drafts, not paid, void), find by number, download CSVs for the accountants, and make an invoice for a custom deal from catalog items or written lines, as a draft or issued at once.
+- Each invoice has its own page: lines and tax, both parties, payments with their files, slips sent, credit notes, the PDF and receipt, and the changes staff make: issue or throw away a draft, record a payment, switch it on before it's paid, void it, issue a credit note (optionally refunding), attach the receipt issued for a cash payment.
+- Settings: Syruss's billing details (shown as not ready until complete), numbering prefix, payment terms, renewal timetable, the bank accounts customers pay into and tax rates by country.
+- An organization's page shows its billing details, its invoices and whether a renewal is past due; "Record a payment" became "New invoice".
+- Files customers uploaded keep the API's protective headers through the admin app (never read as anything else, unable to run anything).
+
+### server (0.12.0-dev.1)
+- Paid plans renew with an invoice: a week (renewal_lead_days) before the period ends, an invoice for the next period (the plan, or the plan it is moving to, and its add-ons) is issued, due when that period starts. One a period per organization; one that can't be issued because billing details are missing stays a draft for staff. A card the organization kept pays it straight away; if it is declined, the customer is told and pays by hand.
+- Reminders before and after an open invoice's due date (reminder_days: 3 days before, on the day, 3 days after), once each, by email and in the app.
+- A renewal not paid by its due date makes the subscription past due; after the grace period (grace_days) the organization moves to the Free plan (its data stays) and the invoice becomes uncollectible. Paying it late puts the plan and add-ons back.
+- Moving up from one paid plan to a dearer one mid-period charges the new plan for the rest of the period, less the unused part of the current one; moving down is scheduled for the period's end and not invoiced.
+- Credit notes correct an issued invoice by an amount, with their own gapless numbers (SYR-CN-2026-00001), a PDF and an email; they can refund the amount from a payment (through Stripe for a card payment, otherwise recorded as done by staff), and one that covers what is left settles an open invoice. Refunds made in Stripe's dashboard are recorded too. Credit notes and refunds can't be changed or removed.
+- A CSV export of invoices, payments or credit notes between two days, for the accountants.
+- Paying by bank transfer: the customer sends proof for an invoice (the bank slip or transfer confirmation, up to 5 files) with the amount, the day it was paid and the bank reference. Files must really be a PDF or a photo (JPEG, PNG, WebP; the content is checked, not the name), up to 10 MB, and are kept privately as financial records that can't be changed or removed.
+- Syruss's billing address is emailed when a slip arrives. Staff see the payments waiting to be checked, oldest first, with each slip shown safely in the browser and warnings when the amount isn't what is due or the same file or bank reference was sent before.
+- Approving records the payment for what actually arrived (less than was said leaves the invoice open with the balance due; more needs confirming) and the invoice is paid and switched on once covered. Rejecting tells the customer why, by email and in the app; they can send it again. A slip not yet checked can be withdrawn.
+- Staff can attach the receipt they issued (or a scan of the cheque) to a payment they recorded.
+- New setting PUBLIC_ADMIN_URL: where links in emails to Syruss's staff open.
+- Paying by card through Stripe: a new "card" payment method (BILLING_METHODS=...,card), offered only once STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are set. The customer pays an invoice on Stripe's own Checkout page (card details never reach Syruss); an open page is reused rather than a second one made.
+- Stripe's signed events (POST /api/v1/billing/webhooks/stripe) record the payment and pay the invoice. Unsigned or wrongly signed events are refused, each event is handled once, and a payment Stripe reports two ways is counted once.
+- A customer can keep the card while paying, so invoices can be charged to it later without them; Stripe's billing portal changes or removes it, and the customer can stop using it at any time. The organization's activity shows invoices paid by card.
+
+### www (0.8.0-dev.1)
+- Billing has two new pages: Invoices and Billing details.
+- Invoices: every invoice issued to the organization, with its state (waiting, overdue, paid). Each invoice shows its lines, tax and amounts, downloads as a PDF (and its receipt once paid), and says how to pay what is still owed: Syruss's bank account with the invoice number as the reference and a form to send the slip (PDF or photo, the amount, the day and the bank reference), or by card on Stripe's page, optionally keeping the card for renewals. Slips sent show whether they are being checked, confirmed or not (with Syruss's reason), and one being checked can be withdrawn. Credit notes and payments received are listed with it.
+- Billing details: the legal name, billing email, address, country, tax ID and purchase order number invoices are made out to, and the card kept for renewals (change it on Stripe, or stop using it).
+- Buying a plan, an add-on or credits now issues an invoice and opens it; without billing details, it says so and links to them. Plan and usage warns when an invoice is waiting or overdue, or a renewal is past due, with a link to pay it. History links each payment to its invoice and says how it was paid.
+- Files customers uploaded keep the API's protective headers through the app.
 
 ## [2026-11-08] - Release via dev
 
