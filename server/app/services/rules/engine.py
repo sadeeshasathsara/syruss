@@ -66,13 +66,14 @@ def schema_rules(schema: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # Value parsing
 # ---------------------------------------------------------------------------
 
-_TIME_RE = re.compile(r"^\s*(\d{1,2})[:.]?(\d{2})\s*([ap]\.?m\.?)?\s*$", re.IGNORECASE)
+_TIME_RE = re.compile(r"^(\d{1,2})[:.]?(\d{2}) ?([ap]\.?m\.?)?$", re.IGNORECASE)
 
 
 def parse_time_minutes(value: Any) -> Optional[int]:
     if value is None:
         return None
-    m = _TIME_RE.match(str(value))
+    text = " ".join(str(value).split())  # spaces collapsed: the pattern never backtracks over a run of them
+    m = _TIME_RE.match(text) if len(text) <= 16 else None
     if not m:
         return None
     hours, minutes = int(m.group(1)), int(m.group(2))

@@ -10,11 +10,14 @@ import csv
 import io
 import ipaddress
 import json
+import logging
 import socket
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 import httpx
 from app.core.config import settings
+
+logger = logging.getLogger("core.sources")
 
 # Tests replace this with an httpx.MockTransport.
 HTTP_TRANSPORT: Optional[httpx.AsyncBaseTransport] = None
@@ -160,7 +163,8 @@ async def _request(client: httpx.AsyncClient, method: str, url: str, **kwargs: A
     except httpx.TimeoutException as exc:
         raise SourceError("The API did not answer in time.") from exc
     except httpx.HTTPError as exc:
-        raise SourceError(f"The API could not be reached: {exc}.") from exc
+        logger.info("Calling %s failed: %r", urlsplit(url).hostname, exc)
+        raise SourceError("The API could not be reached: the connection failed or was cut off.") from exc
 
 
 async def fetch_api(config: Dict[str, Any], secrets: Dict[str, Any]) -> Any:
