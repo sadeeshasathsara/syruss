@@ -1,16 +1,18 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { Label, MoneyInput, StaffForm } from "@/components/billing/StaffForm";
+import { InvoiceEditor, InvoiceTable } from "@/components/billing/Invoices";
+import { Label, StaffForm } from "@/components/billing/StaffForm";
 import { Fact, ReasonAction, field } from "@/components/ops/Bits";
 import { useStaff } from "@/components/shell/AdminFrame";
 import { Bar, ErrorNote, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
-import { amount, money, price } from "@/lib/billing";
+import { METHOD_LABEL, amount, money, price } from "@/lib/billing";
 import { cn, dateTime } from "@/lib/format";
 import type { CatalogItem, LimitInfo, OrgBilling } from "@/lib/types";
 
@@ -45,7 +47,8 @@ function Body({ d, limits, catalog }: { d: OrgBilling; limits: LimitInfo[]; cata
           <Fact label="Plan">{sub.plan.name} <span className="text-muted">v{sub.plan.version} · {price(sub.plan)}</span></Fact>
           <Fact label="Standing">
             {sub.status === "trialing" ? <Pill tone="warning">Trial until {day(sub.trial_ends_at)}</Pill>
-              : unpaid ? <Pill tone="negative">Not paid this period</Pill> : <Pill tone="positive">{sub.status === "active" ? "Active" : "Canceled"}</Pill>}
+              : sub.status === "past_due" ? <Pill tone="negative">Renewal past due</Pill>
+                : unpaid ? <Pill tone="negative">Not paid this period</Pill> : <Pill tone="positive">{sub.status === "active" ? "Active" : "Canceled"}</Pill>}
           </Fact>
           <Fact label="Paid until">{day(sub.paid_until)}</Fact>
           <Fact label="From the next period">{sub.pending_plan ? `${sub.pending_plan.name} plan` : "No change"}</Fact>
@@ -83,6 +86,9 @@ function Body({ d, limits, catalog }: { d: OrgBilling; limits: LimitInfo[]; cata
               </ul>
             )}
           </Panel>
+          <Panel title="Invoices" bodyClassName="p-0 pt-2">
+            {d.invoices.length === 0 ? <p className="px-4 pb-4 text-body text-muted">None yet.</p> : <InvoiceTable rows={d.invoices} />}
+          </Panel>
           <Panel title="Payments recorded">
             {d.payments.length === 0 ? <p className="text-body text-muted">No payment recorded yet.</p> : (
               <ul className="flex flex-col divide-y divide-rule">
@@ -90,7 +96,9 @@ function Body({ d, limits, catalog }: { d: OrgBilling; limits: LimitInfo[]; cata
                   <li key={p.id} className="flex flex-wrap items-center gap-2 py-2 text-body">
                     <span className="num font-medium text-ink">{money(p.amount_cents, p.currency)}</span>
                     <span className="min-w-0 flex-1 truncate text-muted">
-                      {catalog.find((i) => i.id === p.item_id)?.name ?? "No item"}{p.quantity > 1 ? ` × ${p.quantity}` : ""}{p.reference ? ` · ${p.reference}` : ""}
+                      {p.invoice_id ? <Link href={`/billing/invoices/${p.invoice_id}`} className="hover:underline">{p.invoice}</Link>
+                        : `${catalog.find((i) => i.id === p.item_id)?.name ?? "No item"}${(p.quantity ?? 1) > 1 ? ` × ${p.quantity}` : ""}`}
+                      {` · ${METHOD_LABEL[p.method] ?? p.method}`}{p.reference ? ` · ${p.reference}` : ""}
                     </span>
                     <span className="text-meta text-muted">{p.recorded_by_name} · {dateTime(p.created_at)}</span>
                   </li>
@@ -143,10 +151,10 @@ function LimitTable({ d, limits }: { d: OrgBilling; limits: LimitInfo[] }) {
   );
 }
 
-type Change = "plan" | "addon" | "override" | "trial" | "credits" | "payment";
+type Change = "plan" | "addon" | "override" | "trial" | "credits" | "invoice";
 
 const CHANGES: { key: Change; label: string }[] = [
-  { key: "payment", label: "Record a payment" },
+  { key: "invoice", label: "New invoice" },
   { key: "plan", label: "Change the plan" },
   { key: "addon", label: "Add-ons" },
   { key: "credits", label: "Give or correct credits" },
@@ -173,7 +181,7 @@ function Changes({ d, limits, catalog }: { d: OrgBilling; limits: LimitInfo[]; c
             {open === "credits" && <CreditsForm id={id} onDone={() => setOpen(null)} />}
             {open === "override" && <OverrideForm d={d} limits={limits} onDone={() => setOpen(null)} />}
             {open === "trial" && <TrialForm id={id} plans={plans.filter((p) => p.price_cents > 0)} onDone={() => setOpen(null)} />}
-            {open === "payment" && <PaymentForm id={id} items={onSale} plan={d.subscription.plan} onDone={() => setOpen(null)} />}
+            {open === "invoice" && <InvoiceEditor tenantId={id} onDone={() => setOpen(null)} />}
           </div>
         )}
       </Panel>
@@ -192,17 +200,14 @@ function Changes({ d, limits, catalog }: { d: OrgBilling; limits: LimitInfo[]; c
           </ul>
         )}
       </Panel>
-      <Panel title="Requests from the organization">
-        {d.requests.length === 0 ? <p className="text-body text-muted">They haven&apos;t asked for anything.</p> : (
-          <ul className="flex flex-col divide-y divide-rule">
-            {d.requests.map((r) => (
-              <li key={r.id} className="flex items-center gap-2 py-2 text-body">
-                <span className="min-w-0 flex-1 truncate text-ink">{r.quantity > 1 ? `${r.quantity} × ` : ""}{r.item?.name}</span>
-                <Pill tone={r.status === "open" ? "warning" : r.status === "done" ? "positive" : "neutral"}>{{ open: "Waiting", done: "Completed", declined: "Declined" }[r.status]}</Pill>
-                <span className="text-meta text-muted">{day(r.created_at)}</span>
-              </li>
-            ))}
-          </ul>
+      <Panel title="Billing details" aside={d.billing_details_missing.length ? <Pill tone="negative">Incomplete</Pill> : undefined}>
+        {!d.billing_details ? <p className="text-body text-muted">Not given yet: invoices can&apos;t be issued to this organization until its owners add them.</p> : (
+          <div className="flex flex-col gap-0.5 text-body">
+            <span className="font-medium text-ink">{d.billing_details.legal_name}</span>
+            <span className="text-ink">{[d.billing_details.address_line1, d.billing_details.address_line2, d.billing_details.city, d.billing_details.country].filter(Boolean).join(", ")}</span>
+            <span className="text-muted">{d.billing_details.email}{d.billing_details.tax_id ? ` · Tax ID ${d.billing_details.tax_id}` : ""}{d.billing_details.po_number ? ` · PO ${d.billing_details.po_number}` : ""}</span>
+            {d.billing_details_missing.length > 0 && <span className="text-negative">Missing: {d.billing_details_missing.join(", ")}</span>}
+          </div>
         )}
       </Panel>
     </div>
@@ -313,36 +318,3 @@ function TrialForm({ id, plans, onDone }: { id: string; plans: CatalogItem[]; on
   );
 }
 
-function PaymentForm({ id, items, plan, onDone }: { id: string; items: CatalogItem[]; plan: CatalogItem; onDone: () => void }) {
-  const [item, setItem] = useState<string>(plan.price_cents ? plan.id : "");
-  const chosen = items.find((i) => i.id === item);
-  const [quantity, setQuantity] = useState(1);
-  const [cents, setCents] = useState(chosen?.price_cents ?? 0);
-  const [currency, setCurrency] = useState(chosen?.currency ?? "USD");
-  const [reference, setReference] = useState("");
-  const pick = (next: string) => {
-    setItem(next);
-    const i = items.find((x) => x.id === next);
-    const q = i && i.kind !== "plan" ? quantity : 1; // a plan is paid a period at a time, so it has no quantity to keep
-    setQuantity(q);
-    if (i) { setCents(i.price_cents * q); setCurrency(i.currency); }
-  };
-  return (
-    <StaffForm title="Record a payment received" submit={`Record ${money(cents, currency)}`} busy="Recording…" onDone={onDone}
-      onRun={(reason) => api.billing.change(id, "payments", { amount_cents: cents, currency, item_id: item || null, quantity, reference: reference.trim() || null, reason })}>
-      <Label text="For (switched on when it's recorded)">
-        <select value={item} onChange={(e) => pick(e.target.value)} className={field}>
-          <option value="">Nothing to switch on</option>
-          {items.map((i) => <option key={i.id} value={i.id}>{i.name} ({price(i)})</option>)}
-        </select>
-      </Label>
-      <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-3">
-        {chosen && chosen.kind !== "plan" && (
-          <Label text="Quantity"><input type="number" min={1} value={quantity} onChange={(e) => { const q = Math.max(1, Number(e.target.value)); setQuantity(q); setCents(chosen.price_cents * q); }} className={field} /></Label>
-        )}
-        <Label text={`Amount (${currency})`}><MoneyInput key={`${item}-${quantity}`} cents={cents} onChange={setCents} /></Label>
-        <Label text="Reference"><input value={reference} onChange={(e) => setReference(e.target.value)} className={field} placeholder="Invoice or transfer number" /></Label>
-      </div>
-    </StaffForm>
-  );
-}
