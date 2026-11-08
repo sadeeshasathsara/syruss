@@ -5,6 +5,7 @@ invoices are made out to, and the invoices themselves.
 
 Buying issues an invoice at once; what it sells is switched on once it is paid (app/services/billing/invoices.py).
 """
+import asyncio
 from datetime import date
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile
@@ -14,13 +15,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import AuthContext, require_org_permission
 from app.core.database import get_db_session
 from app.models.audit import AuditLog
-from app.models.billing import BillingPayment, BillingProfile, CatalogItem, Invoice, OrgSubscriptionAddon, PaymentFile, PaymentSubmission
+from app.models.billing import (
+    BillingPayment, BillingProfile, CatalogItem, CreditNote, Invoice, OrgSubscriptionAddon, PaymentFile, PaymentSubmission,
+)
 from app.models.tenant import Tenant
 from app.models.workspace import Workspace
-from app.services.billing import cards, catalog, credits, invoices, notices, parties, payments, proofs, service as billing
+from app.services.billing import cards, catalog, corrections, credits, invoices, notices, parties, payments, proofs, service as billing
 from app.services.billing.limits import LIMITS
 from app.services.billing.methods import METHODS, enabled
 from app.services.billing.methods import card as card_api
+from app.services.storage_service import storage_service
 
 router = APIRouter(prefix="/billing", tags=["Billing"])
 BILLING = Depends(require_org_permission("billing.manage"))
@@ -159,7 +163,19 @@ async def get_invoice(invoice_id: str, auth: AuthContext = BILLING, db: AsyncSes
     sent = (await db.execute(select(PaymentSubmission).where(PaymentSubmission.invoice_id == invoice.id)
                              .order_by(PaymentSubmission.created_at.desc()))).scalars().all()
     out["submissions"] = [payments.describe(s, await proofs.files_of(db, submission_id=s.id)) for s in sent]
+    out["credit_notes"] = [corrections.note_dict(n, await corrections.refunds_of(db, credit_note_id=n.id))
+                           for n in await corrections.notes_of(db, invoice.id)]
     return out
+
+
+@router.get("/credit-notes/{note_id}/pdf")
+async def credit_note_pdf(note_id: str, auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
+    note = await db.get(CreditNote, note_id)
+    if note is None or note.tenant_id != auth.tenant_id or not note.pdf_key:
+        raise HTTPException(status_code=404, detail="No such credit note.")
+    data = await asyncio.to_thread(storage_service.download_file, note.pdf_key)
+    return Response(content=data, media_type="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="Credit note {note.number}.pdf"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 
 async def _pdf(invoice: Invoice, which: str) -> Response:
@@ -232,10 +248,17 @@ async def withdraw_payment(submission_id: str, auth: AuthContext = BILLING, db: 
 
 
 def file_response(f: PaymentFile, data: bytes) -> Response:
-    """A slip shown in the browser: its own type, never sniffed as anything else, and unable to run anything."""
-    return Response(content=data, media_type=f.content_type, headers={
-        "Content-Disposition": f'inline; filename="{f.filename}"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"})
+    """
+    A slip: a photo is shown in the browser, unable to run anything; a PDF is downloaded (browsers can't show one
+    sandboxed, and an uploaded PDF is never opened inside the app). Never sniffed as anything other than its type.
+    """
+    headers = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+    if f.content_type == "application/pdf":
+        headers["Content-Disposition"] = f'attachment; filename="{f.filename}"'
+    else:
+        headers["Content-Disposition"] = f'inline; filename="{f.filename}"'
+        headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"
+    return Response(content=data, media_type=f.content_type, headers=headers)
 
 
 @router.get("/submissions/{submission_id}/files/{file_id}")
