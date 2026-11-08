@@ -11,6 +11,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# What every job's token may do: read the code and the pull request (the paths filter needs it). Nothing more.
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   verify-changeset:
     name: Verify Changelog Fragment
