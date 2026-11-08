@@ -19,6 +19,7 @@ from app.models.document import Document, DocumentStatus
 from app.models.intake import IdempotencyRecord, IntakeChannel, IntakeEvent
 from app.models.template import DocumentTemplate
 from app.services import extraction_log, settings_service
+from app.services.billing import alerts as billing_alerts
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
 from app.services.document_service import document_service
 from app.services.intake.rules import IntakeRejected, SUPPORTED, scan_for_malware
@@ -172,6 +173,8 @@ async def finish(accepted: Accepted, channel: IntakeChannel, sender: Sender) -> 
     doc = accepted.document
     if accepted.duplicate:
         return
+    if not doc.is_test:
+        await billing_alerts.check(doc.tenant_id)
     await extraction_log.record(
         tenant_id=doc.tenant_id, template_id=doc.template_id, stage="received", document_id=doc.id, document_name=doc.original_filename,
         message=f"{doc.original_filename} arrived through {channel.name} ({sender.label}).", actor=sender.label,

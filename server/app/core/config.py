@@ -140,6 +140,9 @@ class Settings(BaseSettings):
     RUN_STEPS_RETENTION_DAYS: int = 90
     # The agent service's Kafka consumer group, whose lag the system admin app shows
     AGENT_CONSUMER_GROUP: str = "workspace-agents"
+    # Who takes payments (app/services/billing/providers). "manual": customers send a request and platform staff record
+    # the payment; a provider such as Paddle or Stripe is one more adapter there.
+    BILLING_PROVIDER: str = "manual"
 
     # Connections: how other systems send documents in and receive approved data out.
     PUBLIC_API_URL: str = "http://localhost:8000"          # what senders are told to call (shown in the Connections pages)
