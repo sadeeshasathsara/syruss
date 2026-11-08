@@ -47,15 +47,21 @@ export const setActiveOrg = (slug: string | undefined) => {
 // Work started from a page is not tied to the chat that happens to be open: a chat holds only what was asked in it.
 async function request<T>(path: string, init: RequestInit & { workspaceId?: string } = {}): Promise<T> {
   const { workspaceId, headers, ...rest } = init;
-  const res = await fetch(`${API}${path}`, {
-    ...rest,
-    headers: {
-      ...(rest.body && !(rest.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
-      ...(activeOrg ? { "X-Org-Slug": activeOrg } : {}),
-      ...(workspaceId ? { "X-Template-ID": workspaceId } : {}),
-      ...headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API}${path}`, {
+      ...rest,
+      headers: {
+        ...(rest.body && !(rest.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
+        ...(activeOrg ? { "X-Org-Slug": activeOrg } : {}),
+        ...(workspaceId ? { "X-Template-ID": workspaceId } : {}),
+        ...headers,
+      },
+    });
+  } catch {
+    // No answer at all: this browser is offline, or the app's own server is down.
+    throw new ApiError(0, "Can't reach Syruss. Check your connection and try again.");
+  }
   if (res.status === 401 && typeof window !== "undefined") {
     // Signed out (or the session ended): sign in again and come back to this page.
     const here = window.location.pathname + window.location.search;
