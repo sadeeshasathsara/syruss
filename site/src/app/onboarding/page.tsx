@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AccountShell } from "@/components/AccountShell";
-import { api, appLogin, requireSession, type Context } from "@/lib/api";
+import { Unavailable } from "@/components/Unavailable";
+import { api, appLogin, requireSession, unreachable, type Context } from "@/lib/api";
 import { emailStatus } from "./actions";
 import { OrganizationForm, ProfileForm, VerifyEmailForm } from "./forms";
 
@@ -26,7 +27,13 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
   const { invite } = await searchParams;
   const here = invite ? `/onboarding?invite=${invite}` : "/onboarding";
   const session = await requireSession(here);
-  const ctx = await api<Context>(session, "/me/context", { returnTo: here });
+  let ctx: Context;
+  try {
+    ctx = await api<Context>(session, "/me/context", { returnTo: here });
+  } catch (e) {
+    if (unreachable(e)) return <Unavailable again={here} />;
+    throw e;
+  }
 
   // Step one: prove the address is theirs with a code emailed to it.
   const email = ctx.identity.email ?? session.email ?? "";

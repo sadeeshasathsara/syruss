@@ -14,6 +14,12 @@ import { readSession } from "@/lib/auth/session";
 const SIGN_UP = "/api/auth/login?mode=signup&returnTo=/continue";
 const SIGN_IN = "/api/auth/login?mode=signin&returnTo=/continue";
 
+/** Why a sign-in came back here (?error=), as the sign-in routes name it. */
+const PROBLEMS: Record<string, string> = {
+  expired: "That sign-in took too long. Please try again.",
+  unavailable: "Syruss can't be reached right now. Please try again in a few minutes.",
+};
+
 const FAQ = [
   { q: "What kinds of documents can it read?", a: "Receipts, invoices, order forms, delivery notes, application forms, handwritten notes and the odd ones only your business sees. Today they need to be photographs or scans saved as JPG, PNG, TIFF or WebP images. PDFs aren't supported yet." },
   { q: "What happens when Syruss isn't sure?", a: "It asks a person and keeps the answer, so the next document of that kind is checked against it. It never guesses a value and passes it on quietly." },
@@ -52,7 +58,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
 
       {error ? (
         <p className="notice" role="alert">
-          {error === "expired" ? "That sign-in took too long. Please try again." : "We couldn't sign you in. Please try again."}
+          {PROBLEMS[error] ?? "We couldn't sign you in. Please try again."}
         </p>
       ) : null}
 
