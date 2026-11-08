@@ -51,13 +51,16 @@ function PartyBlock({ label, p }: { label: string; p: Party }) {
 function Body({ i }: { i: Invoice }) {
   const s = invoiceStatus(i);
   const cur = i.currency;
+  // A draft can't be issued until both sides' billing details are in: the organization's (on the invoice) and Syruss's own.
+  const settings = useQuery({ queryKey: ["billing", "settings"], queryFn: api.billing.settings, enabled: i.status === "draft" });
+  const sellerMissing = settings.data?.seller.missing ?? [];
   return (
     <>
       <Panel>
         <dl className="grid grid-cols-2 gap-4 @3xl:grid-cols-4">
           <Fact label="State"><Pill tone={s.tone}>{s.label}</Pill>{i.switched_on && i.status === "open" && <Pill tone="accent" className="ml-1">Switched on</Pill>}</Fact>
           <Fact label="Total">{money(i.total_cents, cur)}</Fact>
-          <Fact label="Still owed">{money(i.amount_due_cents, cur)}</Fact>
+          <Fact label="Still owed">{i.status === "draft" ? "— (not issued yet)" : money(i.amount_due_cents, cur)}</Fact>
           <Fact label="Issued · due">{day(i.issued_at)} · {day(i.due_at)}</Fact>
           <Fact label="Paid">{money(i.amount_paid_cents - i.amount_refunded_cents, cur)}</Fact>
           <Fact label="Credited">{money(i.amount_credited_cents, cur)}</Fact>
@@ -71,6 +74,11 @@ function Body({ i }: { i: Invoice }) {
         {i.switched_on_early_by && <p className="mt-3 text-body text-muted">Switched on before it was paid by {i.switched_on_early_by}: {i.switched_on_early_reason}</p>}
         {i.status === "draft" && !!i.billing_details_missing?.length && (
           <p className="mt-3 text-body text-negative">It can&apos;t be issued until the organization adds its billing details: {i.billing_details_missing.join(", ")}.</p>
+        )}
+        {i.status === "draft" && sellerMissing.length > 0 && (
+          <p className="mt-3 text-body text-negative">
+            Nor until Syruss&apos;s own billing details are filled in ({sellerMissing.join(", ")}): <Link href="/billing?tab=settings" className="underline">Billing settings</Link>.
+          </p>
         )}
       </Panel>
 
