@@ -1,0 +1,7 @@
+{{ organization }} is on the Free plan now
+
+Invoice {{ number }} for the {{ plan }} plan wasn't paid by the end of the grace period, so the organization moved to the Free plan. Nothing was deleted: its workspaces, documents and settings are all still there, within the Free plan's limits.
+
+Paying the invoice puts the {{ plan }} plan back: {{ url }}
+
+You get this because it is the billing address of {{ organization }} on Syruss.

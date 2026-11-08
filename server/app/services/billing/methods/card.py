@@ -3,7 +3,7 @@ Card, through Stripe: the customer pays an invoice on Stripe's own Checkout page
 Stripe tells us it went through by a signed webhook event, which records the payment. A customer can keep the card for
 renewals, which are then charged by themselves; Stripe's billing portal manages the kept card.
 
-The calls to Stripe are the small functions at the bottom, and nothing else in the code talks to Stripe.
+The calls to Stripe are the small functions at the bottom (a refund among them), and nothing else in the code talks to Stripe.
 """
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -69,6 +69,11 @@ def charge(*, amount_cents: int, currency: str, customer: str, payment_method: s
                                          payment_method=payment_method, off_session=True, confirm=True,
                                          metadata={"invoice_id": invoice_id, "tenant_id": tenant_id, "via": "saved_card"})
     return {"id": intent["id"], "status": intent["status"], "amount_received": intent.get("amount_received") or 0}
+
+
+def refund(*, payment_intent: str, amount_cents: int) -> str:
+    """Gives back part or all of a card payment. Returns Stripe's refund id."""
+    return stripe.Refund.create(api_key=_key(), payment_intent=payment_intent, amount=amount_cents)["id"]
 
 
 def portal(*, customer: str, return_url: str) -> str:

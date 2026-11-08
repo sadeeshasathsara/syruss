@@ -65,6 +65,43 @@ def _address(party: dict) -> List[str]:
     return [line for line in (party.get("address") or "").splitlines() if line.strip()] + ([party["country"]] if party.get("country") else [])
 
 
+def render_credit_note(note, invoice: Invoice, refunds: Sequence = ()) -> bytes:
+    """A credit note: which invoice it corrects, by how much and why, and any money given back with it."""
+    regular, bold = _font_pair()
+    base = ParagraphStyle("base", fontName=regular, fontSize=9.5, leading=13, textColor=INK)
+    muted = ParagraphStyle("muted", parent=base, textColor=MUTED, fontSize=8.5, leading=12)
+    title = ParagraphStyle("title", parent=base, fontName=bold, fontSize=20, leading=24)
+    strong = ParagraphStyle("strong", parent=base, fontName=bold)
+    right = ParagraphStyle("right", parent=base, alignment=TA_RIGHT)
+    seller, buyer = invoice.seller or {}, invoice.buyer or {}
+    out = io.BytesIO()
+    doc = SimpleDocTemplate(out, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=18 * mm, bottomMargin=18 * mm,
+                            title=f"Credit note {note.number}", author=seller.get("legal_name") or "Syruss")
+    width = A4[0] - 36 * mm
+    story: list = [Table([[Paragraph("Credit note", title), Paragraph(f"<b>{_text(note.number)}</b>", right)]], colWidths=[width * 0.6, width * 0.4],
+                         style=[("VALIGN", (0, 0), (-1, -1), "BOTTOM")]), Spacer(1, 6 * mm)]
+    parties = []
+    for label, p in (("From", seller), ("To", buyer)):
+        rows = [Paragraph(label, muted), Paragraph(_text(p.get("legal_name")), strong)] + [Paragraph(_text(x), base) for x in _address(p)]
+        if p.get("tax_id"):
+            rows.append(Paragraph(f"Tax ID: {_text(p['tax_id'])}", base))
+        parties.append(rows)
+    facts = [Paragraph(f"Issued: <b>{_day(note.created_at)}</b>", right), Paragraph(f"For invoice: <b>{_text(invoice.number)}</b>", right),
+             Paragraph(f"Invoice total: <b>{money(invoice.total_cents, invoice.currency)}</b>", right)]
+    story.append(Table([parties + [facts]], colWidths=[width * 0.36, width * 0.36, width * 0.28],
+                       style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
+    story += [Spacer(1, 8 * mm), Paragraph("Reason", muted), Paragraph(_text(note.reason), base), Spacer(1, 6 * mm),
+              Table([[Paragraph("<b>Credited</b>", right), Paragraph(f"<b>{money(note.amount_cents, note.currency)}</b>", right)]],
+                    colWidths=[width * 0.81, width * 0.19])]
+    for r in refunds:
+        story.append(Paragraph(f"Refunded {money(r.amount_cents, r.currency)} ({_text(METHODS.get(r.method, r.method))}"
+                               f"{', ' + _text(r.reference) if r.reference else ''}).", base))
+    if seller.get("footer"):
+        story += [Spacer(1, 6 * mm), Paragraph(_text(seller["footer"]), muted)]
+    doc.build(story)
+    return out.getvalue()
+
+
 def render(invoice: Invoice, lines: Sequence[InvoiceLine], payments: Optional[Sequence[BillingPayment]] = None) -> bytes:
     """The invoice as a PDF; with its payments, the receipt for it."""
     regular, bold = _font_pair()
@@ -126,9 +163,12 @@ def render(invoice: Invoice, lines: Sequence[InvoiceLine], payments: Optional[Se
         label = f"{t['name']} ({t['rate_bp'] / 100:g}%)" if t.get("rate_bp") else str(t["name"])
         totals.append((label, money(int(t.get("tax_cents") or 0), cur), False))
     totals.append(("Total", money(invoice.total_cents, cur), True))
-    if receipt or invoice.amount_paid_cents:
-        totals.append(("Paid", money(invoice.amount_paid_cents, cur), False))
-        totals.append(("Amount due", money(max(0, invoice.total_cents - invoice.amount_paid_cents), cur), True))
+    if receipt or invoice.amount_paid_cents or invoice.amount_credited_cents:
+        totals.append(("Paid", money(invoice.amount_paid_cents - invoice.amount_refunded_cents, cur), False))
+        if invoice.amount_credited_cents:
+            totals.append(("Credited", money(invoice.amount_credited_cents, cur), False))
+        owed = invoice.total_cents - (invoice.amount_paid_cents - invoice.amount_refunded_cents) - invoice.amount_credited_cents
+        totals.append(("Amount due", money(max(0, owed), cur), True))
     story.append(Table([[Paragraph(label, right_strong if big else right), Paragraph(value, right_strong if big else right)] for label, value, big in totals],
                        colWidths=[width * 0.81, width * 0.19], style=[("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
     for t in invoice.tax_lines or []:

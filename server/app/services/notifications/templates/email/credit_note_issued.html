@@ -1,0 +1,12 @@
+{#- A credit note corrected one of the organization's invoices; its PDF is attached. Variables: organization, number, invoice_number, amount, reason, url, refunded -#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+{% block preheader %}Credit note {{ number }}: {{ amount }} off invoice {{ invoice_number }}{% endblock %}
+{% block heading %}Credit note {{ number }}{% endblock %}
+{% block content %}
+{{ ui.paragraph("Syruss has issued a credit note of " ~ amount ~ " for invoice " ~ invoice_number ~ ". It is attached as a PDF.") }}
+{{ ui.quote(reason) }}
+{% if refunded %}{{ ui.paragraph(refunded ~ " is being refunded to you.") }}{% endif %}
+{{ ui.button("Open billing", url) }}
+{% endblock %}
+{% block footer %}You get this because it is the billing address of {{ organization }} on Syruss.{% endblock %}

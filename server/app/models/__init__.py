@@ -47,7 +47,8 @@ from app.models.page_view import AgentPageView
 from app.models.system_lesson import SystemLesson
 from app.models.platform import PlatformAccessGrant, PlatformAuditEntry, PlatformStaff
 from app.models.billing import (
-    BankAccount, BillingPayment, BillingProfile, BillingSequence, BillingSettings, CardCheckout, CatalogItem, CreditEntry, Invoice,
+    BankAccount, BillingPayment, BillingProfile, BillingRefund, BillingSequence, BillingSettings, CardCheckout, CatalogItem, CreditEntry,
+    CreditNote, Invoice,
     InvoiceLine, OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, PaymentFile, PaymentSubmission, StripeEvent, TaxRate, UsageEvent,
 )
 
@@ -115,4 +116,6 @@ __all__ = [
     "PaymentFile",
     "CardCheckout",
     "StripeEvent",
+    "CreditNote",
+    "BillingRefund",
 ]
