@@ -14,11 +14,31 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.4.0-dev.1` | 2026-11-08 | [What changed](#admin-040-dev1) |
+| **admin** | `0.4.1-dev.1` | 2026-11-08 | [What changed](#admin-041-dev1) |
 | **agent** | `0.6.0-dev.1` | 2026-11-06 | [What changed](#agent-060-dev1) |
 | **server** | `0.10.0-dev.1` | 2026-11-08 | [What changed](#server-0100-dev1) |
-| **site** | `0.2.2-dev.1` | 2026-11-05 | [What changed](#site-022-dev1) |
-| **www** | `0.7.0-dev.1` | 2026-11-08 | [What changed](#www-070-dev1) |
+| **site** | `0.2.3-dev.1` | 2026-11-08 | [What changed](#site-023-dev1) |
+| **www** | `0.7.1-dev.1` | 2026-11-08 | [What changed](#www-071-dev1) |
+
+## [2026-11-08] - Release via dev
+
+### admin (0.4.1-dev.1)
+- When the server can't be reached, signing in and the account pages (continue, onboarding, invitations, confirming a browser) say "Syruss can't be reached right now" with a way to try again, instead of showing the web framework's error. Forms on those pages show the same sentence.
+- When the sign-in service is down, signing in comes back to the front page with that message, signing out still ends the session, and a short outage no longer signs anyone out of the apps.
+- Every app has an error page of its own: a page that fails to load says so plainly and offers Try again.
+- When the browser gets no answer at all (offline), the apps say "Can't reach Syruss. Check your connection and try again."
+
+### site (0.2.3-dev.1)
+- When the server can't be reached, signing in and the account pages (continue, onboarding, invitations, confirming a browser) say "Syruss can't be reached right now" with a way to try again, instead of showing the web framework's error. Forms on those pages show the same sentence.
+- When the sign-in service is down, signing in comes back to the front page with that message, signing out still ends the session, and a short outage no longer signs anyone out of the apps.
+- Every app has an error page of its own: a page that fails to load says so plainly and offers Try again.
+- When the browser gets no answer at all (offline), the apps say "Can't reach Syruss. Check your connection and try again."
+
+### www (0.7.1-dev.1)
+- When the server can't be reached, signing in and the account pages (continue, onboarding, invitations, confirming a browser) say "Syruss can't be reached right now" with a way to try again, instead of showing the web framework's error. Forms on those pages show the same sentence.
+- When the sign-in service is down, signing in comes back to the front page with that message, signing out still ends the session, and a short outage no longer signs anyone out of the apps.
+- Every app has an error page of its own: a page that fails to load says so plainly and offers Try again.
+- When the browser gets no answer at all (offline), the apps say "Can't reach Syruss. Check your connection and try again."
 
 ## [2026-11-08] - Release via dev
 
