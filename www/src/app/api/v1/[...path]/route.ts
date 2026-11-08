@@ -12,7 +12,9 @@ import { clearSession, readSession, writeSession } from "@/lib/auth/session";
 
 const API = (process.env.API_ORIGIN ?? "http://localhost:8000").replace(/\/$/, "");
 const FORWARD = ["content-type", "accept", "x-org-slug", "x-template-id", "x-conversation-id", "last-event-id"];
-const PASS_BACK = ["content-type", "content-disposition", "cache-control", "etag", "retry-after", "x-accel-buffering", "location"];
+// The last two keep a file someone uploaded (a payment slip) from being read as anything else, or running anything.
+const PASS_BACK = ["content-type", "content-disposition", "cache-control", "etag", "retry-after", "x-accel-buffering", "location",
+  "x-content-type-options", "content-security-policy"];
 
 function problem(status: number, detail: unknown) {
   return NextResponse.json({ detail }, { status });

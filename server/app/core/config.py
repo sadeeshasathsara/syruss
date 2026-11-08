@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     PUBLIC_SITE_URL: str = "http://localhost:3100"
     # The main app, for links to an organization's own pages (billing lands at <app>/<org>/settings/billing)
     PUBLIC_APP_URL: str = "http://localhost:3000"
+    # The system admin app, for links in emails to Syruss's own staff (a payment slip to check)
+    PUBLIC_ADMIN_URL: str = "http://localhost:3200"
 
     # Email. "smtp" sends through SMTP_*; "console" only logs the message (local work without a mail server);
     # "memory" keeps messages in a list (tests). Locally, Mailpit (bridge/docker-compose.yml) catches everything on 1025.
@@ -143,8 +145,11 @@ class Settings(BaseSettings):
     # The agent service's Kafka consumer group, whose lag the system admin app shows
     AGENT_CONSUMER_GROUP: str = "workspace-agents"
     # How invoices can be paid (app/services/billing/methods), comma-separated: bank_transfer (the customer pays to
-    # Syruss's account and sends the slip), staff_recorded (cash or a cheque, which staff record).
+    # Syruss's account and sends the slip), staff_recorded (cash or a cheque, which staff record), card (Stripe; needs
+    # the two keys below, and is left out without them).
     BILLING_METHODS: str = "bank_transfer,staff_recorded"
+    STRIPE_SECRET_KEY: str = ""        # sk_test_... while testing
+    STRIPE_WEBHOOK_SECRET: str = ""    # whsec_...: Stripe signs the events it sends to /api/v1/billing/webhooks/stripe with it
     # A TrueType font for invoice PDFs, so names in other scripts print. Empty: DejaVu Sans where it is installed (the
     # server image has it), else ReportLab's own font (Latin only).
     BILLING_PDF_FONT: str = ""

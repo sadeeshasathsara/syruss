@@ -196,6 +196,9 @@ class BillingProfile(Base):
     country: Mapped[str] = mapped_column(String(2), nullable=False)  # ISO 3166-1 alpha-2: decides the tax
     tax_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     po_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # printed on every invoice when set
+    stripe_customer_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # the organization at Stripe, once it paid by card
+    card_payment_method: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # a card it chose to keep for renewals
+    card_label: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)            # "Visa ending 4242"
     updated_by: Mapped[str] = mapped_column(String(100), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
 
@@ -273,6 +276,7 @@ class Invoice(Base):
     __table_args__ = (
         Index("ix_invoices_tenant_created", "tenant_id", "created_at"),
         Index("ix_invoices_status_due", "status", "due_at"),
+        UniqueConstraint("tenant_id", "kind", "period_start", name="uq_invoices_period"),  # one renewal a period
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
@@ -285,6 +289,9 @@ class Invoice(Base):
     tax_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     amount_paid_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    amount_credited_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)   # by credit notes
+    amount_refunded_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)   # money given back
+    reminders: Mapped[list] = mapped_column(JSON, default=list, nullable=False)              # reminder_days already sent
     issued_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -323,3 +330,111 @@ class InvoiceLine(Base):
     tax_rate_bp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     period_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     period_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PaymentSubmission(Base):
+    """
+    A payment a customer reports for an invoice, with proof (the bank slip): counted only once staff approve it, for
+    what actually arrived. Rejected ones keep the reason the customer was given; one waiting to be checked can be withdrawn.
+    """
+    __tablename__ = "payment_submissions"
+    __table_args__ = (Index("ix_payment_submissions_status_created", "status", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    invoice_id: Mapped[str] = mapped_column(String(64), ForeignKey("invoices.id"), nullable=False, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    method: Mapped[str] = mapped_column(String(32), nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    paid_on: Mapped[date] = mapped_column(Date, nullable=False)
+    payer_reference: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # the reference on the customer's bank transfer
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="submitted", nullable=False)
+    submitted_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    submitted_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    reviewed_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    reviewed_by_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # shown to the customer
+    payment_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("billing_payments.id"), nullable=True)  # once approved
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class PaymentFile(Base):
+    """A file of proof: a customer's bank slip, or a receipt staff attached to a payment they recorded. Kept, never changed."""
+    __tablename__ = "payment_files"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    submission_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("payment_submissions.id"), nullable=True, index=True)
+    payment_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("billing_payments.id"), nullable=True, index=True)
+    object_key: Mapped[str] = mapped_column(String(300), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)  # the same slip sent twice shows up
+    uploaded_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class CardCheckout(Base):
+    """A Stripe Checkout page opened to pay an invoice by card. Reused while it is open, so paying twice is not offered twice."""
+    __tablename__ = "card_checkouts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    invoice_id: Mapped[str] = mapped_column(String(64), ForeignKey("invoices.id"), nullable=False, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    session_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    save_card: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)  # open | completed | expired
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class CreditNote(Base):
+    """
+    A correction to an issued invoice: it takes an amount off what the organization owes (and, when money is given
+    back, goes with a refund). Numbered in its own gapless series and kept like an invoice: never changed or removed.
+    """
+    __tablename__ = "credit_notes"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    number: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    invoice_id: Mapped[str] = mapped_column(String(64), ForeignKey("invoices.id"), nullable=False, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)  # printed on it
+    pdf_key: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class BillingRefund(Base):
+    """Money given back from a payment: through the card processor, or by transfer or in cash (recorded by staff). Only grows."""
+    __tablename__ = "billing_refunds"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    payment_id: Mapped[str] = mapped_column(String(64), ForeignKey("billing_payments.id"), nullable=False, index=True)
+    credit_note_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("credit_notes.id"), nullable=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    method: Mapped[str] = mapped_column(String(32), nullable=False)
+    reference: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    external_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, unique=True)  # the refund at the card processor
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class StripeEvent(Base):
+    """An event Stripe sent and we handled: Stripe may send one more than once, and it is handled once."""
+    __tablename__ = "stripe_events"
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    type: Mapped[str] = mapped_column(String(100), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
