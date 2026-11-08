@@ -1,13 +1,14 @@
 """
 Billing, for platform staff (billing.manage to change anything): the catalog (plans, add-ons and credit packs, versioned),
-each organization's subscription, and the requests customers send while payments go through staff.
+each organization's subscription, Syruss's own billing details (seller, bank accounts, tax rates), and invoices:
+drafting one for a custom deal, issuing, voiding, switching one on before it is paid, and recording payments.
 
 Every change needs a reason and a fresh sign-in. It is written to the platform audit log and shown in the organization's
 own activity ("… of Syruss support moved the organization to the Team plan, because: …").
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,13 +16,14 @@ from app.api.v1.sysadmin.access import Staff, record, require_staff
 from app.api.v1.sysadmin.common import names, tell_organization
 from app.core.database import get_db_session
 from app.models.billing import (
-    BillingPayment, BillingRequest, CatalogItem, OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon,
+    BankAccount, BillingPayment, CatalogItem, Invoice, OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, TaxRate,
 )
 from app.models.tenant import Tenant
 from app.models.workspace import Workspace
-from app.services.billing import credits, service as billing
+from app.services.billing import credits, invoices, notices, parties, service as billing
 from app.services.billing.limits import LIMITS
-from app.services.billing.providers import provider
+from app.services.billing.methods import enabled
+from app.services.billing.pdf import money
 
 router = APIRouter(prefix="/billing")
 VIEW = Depends(require_staff())
@@ -55,8 +57,8 @@ def _refused(exc: ValueError) -> HTTPException:
 
 @router.get("/limits", dependencies=[VIEW])
 async def limits():
-    """Every limit a plan or add-on can set (the catalog editor's fields), and the payment provider in use."""
-    return {"limits": [limit.describe() for limit in LIMITS.values()], "provider": provider().describe()}
+    """Every limit a plan or add-on can set (the catalog editor's fields), and the ways invoices can be paid here."""
+    return {"limits": [limit.describe() for limit in LIMITS.values()], "methods": [m.describe() for m in enabled()]}
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +178,6 @@ async def publish(item_id: str, body: Reason, staff: Staff = Depends(CHANGE), db
     item = await _item(db, item_id)
     if item.status != "draft":
         raise HTTPException(status_code=409, detail="Only a draft can be published.")
-    await provider().publish(db, item)
     item.status, item.published_at = "published", datetime.now(timezone.utc)
     record(db, staff, "billing.catalog_published", "catalog_item", item.id, reason=body.reason, details={"key": item.key, "version": item.version})
     await db.commit()
@@ -227,38 +228,37 @@ async def move_organizations(item_id: str, body: MoveIn, staff: Staff = Depends(
 
 @router.get("/organizations", dependencies=[VIEW])
 async def organizations(q: Optional[str] = None, limit: int = Query(100, le=500), db: AsyncSession = Depends(get_db_session)):
-    """Every organization's plan, pages this period, credits and open requests."""
+    """Every organization's plan, pages this period, credits and invoices waiting for payment."""
     stmt = select(Tenant).order_by(Tenant.name).limit(limit)
     if q:
         stmt = stmt.where(or_(Tenant.name.ilike(f"%{q}%"), Tenant.slug.ilike(f"%{q}%")))
     out = []
-    open_requests = dict((await db.execute(select(BillingRequest.tenant_id, func.count()).where(
-        BillingRequest.status == "open").group_by(BillingRequest.tenant_id))).all())
+    now = datetime.now(timezone.utc)
+    waiting = {t: (n, overdue) for t, n, overdue in (await db.execute(select(
+        Invoice.tenant_id, func.count(), func.count().filter(Invoice.due_at < now)).where(
+        Invoice.status.in_(invoices.PAYABLE)).group_by(Invoice.tenant_id))).all()}
+    drafts = dict((await db.execute(select(Invoice.tenant_id, func.count()).where(Invoice.status == "draft").group_by(Invoice.tenant_id))).all())
     for tenant in (await db.execute(stmt)).scalars().all():
         s = await billing.summary(db, tenant.id)
         sub = await db.get(OrgSubscription, tenant.id)
         out.append({"id": tenant.id, "name": tenant.name, "slug": tenant.slug, "status": tenant.status, "plan": s["plan"], "plan_key": s["plan_key"],
                     "subscription_status": sub.status, "trial_ends_at": sub.trial_ends_at, "paid_until": sub.paid_until,
-                    "pages_used": s["pages_used"], "pages_limit": s["pages_limit"], "credits": s["credits"],
-                    "period_end": s["period_end"], "open_requests": open_requests.get(tenant.id, 0)})
+                    "pages_used": s["pages_used"], "pages_limit": s["pages_limit"], "credits": s["credits"], "period_end": s["period_end"],
+                    "invoices_waiting": waiting.get(tenant.id, (0, 0))[0], "invoices_overdue": waiting.get(tenant.id, (0, 0))[1],
+                    "drafts": drafts.get(tenant.id, 0)})
     await db.commit()  # subscriptions created or brought up to date while reading
     return out
 
 
-def _request_dict(r: BillingRequest, item: Optional[CatalogItem]) -> Dict[str, Any]:
-    return {"id": r.id, "tenant_id": r.tenant_id, "item": item_dict(item) if item else None, "quantity": r.quantity, "note": r.note,
-            "requested_by_name": r.requested_by_name, "status": r.status, "handled_by_name": r.handled_by_name, "handled_note": r.handled_note,
-            "created_at": r.created_at, "handled_at": r.handled_at}
-
-
-def _payment_dict(p: BillingPayment) -> Dict[str, Any]:
-    return {"id": p.id, "amount_cents": p.amount_cents, "currency": p.currency, "item_id": p.item_id, "quantity": p.quantity,
-            "reference": p.reference, "note": p.note, "recorded_by_name": p.recorded_by_name, "created_at": p.created_at}
+def _payment_dict(p: BillingPayment, number: Optional[str] = None) -> Dict[str, Any]:
+    return {"id": p.id, "invoice_id": p.invoice_id, "invoice": number, "method": p.method, "amount_cents": p.amount_cents, "currency": p.currency,
+            "item_id": p.item_id, "quantity": p.quantity, "received_on": p.received_on, "reference": p.reference, "note": p.note,
+            "recorded_by_name": p.recorded_by_name, "created_at": p.created_at}
 
 
 @router.get("/organizations/{tenant_id}", dependencies=[VIEW])
 async def organization(tenant_id: str, db: AsyncSession = Depends(get_db_session)):
-    """One organization's billing: the subscription, where each limit comes from, usage, credits, payments and requests."""
+    """One organization's billing: the subscription, where each limit comes from, usage, credits, billing details, invoices and payments."""
     tenant = await _tenant(db, tenant_id)
     s = await billing.standing(db, tenant_id)
     sub = s.subscription
@@ -269,10 +269,10 @@ async def organization(tenant_id: str, db: AsyncSession = Depends(get_db_session
                                   .order_by(OrgLimitOverride.created_at.desc()))).scalars().all()
     pages = await billing.pages_by_workspace(db, tenant_id, sub.period_start)
     named = await names(db, [tenant_id], [o.template_id for o in overrides] + list(pages))
-    payments = (await db.execute(select(BillingPayment).where(BillingPayment.tenant_id == tenant_id)
-                                 .order_by(BillingPayment.created_at.desc()).limit(50))).scalars().all()
-    requests = (await db.execute(select(BillingRequest, CatalogItem).join(CatalogItem, CatalogItem.id == BillingRequest.item_id)
-                                 .where(BillingRequest.tenant_id == tenant_id).order_by(BillingRequest.created_at.desc()).limit(50))).all()
+    payments = (await db.execute(select(BillingPayment, Invoice.number).outerjoin(Invoice, Invoice.id == BillingPayment.invoice_id)
+                                 .where(BillingPayment.tenant_id == tenant_id).order_by(BillingPayment.created_at.desc()).limit(50))).all()
+    issued = (await db.execute(select(Invoice).where(Invoice.tenant_id == tenant_id).order_by(Invoice.created_at.desc()).limit(50))).scalars().all()
+    profile = await parties.profile(db, tenant_id)
     summary = await billing.summary(db, tenant_id)
     result = {
         "organization": {"id": tenant.id, "name": tenant.name, "slug": tenant.slug, "status": tenant.status},
@@ -292,8 +292,10 @@ async def organization(tenant_id: str, db: AsyncSession = Depends(get_db_session
         "credits": {"balance": summary["credits"], "history": [
             {"id": e.id, "delta": e.delta, "kind": e.kind, "reason": e.reason, "ref": e.ref, "created_by": e.created_by, "created_at": e.created_at}
             for e in await credits.history(db, tenant_id)]},
-        "payments": [_payment_dict(p) for p in payments],
-        "requests": [_request_dict(r, i) for r, i in requests],
+        "payments": [_payment_dict(p, number) for p, number in payments],
+        "invoices": [invoices.describe(i) for i in issued],
+        "billing_details": parties.buyer_snapshot(profile) if profile else None,
+        "billing_details_missing": parties.profile_missing(profile),
     }
     await db.commit()
     return result
@@ -429,74 +431,336 @@ async def change_credits(tenant_id: str, body: CreditsIn, staff: Staff = Depends
     return {"done": text, "balance": await credits.balance(db, tenant_id)}
 
 
-class PaymentIn(BaseModel):
-    amount_cents: int = Field(..., ge=0)
-    currency: str = Field("USD", pattern=r"^[A-Z]{3}$")
-    item_id: Optional[str] = Field(None, description="What it paid for: applied when the payment is recorded")
+# ---------------------------------------------------------------------------
+# Syruss's billing details: the seller, its bank accounts, tax rates
+# ---------------------------------------------------------------------------
+
+def _settings_dict(s) -> Dict[str, Any]:
+    return {**parties.seller_snapshot(s), "invoice_prefix": s.invoice_prefix, "payment_terms_days": s.payment_terms_days,
+            "renewal_lead_days": s.renewal_lead_days, "grace_days": s.grace_days, "reminder_days": s.reminder_days,
+            "updated_at": s.updated_at, "missing": parties.seller_missing(s)}
+
+
+def _rate_dict(r: TaxRate) -> Dict[str, Any]:
+    return {"id": r.id, "country": r.country, "name": r.name, "rate_bp": r.rate_bp, "reverse_charge_with_tax_id": r.reverse_charge_with_tax_id,
+            "active": r.active, "created_at": r.created_at}
+
+
+@router.get("/settings", dependencies=[VIEW])
+async def get_settings(db: AsyncSession = Depends(get_db_session)):
+    """Who invoices are from, how they are numbered and paid, the bank accounts and the tax rates."""
+    s = await parties.seller(db)
+    accounts = (await db.execute(select(BankAccount).order_by(BankAccount.active.desc(), BankAccount.created_at))).scalars().all()
+    rates = (await db.execute(select(TaxRate).order_by(TaxRate.active.desc(), TaxRate.country))).scalars().all()
+    await db.commit()  # the settings row may have just been made
+    return {"seller": _settings_dict(s), "bank_accounts": [parties.bank_dict(a) for a in accounts], "tax_rates": [_rate_dict(r) for r in rates],
+            "methods": [m.describe() for m in enabled()]}
+
+
+class SettingsIn(BaseModel):
+    legal_name: str = Field(..., min_length=2, max_length=200)
+    address: str = Field(..., min_length=2, max_length=1000)
+    country: str = Field(..., pattern=r"^[A-Za-z]{2}$")
+    tax_id: Optional[str] = Field(None, max_length=64)
+    email: str = Field(..., max_length=255, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    invoice_prefix: str = Field("SYR", pattern=r"^[A-Z0-9]{2,12}$")
+    payment_terms_days: int = Field(14, ge=0, le=120)
+    renewal_lead_days: int = Field(7, ge=1, le=30)
+    grace_days: int = Field(7, ge=0, le=60)
+    reminder_days: List[int] = Field(default_factory=lambda: [3, 0, -3], max_length=6)
+    footer: Optional[str] = Field(None, max_length=1000)
+    reason: str = Field(..., min_length=5, max_length=1000)
+
+
+@router.put("/settings")
+async def put_settings(body: SettingsIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """Changes Syruss's billing details. Invoices already issued keep what they were issued with."""
+    s = await parties.seller(db)
+    for field, value in body.model_dump(exclude={"reason"}).items():
+        setattr(s, field, value.strip() if isinstance(value, str) else value)
+    s.country, s.updated_by = s.country.upper(), staff.user_id
+    record(db, staff, "billing.settings_changed", "billing_settings", "1", reason=body.reason, details=body.model_dump(exclude={"reason"}))
+    await db.commit()
+    return _settings_dict(s)
+
+
+class BankAccountIn(BaseModel):
+    bank: str = Field(..., min_length=2, max_length=120)
+    account_name: str = Field(..., min_length=2, max_length=200)
+    account_number: str = Field(..., min_length=2, max_length=64)
+    branch: Optional[str] = Field(None, max_length=120)
+    swift: Optional[str] = Field(None, max_length=16)
+    currency: str = Field(..., pattern=r"^[A-Z]{3}$")
+    instructions: Optional[str] = Field(None, max_length=1000)
+    reason: str = Field(..., min_length=5, max_length=1000)
+
+
+@router.post("/bank-accounts", status_code=201)
+async def add_bank_account(body: BankAccountIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """An account customers can pay into; invoices issued from now on in its currency show it."""
+    account = BankAccount(created_by=staff.user_id, **body.model_dump(exclude={"reason"}))
+    db.add(account)
+    await db.flush()
+    record(db, staff, "billing.bank_account_added", "bank_account", account.id, reason=body.reason,
+           details={"bank": account.bank, "currency": account.currency})
+    await db.commit()
+    return parties.bank_dict(account)
+
+
+class ActiveIn(BaseModel):
+    active: bool
+    reason: str = Field(..., min_length=5, max_length=1000)
+
+
+@router.post("/bank-accounts/{account_id}/active")
+async def set_bank_account_active(account_id: str, body: ActiveIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """Stops (or starts again) showing an account on new invoices. Accounts are never deleted: old invoices name them."""
+    account = await db.get(BankAccount, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="No such bank account.")
+    account.active = body.active
+    record(db, staff, "billing.bank_account_changed", "bank_account", account.id, reason=body.reason, details={"active": body.active})
+    await db.commit()
+    return parties.bank_dict(account)
+
+
+class TaxRateIn(BaseModel):
+    country: str = Field(..., pattern=r"^([A-Za-z]{2}|\*)$", description="ISO alpha-2, or * for every other country")
+    name: str = Field(..., min_length=2, max_length=60)
+    rate_bp: int = Field(..., ge=0, le=10000, description="Basis points: 1800 is 18%")
+    reverse_charge_with_tax_id: bool = False
+    reason: str = Field(..., min_length=5, max_length=1000)
+
+
+@router.post("/tax-rates", status_code=201)
+async def add_tax_rate(body: TaxRateIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """A tax rate for buyers in one country (or the default); it replaces that country's active rate for new invoices."""
+    country = body.country.upper()
+    for old in (await db.execute(select(TaxRate).where(TaxRate.country == country, TaxRate.active.is_(True)))).scalars().all():
+        old.active = False
+    rate = TaxRate(country=country, name=body.name.strip(), rate_bp=body.rate_bp, reverse_charge_with_tax_id=body.reverse_charge_with_tax_id,
+                   created_by=staff.user_id)
+    db.add(rate)
+    await db.flush()
+    record(db, staff, "billing.tax_rate_set", "tax_rate", rate.id, reason=body.reason, details=body.model_dump(exclude={"reason"}))
+    await db.commit()
+    return _rate_dict(rate)
+
+
+@router.post("/tax-rates/{rate_id}/active")
+async def set_tax_rate_active(rate_id: str, body: ActiveIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    rate = await db.get(TaxRate, rate_id)
+    if rate is None:
+        raise HTTPException(status_code=404, detail="No such tax rate.")
+    if body.active:
+        for other in (await db.execute(select(TaxRate).where(TaxRate.country == rate.country, TaxRate.active.is_(True), TaxRate.id != rate.id))).scalars().all():
+            other.active = False
+    rate.active = body.active
+    record(db, staff, "billing.tax_rate_changed", "tax_rate", rate.id, reason=body.reason, details={"active": body.active})
+    await db.commit()
+    return _rate_dict(rate)
+
+
+# ---------------------------------------------------------------------------
+# Invoices
+# ---------------------------------------------------------------------------
+
+async def _invoice(db: AsyncSession, invoice_id: str) -> Invoice:
+    invoice = await db.get(Invoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="No such invoice.")
+    return invoice
+
+
+@router.get("/invoices", dependencies=[VIEW])
+async def list_invoices(status: Optional[str] = None, tenant_id: Optional[str] = None, overdue: bool = False, q: Optional[str] = None,
+                        limit: int = Query(100, le=500), db: AsyncSession = Depends(get_db_session)):
+    """Invoices, newest first: by status, organization, overdue, or a number to find."""
+    stmt = select(Invoice).order_by(Invoice.created_at.desc()).limit(limit)
+    if status:
+        stmt = stmt.where(Invoice.status == status)
+    if tenant_id:
+        stmt = stmt.where(Invoice.tenant_id == tenant_id)
+    if overdue:
+        stmt = stmt.where(Invoice.status == "open", Invoice.due_at < datetime.now(timezone.utc))
+    if q:
+        stmt = stmt.where(Invoice.number.ilike(f"%{q.strip()}%"))
+    rows = (await db.execute(stmt)).scalars().all()
+    named = await names(db, [i.tenant_id for i in rows])
+    return [{**invoices.describe(i), "organization": named["organizations"].get(i.tenant_id)} for i in rows]
+
+
+@router.get("/invoices/{invoice_id}", dependencies=[VIEW])
+async def get_invoice(invoice_id: str, db: AsyncSession = Depends(get_db_session)):
+    invoice = await _invoice(db, invoice_id)
+    named = await names(db, [invoice.tenant_id])
+    return {**invoices.describe(invoice, await invoices.lines_of(db, invoice.id), await invoices.payments_of(db, invoice.id)),
+            "organization": named["organizations"].get(invoice.tenant_id),
+            "billing_details_missing": parties.profile_missing(await parties.profile(db, invoice.tenant_id))}
+
+
+@router.get("/invoices/{invoice_id}/{which}", dependencies=[VIEW])
+async def invoice_file(invoice_id: str, which: Literal["pdf", "receipt"], db: AsyncSession = Depends(get_db_session)):
+    invoice = await _invoice(db, invoice_id)
+    data = await invoices.file_of(invoice, which)
+    if data is None:
+        raise HTTPException(status_code=404, detail="It has no receipt until it is paid." if which == "receipt" else "It has no PDF until it is issued.")
+    return Response(content=data, media_type="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="{"Receipt" if which == "receipt" else "Invoice"} {invoice.number}.pdf"',
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
+class LineIn(BaseModel):
+    item_id: Optional[str] = Field(None, description="A catalog item; or give description and unit_cents")
+    description: Optional[str] = Field(None, max_length=300)
+    unit_cents: Optional[int] = Field(None, ge=0)
     quantity: int = Field(1, ge=1, le=10000)
+
+
+class InvoiceIn(BaseModel):
+    tenant_id: str
+    lines: List[LineIn] = Field(..., min_length=1, max_length=50)
+    currency: Optional[str] = Field(None, pattern=r"^[A-Z]{3}$", description="For an invoice of written lines only")
+    note: Optional[str] = Field(None, max_length=2000)
+    issue: bool = Field(False, description="Issue it at once")
+    reason: str = Field(..., min_length=5, max_length=1000)
+
+
+async def _issue(db: AsyncSession, invoice: Invoice) -> None:
+    try:
+        await invoices.issue(db, invoice)
+    except parties.NotReady as exc:
+        raise HTTPException(status_code=409, detail={"code": "billing_details_missing" if exc.who == "buyer" else "seller_not_ready",
+                                                     "message": str(exc), "missing": exc.missing})
+    except ValueError as exc:
+        raise _refused(exc)
+
+
+async def _tell_customer(invoice: Invoice) -> None:
+    await (notices.invoice_issued(invoice.id) if invoice.status == "open" else notices.invoice_paid(invoice.id, None))
+
+
+@router.post("/invoices", status_code=201)
+async def create_invoice(body: InvoiceIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """An invoice for a custom deal: catalog items and lines staff write. A draft, unless issue is set."""
+    await _tenant(db, body.tenant_id)
+    lines = []
+    for line in body.lines:
+        if line.item_id:
+            item = await _item(db, line.item_id)
+            if item.status == "draft":
+                raise HTTPException(status_code=409, detail=f"{item.name} isn't published yet.")
+            lines.append(invoices.item_line(item, line.quantity))
+        elif line.description and line.unit_cents is not None:
+            lines.append(invoices.Line(line.description.strip(), line.quantity, line.unit_cents))
+        else:
+            raise HTTPException(status_code=422, detail="Each line is a catalog item, or a description with a price.")
+    try:
+        invoice = await invoices.draft(db, body.tenant_id, lines, kind="manual", created_by=staff.user_id, note=body.note)
+    except ValueError as exc:
+        raise _refused(exc)
+    if body.currency and not any(line.item for line in lines):
+        invoice.currency = body.currency
+    if body.issue:
+        await _issue(db, invoice)
+    text = f"issued invoice {invoice.number} ({money(invoice.total_cents, invoice.currency)})" if body.issue else "drafted an invoice"
+    record(db, staff, "billing.invoice_created", "invoice", invoice.id, tenant_id=body.tenant_id, reason=body.reason,
+           details={"issued": body.issue, "number": invoice.number, "total_cents": invoice.total_cents})
+    if body.issue:
+        tell_organization(db, staff, body.tenant_id, text, body.reason)
+    await db.commit()
+    if body.issue:
+        await _tell_customer(invoice)
+    return invoices.describe(invoice, await invoices.lines_of(db, invoice.id))
+
+
+class Reasoned(BaseModel):
+    reason: str = Field(..., min_length=5, max_length=1000)
+
+
+@router.post("/invoices/{invoice_id}/issue")
+async def issue_invoice(invoice_id: str, body: Reasoned, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """Issues a draft: numbered, fixed, printed and sent to the organization's billing address."""
+    invoice = await _invoice(db, invoice_id)
+    await _issue(db, invoice)
+    text = f"issued invoice {invoice.number} ({money(invoice.total_cents, invoice.currency)})"
+    record(db, staff, "billing.invoice_issued", "invoice", invoice.id, tenant_id=invoice.tenant_id, reason=body.reason, details={"number": invoice.number})
+    tell_organization(db, staff, invoice.tenant_id, text, body.reason)
+    await db.commit()
+    await _tell_customer(invoice)
+    return invoices.describe(invoice)
+
+
+@router.post("/invoices/{invoice_id}/discard")
+async def discard_invoice(invoice_id: str, body: Reasoned, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """Throws a draft away."""
+    invoice = await _invoice(db, invoice_id)
+    try:
+        await invoices.discard(db, invoice)
+    except ValueError as exc:
+        raise _refused(exc)
+    record(db, staff, "billing.invoice_discarded", "invoice", invoice_id, tenant_id=invoice.tenant_id, reason=body.reason)
+    await db.commit()
+    return {"discarded": invoice_id}
+
+
+@router.post("/invoices/{invoice_id}/void")
+async def void_invoice(invoice_id: str, body: Reasoned, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """Cancels an issued invoice nothing was paid on. It stays on record with its number."""
+    invoice = await _invoice(db, invoice_id)
+    try:
+        await invoices.void(db, invoice, reason=body.reason)
+    except ValueError as exc:
+        raise _refused(exc)
+    record(db, staff, "billing.invoice_voided", "invoice", invoice.id, tenant_id=invoice.tenant_id, reason=body.reason, details={"number": invoice.number})
+    tell_organization(db, staff, invoice.tenant_id, f"voided invoice {invoice.number}", body.reason)
+    await db.commit()
+    return invoices.describe(invoice)
+
+
+@router.post("/invoices/{invoice_id}/switch-on")
+async def switch_on_early(invoice_id: str, body: Reasoned, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """Switches on what an unpaid invoice sells now, for an organization trusted to pay it; it stays waiting for payment."""
+    invoice = await _invoice(db, invoice_id)
+    try:
+        done = await invoices.switch_on_early(db, invoice, by_id=staff.user_id, by_name=staff.name, reason=body.reason)
+    except ValueError as exc:
+        raise _refused(exc)
+    text = f"switched on invoice {invoice.number} before it was paid ({done})"
+    record(db, staff, "billing.invoice_switched_on", "invoice", invoice.id, tenant_id=invoice.tenant_id, reason=body.reason, details={"number": invoice.number})
+    tell_organization(db, staff, invoice.tenant_id, text, body.reason)
+    await db.commit()
+    return {**invoices.describe(invoice), "done": done}
+
+
+class InvoicePaymentIn(BaseModel):
+    method: str = Field(..., description="One of the ways to pay this deployment offers")
+    amount_cents: int = Field(..., gt=0)
+    received_on: Optional[date] = None
     reference: Optional[str] = Field(None, max_length=200)
     note: Optional[str] = Field(None, max_length=2000)
     reason: str = Field(..., min_length=5, max_length=1000)
 
 
-@router.post("/organizations/{tenant_id}/payments", status_code=201)
-async def record_payment(tenant_id: str, body: PaymentIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
-    """Records money received; a plan, add-on or credit pack it paid for is applied at once."""
-    await _tenant(db, tenant_id)
-    item = await _item(db, body.item_id) if body.item_id else None
+@router.post("/invoices/{invoice_id}/payments", status_code=201)
+async def record_payment(invoice_id: str, body: InvoicePaymentIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """Money received for an invoice (cash, a cheque, a transfer seen on the statement). Once it is covered, it is switched on."""
+    invoice = await _invoice(db, invoice_id)
     try:
-        payment, done = await billing.record_payment(db, tenant_id, amount_cents=body.amount_cents, currency=body.currency, by_id=staff.user_id,
-                                                     by_name=staff.name, item=item, quantity=body.quantity, reference=body.reference, note=body.note)
+        payment, done = await invoices.record_payment(db, invoice, method=body.method, amount_cents=body.amount_cents, by_id=staff.user_id,
+                                                      by_name=staff.name, received_on=body.received_on, reference=body.reference, note=body.note)
     except ValueError as exc:
         raise _refused(exc)
-    text = f"recorded a payment of {body.amount_cents / 100:,.2f} {body.currency}" + (f" and {done}" if done else "")
-    record(db, staff, "billing.payment_recorded", "organization", tenant_id, tenant_id=tenant_id, reason=body.reason,
-           details={"payment_id": payment.id, "amount_cents": body.amount_cents, "currency": body.currency, "item_id": body.item_id})
-    tell_organization(db, staff, tenant_id, text, body.reason)
+    text = f"recorded a payment of {money(body.amount_cents, invoice.currency)} for invoice {invoice.number}"
+    if invoice.status == "paid":
+        text += ", which is now paid" + (f": {done}" if done else "")
+    record(db, staff, "billing.payment_recorded", "invoice", invoice.id, tenant_id=invoice.tenant_id, reason=body.reason,
+           details={"payment_id": payment.id, "amount_cents": body.amount_cents, "method": body.method, "number": invoice.number})
+    tell_organization(db, staff, invoice.tenant_id, text, body.reason)
     await db.commit()
-    return {**_payment_dict(payment), "done": text}
-
-
-# ---------------------------------------------------------------------------
-# Requests (the manual payment provider)
-# ---------------------------------------------------------------------------
-
-@router.get("/requests", dependencies=[VIEW])
-async def requests(status: Optional[str] = "open", db: AsyncSession = Depends(get_db_session)):
-    stmt = select(BillingRequest, CatalogItem).join(CatalogItem, CatalogItem.id == BillingRequest.item_id).order_by(BillingRequest.created_at)
-    rows = (await db.execute(stmt.where(BillingRequest.status == status) if status else stmt.limit(200))).all()
-    named = await names(db, [r.tenant_id for r, _ in rows])
-    return [{**_request_dict(r, i), "organization": named["organizations"].get(r.tenant_id)} for r, i in rows]
-
-
-class HandleIn(BaseModel):
-    action: Literal["fulfil", "decline"]
-    note: Optional[str] = Field(None, max_length=2000, description="Shown to the customer")
-    amount_cents: Optional[int] = Field(None, ge=0, description="The payment received for it, recorded with it")
-    reference: Optional[str] = Field(None, max_length=200)
-    reason: str = Field(..., min_length=5, max_length=1000)
-
-
-@router.post("/requests/{request_id}")
-async def handle_request(request_id: str, body: HandleIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
-    """Completes a customer's request (applying it, with the payment when one is given) or declines it."""
-    request = await db.get(BillingRequest, request_id)
-    if request is None:
-        raise HTTPException(status_code=404, detail="No such request.")
-    item = await db.get(CatalogItem, request.item_id)
-    try:
-        done = await billing.handle_request(db, request, fulfil=body.action == "fulfil", note=body.note, by_id=staff.user_id, by_name=staff.name,
-                                            amount_cents=body.amount_cents, reference=body.reference)
-    except ValueError as exc:
-        raise _refused(exc)
-    text = done or f"declined the request for {item.name}"
-    if done and body.amount_cents is not None:
-        text = f"recorded a payment of {body.amount_cents / 100:,.2f} {item.currency} and {done}"
-    record(db, staff, f"billing.request_{'fulfilled' if body.action == 'fulfil' else 'declined'}", "billing_request", request.id,
-           tenant_id=request.tenant_id, reason=body.reason, details={"item_id": item.id, "quantity": request.quantity})
-    tell_organization(db, staff, request.tenant_id, text, body.reason)
-    await db.commit()
-    return {"done": text, "status": request.status}
+    if invoice.status == "paid":
+        await notices.invoice_paid(invoice.id, done)
+    return {**_payment_dict(payment, invoice.number), "invoice_status": invoice.status, "done": text}
 
 
 @router.get("/expiring", dependencies=[VIEW])

@@ -52,6 +52,8 @@ class Settings(BaseSettings):
 
     # Where people open the links in our emails (the public site: invitations land at <site>/invite/<token>)
     PUBLIC_SITE_URL: str = "http://localhost:3100"
+    # The main app, for links to an organization's own pages (billing lands at <app>/<org>/settings/billing)
+    PUBLIC_APP_URL: str = "http://localhost:3000"
 
     # Email. "smtp" sends through SMTP_*; "console" only logs the message (local work without a mail server);
     # "memory" keeps messages in a list (tests). Locally, Mailpit (bridge/docker-compose.yml) catches everything on 1025.
@@ -140,9 +142,12 @@ class Settings(BaseSettings):
     RUN_STEPS_RETENTION_DAYS: int = 90
     # The agent service's Kafka consumer group, whose lag the system admin app shows
     AGENT_CONSUMER_GROUP: str = "workspace-agents"
-    # Who takes payments (app/services/billing/providers). "manual": customers send a request and platform staff record
-    # the payment; a provider such as Paddle or Stripe is one more adapter there.
-    BILLING_PROVIDER: str = "manual"
+    # How invoices can be paid (app/services/billing/methods), comma-separated: bank_transfer (the customer pays to
+    # Syruss's account and sends the slip), staff_recorded (cash or a cheque, which staff record).
+    BILLING_METHODS: str = "bank_transfer,staff_recorded"
+    # A TrueType font for invoice PDFs, so names in other scripts print. Empty: DejaVu Sans where it is installed (the
+    # server image has it), else ReportLab's own font (Latin only).
+    BILLING_PDF_FONT: str = ""
 
     # Connections: how other systems send documents in and receive approved data out.
     PUBLIC_API_URL: str = "http://localhost:8000"          # what senders are told to call (shown in the Connections pages)

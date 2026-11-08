@@ -2,11 +2,15 @@
 Plans and billing: what Syruss sells (the catalog), what each organization has (its subscription, add-ons and overrides)
 and what it used (usage events). What an organization may do is worked out from these by
 app.services.billing.entitlements, never stored.
+
+Paying: every purchase is an invoice, made out from Syruss (billing settings) to the organization (its billing
+profile). An invoice is numbered and fixed when it is issued; payments, however they were made, are recorded against
+it, and what it sells is switched on once it is paid.
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -14,7 +18,9 @@ CATALOG_KINDS = ("plan", "addon", "credits")
 CATALOG_STATUSES = ("draft", "published", "archived")
 SUBSCRIPTION_STATUSES = ("trialing", "active", "canceled")
 CREDIT_KINDS = ("purchase", "grant", "usage", "refund", "adjustment")
-REQUEST_STATUSES = ("open", "done", "declined")
+INVOICE_KINDS = ("purchase", "renewal", "upgrade", "manual")
+INVOICE_STATUSES = ("draft", "open", "paid", "void", "uncollectible")
+LINE_KINDS = ("plan", "addon", "credits", "proration", "custom")
 
 
 def _now() -> datetime:
@@ -150,37 +156,170 @@ class CreditEntry(Base):
 
 
 class BillingPayment(Base):
-    """Money received, as recorded by platform staff (until a payment provider records it). What it paid for is applied when it's recorded."""
+    """
+    Money received for an invoice, however it was paid (`method`: a bank transfer whose slip staff checked, cash or a
+    cheque staff recorded, a card). It only grows: a refund is recorded on its own, never by changing the payment.
+    Payments from before invoices have no invoice, and say what they paid for in item_id.
+    """
     __tablename__ = "billing_payments"
     __table_args__ = (Index("ix_billing_payments_tenant_created", "tenant_id", "created_at"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    invoice_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("invoices.id"), nullable=True, index=True)
+    method: Mapped[str] = mapped_column(String(32), nullable=False)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
     item_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("billing_catalog.id"), nullable=True)
     quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    reference: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # the bank transfer, invoice or receipt number
+    received_on: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    reference: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # the bank transfer, cheque or receipt number
+    external_ref: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # the charge at a card processor
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     recorded_by: Mapped[str] = mapped_column(String(100), nullable=False)
     recorded_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
 
 
-class BillingRequest(Base):
-    """A customer asking for a plan, an add-on or credits, while purchases go through staff (the manual payment provider)."""
-    __tablename__ = "billing_requests"
-    __table_args__ = (Index("ix_billing_requests_status_created", "status", "created_at"),)
+class BillingProfile(Base):
+    """Who an organization's invoices are made out to, kept by its owners. An invoice keeps a copy as it was when issued."""
+    __tablename__ = "billing_profiles"
+
+    tenant_id: Mapped[str] = mapped_column(String(64), ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True)
+    legal_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)  # where invoices and receipts are sent
+    address_line1: Mapped[str] = mapped_column(String(200), nullable=False)
+    address_line2: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    city: Mapped[str] = mapped_column(String(120), nullable=False)
+    region: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    postal_code: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    country: Mapped[str] = mapped_column(String(2), nullable=False)  # ISO 3166-1 alpha-2: decides the tax
+    tax_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    po_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # printed on every invoice when set
+    updated_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
+
+
+class BillingSettings(Base):
+    """Syruss as the seller, one row: who invoices are from, how they are numbered and paid, and the renewal timetable."""
+    __tablename__ = "billing_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # always 1
+    legal_name: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    address: Mapped[str] = mapped_column(Text, default="", nullable=False)  # as printed, one line per line
+    country: Mapped[str] = mapped_column(String(2), default="", nullable=False)
+    tax_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    email: Mapped[str] = mapped_column(String(255), default="", nullable=False)  # billing questions, and where payment slips are announced
+    invoice_prefix: Mapped[str] = mapped_column(String(16), default="SYR", nullable=False)
+    payment_terms_days: Mapped[int] = mapped_column(Integer, default=14, nullable=False)
+    renewal_lead_days: Mapped[int] = mapped_column(Integer, default=7, nullable=False)
+    grace_days: Mapped[int] = mapped_column(Integer, default=7, nullable=False)
+    reminder_days: Mapped[list] = mapped_column(JSON, default=lambda: [3, 0, -3], nullable=False)  # days before the due date (negative: after)
+    footer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
+
+
+class BankAccount(Base):
+    """An account customers pay into by bank transfer; an invoice shows the active ones in its currency."""
+    __tablename__ = "billing_bank_accounts"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
-    tenant_id: Mapped[str] = mapped_column(String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
-    item_id: Mapped[str] = mapped_column(String(64), ForeignKey("billing_catalog.id"), nullable=False)
-    quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    requested_by: Mapped[str] = mapped_column(String(100), nullable=False)
-    requested_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)
-    handled_by_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    handled_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    bank: Mapped[str] = mapped_column(String(120), nullable=False)
+    account_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    account_number: Mapped[str] = mapped_column(String(64), nullable=False)
+    branch: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    swift: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
-    handled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TaxRate(Base):
+    """
+    The tax on an invoice to a buyer in `country` ("*": any country without its own). With reverse_charge_with_tax_id,
+    a buyer who gives a tax ID accounts for the tax themselves and the invoice says so instead of charging it.
+    """
+    __tablename__ = "tax_rates"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    country: Mapped[str] = mapped_column(String(2), nullable=False)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)  # as printed: "VAT", "GST"
+    rate_bp: Mapped[int] = mapped_column(Integer, nullable=False)  # basis points: 1800 is 18%
+    reverse_charge_with_tax_id: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class BillingSequence(Base):
+    """The last number given in a series ("invoice:2026"). Taken under a row lock as an invoice is issued, so numbers have no gaps."""
+    __tablename__ = "billing_sequences"
+
+    series: Mapped[str] = mapped_column(String(40), primary_key=True)
+    last: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class Invoice(Base):
+    """
+    What an organization is asked to pay. A draft can change; issuing it gives it its number and copies in the seller,
+    the buyer, the bank accounts and the tax as they are then, and from then on the database refuses to change any of
+    that (a mistake is voided, or corrected with a credit note). It has no foreign key to the organization: invoices are
+    kept for as long as the law asks, whatever happens to the organization.
+    """
+    __tablename__ = "invoices"
+    __table_args__ = (
+        Index("ix_invoices_tenant_created", "tenant_id", "created_at"),
+        Index("ix_invoices_status_due", "status", "due_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    number: Mapped[Optional[str]] = mapped_column(String(40), nullable=True, unique=True)  # set when issued
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    subtotal_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tax_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    amount_paid_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    issued_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    voided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    void_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    period_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)  # a renewal: the period it pays for
+    period_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    seller: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    buyer: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    bank: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    tax_lines: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # printed on the invoice (a purchase order, what the customer asked)
+    pdf_key: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    receipt_key: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    fulfilled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)  # what it sells was switched on
+    switched_on_early_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    switched_on_early_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
+
+
+class InvoiceLine(Base):
+    """One line of an invoice: a catalog item (a plan for a period, an add-on, a credit pack) or a line staff wrote."""
+    __tablename__ = "invoice_lines"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    invoice_id: Mapped[str] = mapped_column(String(64), ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False, index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    item_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("billing_catalog.id"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    description: Mapped[str] = mapped_column(String(300), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    unit_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    tax_rate_bp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    period_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    period_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

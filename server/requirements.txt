@@ -17,6 +17,7 @@ alembic>=1.13
 pytest>=8.3.0
 pytest-asyncio>=0.24.0
 jinja2>=3.1
+reportlab>=4.2   # invoice, credit note and receipt PDFs
 oauthlib>=3.2   # (tests only) checks the NetSuite signature against an independent implementation
 aiosmtpd>=1.4
 asyncssh>=2.14

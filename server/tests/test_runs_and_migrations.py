@@ -100,6 +100,28 @@ async def test_migrations_build_the_same_schema_as_the_models():
                 with pytest.raises(Exception, match="append-only"):
                     async with conn.begin_nested():
                         await conn.execute(text(change))
+            # A draft invoice can change; once issued, what it says is fixed, and payments against it only grow.
+            await conn.execute(text("INSERT INTO invoices (id, tenant_id, kind, status, currency, subtotal_cents, tax_cents, total_cents, "
+                                    "amount_paid_cents, seller, buyer, bank, tax_lines, created_by, created_at, updated_at) VALUES "
+                                    "('i1', 't', 'purchase', 'draft', 'USD', 100, 0, 100, 0, '{}', '{}', '[]', '[]', 'tests', now(), now())"))
+            line = ("INSERT INTO invoice_lines (id, invoice_id, position, kind, description, quantity, unit_cents, amount_cents, tax_rate_bp) "
+                    "VALUES ('{}', 'i1', 0, 'custom', 'Setup', 1, 200, 200, 0)")
+            await conn.execute(text(line.format("l1")))
+            await conn.execute(text("UPDATE invoices SET subtotal_cents = 200, total_cents = 200 WHERE id = 'i1'"))
+            await conn.execute(text("UPDATE invoices SET status = 'open', number = 'T-1', issued_at = now() WHERE id = 'i1'"))
+            await conn.execute(text("INSERT INTO billing_payments (id, tenant_id, invoice_id, method, amount_cents, currency, quantity, "
+                                    "recorded_by, recorded_by_name, created_at) VALUES ('p1', 't', 'i1', 'staff_recorded', 50, 'USD', 1, 'u', 'U', now())"))
+            await conn.execute(text("UPDATE invoices SET amount_paid_cents = 50 WHERE id = 'i1'"))  # what has been paid is kept up to date
+            for change in ("UPDATE invoices SET total_cents = 1 WHERE id = 'i1'", "UPDATE invoices SET buyer = '{\"legal_name\": \"Other\"}' WHERE id = 'i1'",
+                           "UPDATE invoices SET status = 'draft' WHERE id = 'i1'", "DELETE FROM invoices WHERE id = 'i1'",
+                           "UPDATE invoice_lines SET amount_cents = 1", "DELETE FROM invoice_lines", line.format("l2")):
+                with pytest.raises(Exception, match="fixed"):
+                    async with conn.begin_nested():
+                        await conn.execute(text(change))
+            for change in ("UPDATE billing_payments SET amount_cents = 1", "DELETE FROM billing_payments"):
+                with pytest.raises(Exception, match="append-only"):
+                    async with conn.begin_nested():
+                        await conn.execute(text(change))
         await fresh.dispose()
         assert diff == []
     finally:

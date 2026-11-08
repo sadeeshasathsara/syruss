@@ -7,8 +7,7 @@ Billing for an organization, the one door the rest of the server uses:
     standing(db, tenant_id)       its plan, period and every limit now
     roll_periods(db)              moves periods on, applies a downgrade at the period's end, ends trials
     set_override, change_plan, set_addon, start_trial   what staff change by hand
-    apply_item, record_payment, create_request, handle_request   buying: until a payment provider is connected,
-                                  customers ask (a request) and staff record the payment, which applies what it paid for
+    apply_item                    switches on what was bought (invoices call it once an invoice is paid: see invoices.py)
 
 An organization's workspaces share its plan: pages are counted for the organization, a workspace limit (members,
 channels, ...) applies to each workspace on its own. Every organization has a subscription; one without (a new
@@ -17,14 +16,12 @@ organization) gets the Free plan, starting now, the first time it is needed.
 import calendar
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, Optional, Set
 from fastapi import HTTPException
 from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.billing import (
-    BillingPayment, BillingRequest, CatalogItem, OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, UsageEvent,
-)
+from app.models.billing import CatalogItem, OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, UsageEvent
 from app.models.document import Document
 from app.models.template import DocumentTemplate
 from app.services.billing import catalog, credits
@@ -103,7 +100,7 @@ async def standing(db: AsyncSession, tenant_id: str, template_id: Optional[str] 
 
 def _refusal(s: Standing, key: str, allowed: int, would_be: int) -> str:
     whose = "This organization's limit is" if key in s.overridden else f"The {s.plan.name} plan allows"
-    return f"{whose} {allowed} {LIMITS[key].noun}; this would make {would_be}."
+    return f"{whose} {LIMITS[key].count(allowed)}; this would make {would_be}."
 
 
 async def check_limit(db: AsyncSession, key: str, *, template_id: Optional[str] = None, tenant_id: Optional[str] = None,
@@ -258,68 +255,35 @@ async def start_trial(db: AsyncSession, tenant_id: str, plan: CatalogItem, days:
     return sub
 
 
-async def apply_item(db: AsyncSession, tenant_id: str, item: CatalogItem, quantity: int, by: str) -> str:
-    """Gives the organization what it bought or asked for; says what was done, for the record."""
+async def apply_item(db: AsyncSession, tenant_id: str, item: CatalogItem, quantity: int, by: str, *, ref: Optional[str] = None,
+                     reason: Optional[str] = None) -> str:
+    """
+    Gives the organization what it bought; says what was done, for the record. Moving from a free plan to a paid one
+    starts a new period now, so the first month paid for is a whole month.
+    """
     if item.kind == "plan":
-        sub = await change_plan(db, tenant_id, item)
+        sub = await subscription(db, tenant_id)
+        current = await db.get(CatalogItem, sub.plan_id)
+        await change_plan(db, tenant_id, item)
         sub.status = "active"
+        if item.price_cents and not (current and current.price_cents):
+            now = _now()
+            sub.period_start, sub.period_end, sub.anchor_day, sub.alerts = now, month_after(now, now.day), now.day, {}
+            await db.flush()
         return f"moved the organization to the {item.name} plan"
     if item.kind == "addon":
-        current = (await db.execute(select(OrgSubscriptionAddon.quantity).where(
+        have = (await db.execute(select(OrgSubscriptionAddon.quantity).where(
             OrgSubscriptionAddon.tenant_id == tenant_id, OrgSubscriptionAddon.addon_id == item.id))).scalar() or 0
-        await set_addon(db, tenant_id, item, current + quantity, by)
+        await set_addon(db, tenant_id, item, have + quantity, by)
         return f"added {quantity} × {item.name}"
     pages = (item.pages or 0) * quantity
-    await credits.add(db, tenant_id=tenant_id, delta=pages, kind="purchase", created_by=by, ref=f"item:{item.id}", reason=item.name)
+    await credits.add(db, tenant_id=tenant_id, delta=pages, kind="purchase", created_by=by, ref=ref or f"item:{item.id}", reason=reason or item.name)
     return f"added {pages:,} prepaid pages ({quantity} × {item.name})"
 
 
-async def record_payment(db: AsyncSession, tenant_id: str, *, amount_cents: int, currency: str, by_id: str, by_name: str,
-                         item: Optional[CatalogItem] = None, quantity: int = 1, reference: Optional[str] = None,
-                         note: Optional[str] = None) -> Tuple[BillingPayment, Optional[str]]:
-    """
-    Writes down money received and applies what it paid for: a plan is paid through the current period (a trial ends as
-    paid), an add-on is added, a credit pack's pages are added. Returns the payment and what was done.
-    """
-    payment = BillingPayment(tenant_id=tenant_id, amount_cents=amount_cents, currency=currency.upper(), item_id=item.id if item else None,
-                             quantity=quantity, reference=reference, note=note, recorded_by=by_id, recorded_by_name=by_name)
-    db.add(payment)
+async def paid_through_period(db: AsyncSession, tenant_id: str) -> OrgSubscription:
+    """A plan was paid for: the current period counts as paid (a trial ending now keeps the plan)."""
+    sub = await subscription(db, tenant_id)
+    sub.paid_until = max(filter(None, (sub.paid_until, sub.period_end)))
     await db.flush()
-    done = await apply_item(db, tenant_id, item, quantity, by_id) if item else None
-    if item and item.kind == "plan":
-        sub = await subscription(db, tenant_id)
-        sub.paid_until = max(filter(None, (sub.paid_until, sub.period_end)))
-    return payment, done
-
-
-async def create_request(db: AsyncSession, tenant_id: str, item: CatalogItem, *, quantity: int, note: Optional[str],
-                         user_id: str, user_name: str) -> BillingRequest:
-    """A customer asks for something on offer; staff complete it (the manual payment provider)."""
-    if item.status != "published" or not item.public:
-        raise ValueError("That isn't on offer")
-    if item.kind == "plan":
-        quantity = 1
-    row = BillingRequest(tenant_id=tenant_id, item_id=item.id, quantity=quantity, note=(note or "").strip() or None,
-                         requested_by=user_id, requested_by_name=user_name)
-    db.add(row)
-    await db.flush()
-    return row
-
-
-async def handle_request(db: AsyncSession, request: BillingRequest, *, fulfil: bool, note: Optional[str], by_id: str, by_name: str,
-                         amount_cents: Optional[int] = None, reference: Optional[str] = None) -> Optional[str]:
-    """Completes a request (applying it, with its payment when one is given) or declines it. Returns what was done."""
-    if request.status != "open":
-        raise ValueError("This request was already handled")
-    done = None
-    if fulfil:
-        item = await db.get(CatalogItem, request.item_id)
-        if amount_cents is not None:
-            _, done = await record_payment(db, request.tenant_id, amount_cents=amount_cents, currency=item.currency, by_id=by_id, by_name=by_name,
-                                           item=item, quantity=request.quantity, reference=reference, note=note)
-        else:
-            done = await apply_item(db, request.tenant_id, item, request.quantity, by_id)
-    request.status, request.handled_note, request.handled_by_name, request.handled_at = (
-        "done" if fulfil else "declined", (note or "").strip() or None, by_name, _now())
-    await db.flush()
-    return done
+    return sub

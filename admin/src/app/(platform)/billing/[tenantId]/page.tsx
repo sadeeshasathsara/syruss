@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Label, MoneyInput, StaffForm } from "@/components/billing/StaffForm";
@@ -155,6 +155,7 @@ const CHANGES: { key: Change; label: string }[] = [
 ];
 
 function Changes({ d, limits, catalog }: { d: OrgBilling; limits: LimitInfo[]; catalog: CatalogItem[] }) {
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState<Change | null>(null);
   const id = d.organization.id;
   const onSale = useMemo(() => catalog.filter((i) => i.status === "published"), [catalog]);
@@ -185,7 +186,7 @@ function Changes({ d, limits, catalog }: { d: OrgBilling; limits: LimitInfo[]; c
                   <span className="text-ink">{limits.find((l) => l.key === o.key)?.label ?? o.key}: {amount(o.value)}{o.workspace ? ` in ${o.workspace}` : ""}</span>
                   <span className="block text-meta text-muted">{o.reason} · {o.set_by}{o.expires_at ? ` · until ${day(o.expires_at)}` : ""}</span>
                 </span>
-                <ReasonAction label="Remove" busyLabel="Removing…" confirmLabel="Remove" variant="danger" onRun={(r) => api.billing.removeOverride(d.organization.id, o.id, r)} />
+                <ReasonAction label="Remove" busyLabel="Removing…" confirmLabel="Remove" variant="danger" onRun={(r) => api.billing.removeOverride(d.organization.id, o.id, r).then(() => queryClient.invalidateQueries({ queryKey: ["billing"] }))} />
               </li>
             ))}
           </ul>
@@ -322,7 +323,9 @@ function PaymentForm({ id, items, plan, onDone }: { id: string; items: CatalogIt
   const pick = (next: string) => {
     setItem(next);
     const i = items.find((x) => x.id === next);
-    if (i) { setCents(i.price_cents * quantity); setCurrency(i.currency); }
+    const q = i && i.kind !== "plan" ? quantity : 1; // a plan is paid a period at a time, so it has no quantity to keep
+    setQuantity(q);
+    if (i) { setCents(i.price_cents * q); setCurrency(i.currency); }
   };
   return (
     <StaffForm title="Record a payment received" submit={`Record ${money(cents, currency)}`} busy="Recording…" onDone={onDone}
