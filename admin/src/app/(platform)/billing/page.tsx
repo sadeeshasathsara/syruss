@@ -5,21 +5,26 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { CatalogEditor } from "@/components/billing/CatalogEditor";
-import { Label, MoneyInput, StaffForm } from "@/components/billing/StaffForm";
+import { InvoiceList } from "@/components/billing/Invoices";
+import { PaymentsQueue } from "@/components/billing/PaymentsQueue";
+import { BillingSettings } from "@/components/billing/Settings";
+import { Label, StaffForm } from "@/components/billing/StaffForm";
 import { ReasonAction, field } from "@/components/ops/Bits";
 import { useStaff } from "@/components/shell/AdminFrame";
 import { Bar, Empty, ErrorNote, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
-import { ITEM_STATUS, KIND_LABEL, amount, itemSummary, money, price } from "@/lib/billing";
-import { cn, dateTime } from "@/lib/format";
-import type { BillingRequest, CatalogItem, CatalogKind, OrgBillingRow } from "@/lib/types";
+import { ITEM_STATUS, KIND_LABEL, amount, itemSummary, price } from "@/lib/billing";
+import { cn } from "@/lib/format";
+import type { CatalogItem, CatalogKind, OrgBillingRow } from "@/lib/types";
 
 const TABS = [
   { key: "organizations", label: "Organizations" },
+  { key: "invoices", label: "Invoices" },
+  { key: "payments", label: "Payments to check" },
   { key: "catalog", label: "Plans and packs" },
-  { key: "requests", label: "Requests" },
+  { key: "settings", label: "Settings" },
 ] as const;
 
 export default function BillingPage() {
@@ -28,23 +33,21 @@ export default function BillingPage() {
 
 function Billing() {
   const tab = useSearchParams().get("tab") ?? "organizations";
-  const open = useQuery({ queryKey: ["billing", "requests", "open"], queryFn: () => api.billing.requests("open"), refetchInterval: 30_000 });
-  const setup = useQuery({ queryKey: ["billing", "setup"], queryFn: api.billing.setup, staleTime: 300_000 });
+  const waiting = useQuery({ queryKey: ["billing", "submissions", "submitted"], queryFn: () => api.billing.submissions("submitted"), refetchInterval: 30_000 });
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Billing" subtitle={setup.data
-        ? `What each organization has and uses, what is on sale, and what customers asked for. Payments: ${setup.data.provider.label}.`
-        : "What each organization has and uses, what is on sale, and what customers asked for."} />
+      <PageHeader title="Billing" subtitle="What each organization has, owes and paid; the slips customers sent to check; what is on sale; and Syruss's own billing details." />
       <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Show">
         {TABS.map((t) => (
           <Link key={t.key} href={`/billing?tab=${t.key}`} aria-current={tab === t.key ? "page" : undefined}
             className={cn("inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-body transition-colors", tab === t.key ? "bg-active font-medium text-ink" : "text-muted hover:text-ink")}>
             {t.label}
-            {t.key === "requests" && !!open.data?.length && <span className="num text-meta text-[var(--pill-warning-ink)]">{open.data.length}</span>}
+            {t.key === "payments" && !!waiting.data?.length && <span className="num text-meta text-[var(--pill-warning-ink)]">{waiting.data.length}</span>}
           </Link>
         ))}
       </div>
-      {tab === "catalog" ? <Catalog /> : tab === "requests" ? <Requests /> : <Organizations />}
+      {tab === "catalog" ? <Catalog /> : tab === "invoices" ? <InvoiceList /> : tab === "payments" ? <PaymentsQueue />
+        : tab === "settings" ? <BillingSettings /> : <Organizations />}
     </div>
   );
 }
@@ -66,6 +69,7 @@ function Meter({ used, limit }: { used: number; limit: number | null }) {
 
 function standing(o: OrgBillingRow): { label: string; tone: "positive" | "warning" | "neutral" | "negative" } {
   if (o.subscription_status === "trialing") return { label: `Trial until ${new Date(o.trial_ends_at!).toLocaleDateString()}`, tone: "warning" };
+  if (o.subscription_status === "past_due") return { label: "Past due", tone: "negative" };
   if (o.plan_key !== "free" && (!o.paid_until || o.paid_until < o.period_end)) return { label: "Not paid this period", tone: "negative" };
   return { label: o.subscription_status === "active" ? "Active" : "Canceled", tone: o.subscription_status === "active" ? "positive" : "neutral" };
 }
@@ -83,7 +87,8 @@ function Organizations() {
               <li key={f.tenant_id} className="flex flex-wrap items-center gap-2 py-2 text-body">
                 <Link href={`/billing/${f.tenant_id}`} className="min-w-0 flex-1 truncate text-ink hover:underline">{f.organization?.name ?? f.tenant_id}</Link>
                 <span className="text-muted">{f.plan}</span>
-                <Pill tone="warning">{f.status === "trialing" ? `Trial ends ${new Date(f.trial_ends_at!).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : "Payment not recorded for this period"}</Pill>
+                <Pill tone="warning">{f.status === "trialing" ? `Trial ends ${new Date(f.trial_ends_at!).toLocaleDateString(undefined, { day: "numeric", month: "short" })}`
+                  : f.status === "past_due" ? "Renewal past due" : "Payment not recorded for this period"}</Pill>
               </li>
             ))}
           </ul>
@@ -104,7 +109,7 @@ function Organizations() {
               <thead>
                 <tr className="border-b border-rule text-left text-meta text-muted [&>th]:px-4 [&>th]:py-2 [&>th]:font-normal">
                   <th scope="col">Organization</th><th scope="col">Plan</th><th scope="col">Pages this period</th>
-                  <th scope="col" className="text-right">Credits</th><th scope="col">Renews</th><th scope="col">Requests</th>
+                  <th scope="col" className="text-right">Credits</th><th scope="col">Renews</th><th scope="col">Invoices</th>
                 </tr>
               </thead>
               <tbody className="[&>tr]:border-b [&>tr]:border-rule [&>tr:last-child]:border-0 [&_td]:px-4 [&_td]:py-2.5">
@@ -117,7 +122,12 @@ function Organizations() {
                       <td><Meter used={o.pages_used} limit={o.pages_limit} /></td>
                       <td className="num text-right">{o.credits.toLocaleString()}</td>
                       <td className="text-muted">{new Date(o.period_end).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</td>
-                      <td>{o.open_requests ? <Pill tone="warning">{o.open_requests} open</Pill> : <span className="text-muted">None</span>}</td>
+                      <td className="flex flex-wrap gap-1">
+                        {o.invoices_overdue ? <Pill tone="negative">{o.invoices_overdue} overdue</Pill> : null}
+                        {o.invoices_waiting - o.invoices_overdue > 0 ? <Pill tone="warning">{o.invoices_waiting - o.invoices_overdue} waiting</Pill> : null}
+                        {o.drafts ? <Pill tone="neutral">{o.drafts} draft{o.drafts === 1 ? "" : "s"}</Pill> : null}
+                        {!o.invoices_waiting && !o.drafts && <span className="text-muted">All paid</span>}
+                      </td>
                     </tr>
                   );
                 })}
@@ -216,76 +226,3 @@ function MovePlan({ from, plans }: { from: CatalogItem; plans: CatalogItem[] }) 
   );
 }
 
-function Requests() {
-  const [status, setStatus] = useState<"open" | "done" | "declined">("open");
-  const list = useQuery({ queryKey: ["billing", "requests", status], queryFn: () => api.billing.requests(status) });
-  return (
-    <>
-      <div className="flex gap-1" role="group" aria-label="Which requests">
-        {(["open", "done", "declined"] as const).map((s) => (
-          <Button key={s} size="sm" variant={status === s ? "primary" : "secondary"} onClick={() => setStatus(s)}>{{ open: "Waiting", done: "Completed", declined: "Declined" }[s]}</Button>
-        ))}
-      </div>
-      {list.isError && <ErrorNote message="Couldn't load the requests." onRetry={() => list.refetch()} />}
-      {!list.data ? <Bar className="h-48 w-full rounded-card" /> : list.data.length === 0 ? (
-        <Empty title={status === "open" ? "Nothing waiting" : "None yet"}>
-          {status === "open" ? "When a customer asks for a plan, an add-on or credits in Billing, it shows here for you to invoice and complete." : undefined}
-        </Empty>
-      ) : (
-        <div className="flex flex-col gap-3">{list.data.map((r) => <RequestCard key={r.id} r={r} />)}</div>
-      )}
-    </>
-  );
-}
-
-function RequestCard({ r }: { r: BillingRequest }) {
-  const me = useStaff();
-  const [doing, setDoing] = useState<"fulfil" | "decline" | null>(null);
-  const [cents, setCents] = useState(r.item.price_cents * r.quantity);
-  const [paid, setPaid] = useState(true);
-  const [reference, setReference] = useState("");
-  const [note, setNote] = useState("");
-  return (
-    <Panel>
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-body text-ink">
-            <Link href={`/billing/${r.tenant_id}`} className="font-medium hover:underline">{r.organization?.name ?? r.tenant_id}</Link> asked for{" "}
-            <span className="font-medium">{r.quantity > 1 ? `${r.quantity} × ` : ""}{r.item.name}</span>
-            <span className="text-muted"> ({KIND_LABEL[r.item.kind].one.toLowerCase()}, {money(r.item.price_cents * r.quantity, r.item.currency)})</span>
-          </p>
-          <p className="text-meta text-muted">{r.requested_by_name} · {dateTime(r.created_at)}</p>
-          {r.note && <p className="mt-1 text-body text-ink">“{r.note}”</p>}
-          {r.status !== "open" && <p className="mt-1 text-meta text-muted">{r.status === "done" ? "Completed" : "Declined"} by {r.handled_by_name}{r.handled_note ? `: ${r.handled_note}` : ""}</p>}
-        </div>
-        {r.status === "open" && me.can("billing.manage") && !doing && (
-          <div className="flex gap-2">
-            <Button size="sm" variant="primary" onClick={() => setDoing("fulfil")}>Complete…</Button>
-            <Button size="sm" onClick={() => setDoing("decline")}>Decline…</Button>
-          </div>
-        )}
-      </div>
-      {doing && (
-        <div className="mt-3 rounded-control bg-raised p-3">
-          <StaffForm title={doing === "fulfil" ? "Switch it on" : "Decline the request"} submit={doing === "fulfil" ? "Complete" : "Decline"} busy="Saving…"
-            danger={doing === "decline"} onDone={() => setDoing(null)}
-            onRun={(reason) => api.billing.handle(r.id, { action: doing, reason, note: note.trim() || undefined,
-              ...(doing === "fulfil" && paid ? { amount_cents: cents, reference: reference.trim() || undefined } : {}) })}>
-            {doing === "fulfil" && (
-              <>
-                <label className="flex items-center gap-2 text-body text-ink"><input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} /> Record the payment received with it</label>
-                {paid && (
-                  <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
-                    <Label text={`Amount (${r.item.currency})`}><MoneyInput cents={cents} onChange={setCents} /></Label>
-                    <Label text="Reference (invoice, transfer)"><input value={reference} onChange={(e) => setReference(e.target.value)} className={field} placeholder="INV-1001" /></Label>
-                  </div>
-                )}
-              </>
-            )}
-            <Label text="Note for the customer (optional)"><input value={note} onChange={(e) => setNote(e.target.value)} className={field} /></Label>
-          </StaffForm>
-        </div>
-      )}
-    </Panel>
-  );
-}
