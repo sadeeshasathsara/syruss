@@ -1,31 +1,41 @@
 """
 The organization's billing, for the people who manage it (org billing.manage: its owners): the plan and period, pages
-used out of the allowance and by which workspace, prepaid credits, add-ons and history, what is on offer, and buying.
+used out of the allowance and by which workspace, prepaid credits, add-ons, what is on offer, the billing details
+invoices are made out to, and the invoices themselves.
 
-Buying goes through the payment provider (app/services/billing/providers): with the manual one, it sends a request to
-Syruss, who invoice it and switch it on when it is paid.
+Buying issues an invoice at once; what it sells is switched on once it is paid (app/services/billing/invoices.py).
 """
 from typing import Any, Dict, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import AuthContext, require_org_permission
 from app.core.database import get_db_session
 from app.models.audit import AuditLog
-from app.models.billing import BillingPayment, BillingRequest, CatalogItem, OrgSubscriptionAddon
+from app.models.billing import BillingPayment, BillingProfile, CatalogItem, Invoice, OrgSubscriptionAddon
 from app.models.workspace import Workspace
-from app.services.billing import catalog, credits, service as billing
+from app.services.billing import catalog, credits, invoices, notices, parties, service as billing
 from app.services.billing.limits import LIMITS
-from app.services.billing.providers import Buyer, provider
+from app.services.billing.methods import enabled
 
 router = APIRouter(prefix="/billing", tags=["Billing"])
 BILLING = Depends(require_org_permission("billing.manage"))
+EMAIL = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 
 def _offer(i: CatalogItem) -> Dict[str, Any]:
     return {"id": i.id, "kind": i.kind, "key": i.key, "name": i.name, "description": i.description, "price_cents": i.price_cents,
             "currency": i.currency, "interval": i.interval, "limits": i.limits or {}, "pages": i.pages}
+
+
+def _profile(p: Optional[BillingProfile]) -> Optional[Dict[str, Any]]:
+    return parties.buyer_snapshot(p) | {"updated_at": p.updated_at} if p else None
+
+
+def _not_ready(exc: parties.NotReady) -> HTTPException:
+    code = "billing_details_missing" if exc.who == "buyer" else "seller_not_ready"
+    return HTTPException(status_code=409, detail={"code": code, "message": str(exc), "missing": exc.missing})
 
 
 @router.get("")
@@ -39,10 +49,11 @@ async def overview(auth: AuthContext = BILLING, db: AsyncSession = Depends(get_d
     pending = await db.get(CatalogItem, sub.pending_plan_id) if sub.pending_plan_id else None
     addons = (await db.execute(select(OrgSubscriptionAddon, CatalogItem).join(CatalogItem, CatalogItem.id == OrgSubscriptionAddon.addon_id)
                                .where(OrgSubscriptionAddon.tenant_id == tenant_id))).all()
-    payments = (await db.execute(select(BillingPayment, CatalogItem).outerjoin(CatalogItem, CatalogItem.id == BillingPayment.item_id)
-                                 .where(BillingPayment.tenant_id == tenant_id).order_by(BillingPayment.created_at.desc()).limit(50))).all()
-    requests = (await db.execute(select(BillingRequest, CatalogItem).join(CatalogItem, CatalogItem.id == BillingRequest.item_id)
-                                 .where(BillingRequest.tenant_id == tenant_id).order_by(BillingRequest.created_at.desc()).limit(20))).all()
+    payments = (await db.execute(select(BillingPayment, Invoice.number, CatalogItem.name).outerjoin(Invoice, Invoice.id == BillingPayment.invoice_id)
+                                 .outerjoin(CatalogItem, CatalogItem.id == BillingPayment.item_id).where(BillingPayment.tenant_id == tenant_id)
+                                 .order_by(BillingPayment.created_at.desc()).limit(50))).all()
+    waiting = (await db.execute(select(Invoice).where(Invoice.tenant_id == tenant_id, Invoice.status.in_(invoices.PAYABLE))
+                                .order_by(Invoice.due_at))).scalars().all()
     result = {
         "plan": _offer(s.plan), "pending_plan": _offer(pending) if pending else None, "status": sub.status,
         "period_start": sub.period_start, "period_end": sub.period_end, "trial_ends_at": sub.trial_ends_at,
@@ -54,11 +65,11 @@ async def overview(auth: AuthContext = BILLING, db: AsyncSession = Depends(get_d
             {"delta": e.delta, "kind": e.kind, "reason": e.reason if e.kind != "usage" else None, "created_at": e.created_at}
             for e in await credits.history(db, tenant_id)]},
         "addons": [{"addon": _offer(i), "quantity": a.quantity} for a, i in addons],
-        "payments": [{"amount_cents": p.amount_cents, "currency": p.currency, "for": i.name if i else None, "quantity": p.quantity,
-                      "reference": p.reference, "created_at": p.created_at} for p, i in payments],
-        "requests": [{"id": r.id, "item": _offer(i), "quantity": r.quantity, "status": r.status, "note": r.handled_note,
-                      "created_at": r.created_at, "handled_at": r.handled_at} for r, i in requests],
-        "provider": provider().describe(),
+        "payments": [{"amount_cents": p.amount_cents, "currency": p.currency, "method": p.method, "invoice_id": p.invoice_id, "invoice": number,
+                      "for": name, "quantity": p.quantity, "reference": p.reference, "created_at": p.created_at} for p, number, name in payments],
+        "invoices_waiting": [invoices.describe(i) for i in waiting],
+        "billing_details_missing": parties.profile_missing(await parties.profile(db, tenant_id)),
+        "methods": [m.describe() for m in enabled() if m.customer_can_use],
     }
     await db.commit()  # the subscription may have been created or brought up to date
     return result
@@ -70,24 +81,117 @@ async def offers(db: AsyncSession = Depends(get_db_session)):
     return {kind: [_offer(i) for i in await catalog.offered(db, kind)] for kind in ("plan", "addon", "credits")}
 
 
+# ---- Billing details ---------------------------------------------------------------------------
+
+@router.get("/profile")
+async def get_profile(auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
+    """Who invoices are made out to, and what is still missing before one can be issued."""
+    p = await parties.profile(db, auth.tenant_id)
+    return {"profile": _profile(p), "missing": parties.profile_missing(p)}
+
+
+class ProfileIn(BaseModel):
+    legal_name: str = Field(..., min_length=2, max_length=200)
+    email: str = Field(..., max_length=255, pattern=EMAIL)
+    address_line1: str = Field(..., min_length=2, max_length=200)
+    address_line2: Optional[str] = Field(None, max_length=200)
+    city: str = Field(..., min_length=1, max_length=120)
+    region: Optional[str] = Field(None, max_length=120)
+    postal_code: Optional[str] = Field(None, max_length=32)
+    country: str = Field(..., pattern=r"^[A-Za-z]{2}$", description="ISO 3166-1 alpha-2")
+    tax_id: Optional[str] = Field(None, max_length=64)
+    po_number: Optional[str] = Field(None, max_length=64)
+
+
+@router.put("/profile")
+async def put_profile(body: ProfileIn, auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
+    """Sets the billing details. Invoices already issued keep the details they were issued with."""
+    values = {k: (v.strip() or None) if isinstance(v, str) else v for k, v in body.model_dump().items()}
+    values["country"] = values["country"].upper()
+    p = await parties.profile(db, auth.tenant_id)
+    if p is None:
+        p = BillingProfile(tenant_id=auth.tenant_id, updated_by=auth.user_id, **values)
+        db.add(p)
+    else:
+        for field, value in values.items():
+            setattr(p, field, value)
+        p.updated_by = auth.user_id
+    db.add(AuditLog(tenant_id=auth.tenant_id, template_id=None, event_type="BILLING_DETAILS_CHANGED", entity_type="Organization",
+                    entity_id=auth.tenant_id, actor=auth.user_id, details={}))
+    await db.commit()
+    return {"profile": _profile(p), "missing": parties.profile_missing(p)}
+
+
+# ---- Invoices ----------------------------------------------------------------------------------
+
+async def _invoice(db: AsyncSession, auth: AuthContext, invoice_id: str) -> Invoice:
+    invoice = await db.get(Invoice, invoice_id)
+    if invoice is None or invoice.tenant_id != auth.tenant_id or invoice.status == "draft":
+        raise HTTPException(status_code=404, detail="No such invoice.")
+    return invoice
+
+
+@router.get("/invoices")
+async def list_invoices(auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
+    """Every invoice issued to the organization, newest first (drafts are Syruss's until issued)."""
+    rows = (await db.execute(select(Invoice).where(Invoice.tenant_id == auth.tenant_id, Invoice.status != "draft")
+                             .order_by(Invoice.issued_at.desc()).limit(200))).scalars().all()
+    return [invoices.describe(i) for i in rows]
+
+
+@router.get("/invoices/{invoice_id}")
+async def get_invoice(invoice_id: str, auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
+    """One invoice, its lines and payments, and how it can be paid while it is waiting."""
+    invoice = await _invoice(db, auth, invoice_id)
+    out = invoices.describe(invoice, await invoices.lines_of(db, invoice.id), await invoices.payments_of(db, invoice.id))
+    out["how_to_pay"] = [{**m.describe(), "instructions": m.instructions(invoice)} for m in enabled()
+                         if m.customer_can_use] if invoice.status in invoices.PAYABLE else []
+    return out
+
+
+async def _pdf(invoice: Invoice, which: str) -> Response:
+    data = await invoices.file_of(invoice, which)
+    if data is None:
+        raise HTTPException(status_code=404, detail="There is no receipt until the invoice is paid." if which == "receipt" else "No PDF yet.")
+    name = f"{'Receipt' if which == 'receipt' else 'Invoice'} {invoice.number}.pdf"
+    return Response(content=data, media_type="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="{name}"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/invoices/{invoice_id}/pdf")
+async def invoice_pdf(invoice_id: str, auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
+    return await _pdf(await _invoice(db, auth, invoice_id), "pdf")
+
+
+@router.get("/invoices/{invoice_id}/receipt")
+async def invoice_receipt(invoice_id: str, auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
+    return await _pdf(await _invoice(db, auth, invoice_id), "receipt")
+
+
+# ---- Buying ------------------------------------------------------------------------------------
+
 class PurchaseIn(BaseModel):
     item_id: str
     quantity: int = Field(1, ge=1, le=1000)
-    note: Optional[str] = Field(None, max_length=2000)
+    note: Optional[str] = Field(None, max_length=2000, description="Printed on the invoice (a purchase order number, ...)")
 
 
 @router.post("/purchases", status_code=201)
 async def purchase(body: PurchaseIn, auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
-    """Starts buying a plan, an add-on or credits: a page to pay on, or a request Syruss completes."""
+    """Buys a plan, an add-on or credits: an invoice, issued now; it is switched on once paid."""
     item = await db.get(CatalogItem, body.item_id)
     if item is None or item.status != "published" or not item.public:
         raise HTTPException(status_code=404, detail="That isn't on offer.")
-    buyer = Buyer(tenant_id=auth.tenant_id, user_id=auth.user_id, name=auth.username or auth.user_id, email=auth.email)
     try:
-        started = await provider().start_purchase(db, buyer, item, body.quantity, body.note)
+        invoice, message, new = await invoices.purchase(db, auth.tenant_id, item, body.quantity, by=auth.user_id, note=body.note)
+    except parties.NotReady as exc:
+        raise _not_ready(exc)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
-    db.add(AuditLog(tenant_id=auth.tenant_id, template_id=None, event_type="BILLING_REQUESTED", entity_type="Organization",
-                    entity_id=auth.tenant_id, actor=auth.user_id, details={"item": item.name, "quantity": body.quantity}))
+    if new:
+        db.add(AuditLog(tenant_id=auth.tenant_id, template_id=None, event_type="BILLING_INVOICED", entity_type="Organization",
+                        entity_id=auth.tenant_id, actor=auth.user_id, details={"item": item.name, "quantity": body.quantity, "invoice": invoice.number}))
     await db.commit()
-    return {"status": started.status, "message": started.message, "url": started.url, "request_id": started.request_id}
+    if new:
+        await (notices.invoice_issued(invoice.id) if invoice.status == "open" else notices.invoice_paid(invoice.id, None))
+    return {"status": "invoiced" if invoice else "scheduled", "message": message, "invoice": invoices.describe(invoice) if invoice else None}

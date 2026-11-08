@@ -65,7 +65,7 @@ async def check(tenant_id: str) -> List[str]:
             tenant = await db.get(Tenant, tenant_id)
             people = (await db.execute(select(User).join(OrgMember, OrgMember.user_id == User.id).where(
                 OrgMember.tenant_id == tenant_id, OrgMember.role.in_(BILLERS)))).scalars().all()
-            url = f"{settings.PUBLIC_SITE_URL.rstrip('/')}/{tenant.slug}/settings/billing"
+            url = f"{settings.PUBLIC_APP_URL.rstrip('/')}/{tenant.slug}/settings/billing"
             for alert, title, body in new:
                 for person in people:
                     await notify(BILLING_ALERT, Recipient(email=person.email, user_id=person.id, tenant_id=tenant_id),

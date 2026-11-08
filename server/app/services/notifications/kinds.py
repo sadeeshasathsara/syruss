@@ -102,4 +102,36 @@ BILLING_ALERT = Kind(
     ),
 )
 
-KINDS: Dict[str, Kind] = {k.key: k for k in (INVITATION, EMAIL_CODE, DEVICE_CODE, DEVICE_ADDED, BILLING_ALERT)}
+INVOICE_ISSUED = Kind(
+    key="invoice_issued",
+    variables=("organization", "number", "total", "due_on", "items", "url", "invoice"),
+    email=EmailSpec("invoice_issued", "Invoice {{ number }} from Syruss ({{ total }})"),
+    in_app=InAppSpec(
+        type="billing.invoice",
+        title="Invoice {{ number }}: {{ total }} due by {{ due_on }}",
+        body="For {{ items }}. It's switched on as soon as the invoice is paid.",
+        link="{{ url }}",
+        scope="tenant",
+        keep=("invoice",),
+        replace_by="invoice",
+    ),
+)
+
+PAYMENT_RECEIVED = Kind(
+    key="payment_received",
+    variables=("organization", "number", "amount", "url", "invoice"),
+    optional=("done",),
+    email=EmailSpec("payment_received", "Invoice {{ number }} is paid"),
+    in_app=InAppSpec(
+        type="billing.invoice",
+        title="Invoice {{ number }} is paid",
+        body="{{ 'Switched on: ' ~ done ~ '.' if done else 'Thank you.' }}",
+        link="{{ url }}",
+        severity="success",
+        scope="tenant",
+        keep=("invoice",),
+        replace_by="invoice",
+    ),
+)
+
+KINDS: Dict[str, Kind] = {k.key: k for k in (INVITATION, EMAIL_CODE, DEVICE_CODE, DEVICE_ADDED, BILLING_ALERT, INVOICE_ISSUED, PAYMENT_RECEIVED)}
