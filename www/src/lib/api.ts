@@ -8,6 +8,7 @@ import type {
   NewDestination, TryResult,
   WorkspaceJobInfo, LiveQuality, GoldenDocument, EvalRunInfo, FlagAnswer, ConversationPage, SystemLesson,
   Rule, RuleCheckResult, RuleDraft, RuleInput, RuleLanguage, ValidationRule,
+  Offers, OrgBilling, PurchaseStarted,
 } from "./types";
 
 /**
@@ -127,6 +128,12 @@ export const api = {
   organization: () => request<Organization>("/organization"),
 
   /** The organization's people. Roles here run the organization; they never open a workspace's data. */
+  /** The organization's plan, pages, credits and buying (its billing managers: owners). */
+  billing: {
+    get: () => request<OrgBilling>("/billing"),
+    offers: () => request<Offers>("/billing/catalog"),
+    buy: (body: { item_id: string; quantity?: number; note?: string }) => request<PurchaseStarted>("/billing/purchases", { method: "POST", body: json(body) }),
+  },
   org: {
     rename: (name: string) => request<Organization>("/organization", { method: "PATCH", body: json({ name }) }),
     overview: (days: OrgPeriod = 30) => request<OrgOverview>(`/organization/overview?days=${days}`),

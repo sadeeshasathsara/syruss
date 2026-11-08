@@ -94,12 +94,13 @@ export default function Overview() {
           value={overview.data ? (overview.data.avg_seconds_to_save === null ? "No data yet" : duration(overview.data.avg_seconds_to_save)) : undefined}
           note="Average from upload to saved record, last 30 days."
         />
-        <Panel title="This month" className="@3xl:col-span-1">
+        <Panel title="This period" className="@3xl:col-span-1">
           {overview.data ? (
             <div className="flex flex-col gap-3">
-              <Meter label="Documents" used={overview.data.usage.documents_this_month} limit={overview.data.usage.documents_limit} />
+              {/* The pages are the organization's, shared by its workspaces: this one's share of them. */}
+              <Meter label="Pages read here" used={overview.data.usage.pages_this_period} limit={overview.data.usage.documents_limit} />
               <Meter label="People" used={overview.data.usage.members} limit={overview.data.usage.members_limit} />
-              <p className="text-meta text-muted">{overview.data.usage.plan} plan</p>
+              <p className="text-meta text-muted">{overview.data.usage.plan} plan, shared by the organization&apos;s workspaces</p>
             </div>
           ) : (
             <div className="flex flex-col gap-3"><Bar className="h-4 w-full" /><Bar className="h-4 w-full" /></div>

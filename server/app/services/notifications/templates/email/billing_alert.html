@@ -1,0 +1,10 @@
+{#- An organization's pages or prepaid credits are running low, or out. Variables: organization, title, body, url, alert -#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+{% block preheader %}{{ title }}{% endblock %}
+{% block heading %}{{ title }}{% endblock %}
+{% block content %}
+{{ ui.paragraph(body) }}
+{{ ui.button("Open billing", url) }}
+{% endblock %}
+{% block footer %}You get this because you manage billing for {{ organization }} on Syruss.{% endblock %}

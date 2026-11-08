@@ -23,7 +23,7 @@ from app.services.storage_service import storage_service
 from app.core.permissions import Access, require
 from app.core.permissions import check_permission
 from app.services import document_key, extraction_log, quality_service, settings_service, workspace_events
-from app.services.billing import service as billing
+from app.services.billing import alerts as billing_alerts
 from app.services.record_service import record_service
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -57,7 +57,6 @@ async def upload_document(
     doc = await document_service.store_document(  # charges its pages, or refuses it when the plan's pages are used
         db, tenant_id=scope.tenant_id, template_id=scope.template_id, file=file, actor=scope.user_id, allowed_types=intake.allowed_types,
     )
-    await _warn_near_limit(db, scope, doc.page_count)
     if process:
         doc.status = DocumentStatus.QUEUED
         enqueue_agent_event(
@@ -67,6 +66,7 @@ async def upload_document(
         )
     await db.commit()
     await workspace_events.dispatch(db)
+    await billing_alerts.check(scope.tenant_id)  # pages or credits running low: the organization's billing people hear once a period
     if process:
         agent_event_relay.notify()
     await db.refresh(doc)
@@ -74,24 +74,6 @@ async def upload_document(
     if process:
         await _log(scope, doc, "queued", "Handed to the agent. It will start reading shortly.")
     return doc
-
-
-async def _warn_near_limit(db: AsyncSession, scope: TemplateScope, pages: int) -> None:
-    """Tells the people who manage billing when the organization's pages this period pass 80% and 100% of the plan's."""
-    now = await billing.summary(db, scope.tenant_id)
-    used, limit = now["pages_used"], now["pages_limit"]
-    if not limit:
-        return
-    for share in (1.0, 0.8):
-        if used - pages < int(limit * share) <= used:
-            await workspace_events.emit(
-                db, tenant_id=scope.tenant_id, template_id=scope.template_id, type="usage.limit",
-                severity="warning" if used < limit else "error", path="settings/general/billing",
-                title=f"{used} of {limit} pages used this period",
-                body=f"The {now['plan']} plan includes {limit} pages a period, shared by the organization's workspaces."
-                     + (f" New documents are refused until it renews on {now['period_end']:%d %B}." if used >= limit else ""),
-            )
-            return
 
 
 @router.get("", response_model=List[DocumentResponse], dependencies=[Depends(require("documents.view"))])
