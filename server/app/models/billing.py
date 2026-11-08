@@ -196,6 +196,9 @@ class BillingProfile(Base):
     country: Mapped[str] = mapped_column(String(2), nullable=False)  # ISO 3166-1 alpha-2: decides the tax
     tax_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     po_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # printed on every invoice when set
+    stripe_customer_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # the organization at Stripe, once it paid by card
+    card_payment_method: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # a card it chose to keep for renewals
+    card_label: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)            # "Visa ending 4242"
     updated_by: Mapped[str] = mapped_column(String(100), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
 
@@ -368,3 +371,28 @@ class PaymentFile(Base):
     sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)  # the same slip sent twice shows up
     uploaded_by: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class CardCheckout(Base):
+    """A Stripe Checkout page opened to pay an invoice by card. Reused while it is open, so paying twice is not offered twice."""
+    __tablename__ = "card_checkouts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    invoice_id: Mapped[str] = mapped_column(String(64), ForeignKey("invoices.id"), nullable=False, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    session_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    save_card: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)  # open | completed | expired
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class StripeEvent(Base):
+    """An event Stripe sent and we handled: Stripe may send one more than once, and it is handled once."""
+    __tablename__ = "stripe_events"
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    type: Mapped[str] = mapped_column(String(100), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
