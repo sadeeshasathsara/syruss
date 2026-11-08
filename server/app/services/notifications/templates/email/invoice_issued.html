@@ -1,0 +1,12 @@
+{#- An invoice was issued to an organization; its PDF is attached. Variables: organization, number, total, due_on, items, url, invoice -#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+{% block preheader %}Invoice {{ number }}: {{ total }} due by {{ due_on }}{% endblock %}
+{% block heading %}Invoice {{ number }}{% endblock %}
+{% block content %}
+{{ ui.paragraph("Syruss has issued an invoice to " ~ organization ~ " for " ~ items ~ ". The invoice is attached as a PDF.") }}
+{{ ui.facts([("Invoice", number), ("Total", total), ("Due by", due_on)]) }}
+{{ ui.paragraph("It's switched on as soon as the invoice is paid. Pay by bank transfer and send the slip from the invoice page, quoting " ~ number ~ " as the reference.") }}
+{{ ui.button("View and pay", url) }}
+{% endblock %}
+{% block footer %}You get this because it is the billing address of {{ organization }} on Syruss.{% endblock %}

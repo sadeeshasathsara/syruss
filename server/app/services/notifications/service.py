@@ -8,7 +8,7 @@ returned Delivery says what happened, so the caller can show "couldn't send" wit
 """
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Literal, Optional
+from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
@@ -51,10 +51,12 @@ async def notify(
     *,
     channels: Optional[Iterable[Channel]] = None,
     db: Optional[AsyncSession] = None,
+    attachments: Optional[List[Tuple[str, bytes, str]]] = None,
 ) -> Delivery:
     """
     Sends `kind` to `to`. With `db`, the in-app notification joins the caller's transaction (commit, then
-    `inapp.push(db)`); without it, it is stored and pushed on its own.
+    `inapp.push(db)`); without it, it is stored and pushed on its own. `attachments` (file name, bytes, type) go with
+    the email.
     """
     variables = kind.prepare(data)
     wanted = set(channels) if channels is not None else {c for c, spec in (("email", kind.email), ("in_app", kind.in_app)) if spec}
@@ -83,7 +85,8 @@ async def notify(
     if "email" in wanted and kind.email and to.email:
         spec = kind.email
         parts = email_parts(spec.template, {**variables, "to": to.email})
-        message = transport.EmailMessage(to=to.email, subject=line(spec.subject, variables), text=parts["text"], html=parts["html"])
+        message = transport.EmailMessage(to=to.email, subject=line(spec.subject, variables), text=parts["text"], html=parts["html"],
+                                         attachments=attachments)
         try:
             await transport.send(message)
             delivery.email = "sent"

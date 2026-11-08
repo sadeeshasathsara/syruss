@@ -1,6 +1,6 @@
 """
-Beyond the plan's pages: prepaid credits, the catalog staff manage, customers asking for what is on offer, staff
-recording payments, and the alerts the organization's owners get.
+Beyond the plan's pages: prepaid credits, the catalog staff manage, what is on offer and who may buy it, staff changing
+an organization's plan by hand, and the alerts the organization's owners get. Paying is in test_invoices.py.
 """
 import time
 from sqlalchemy import select
@@ -50,7 +50,8 @@ async def test_credits_carry_on_where_the_plans_pages_end(client):
 
 async def test_staff_build_the_catalog_in_versions_and_a_published_one_never_changes(client):
     limits = (await client.get(f"{API}/sysadmin/billing/limits", headers=ADMIN_APP)).json()
-    assert {"pages_per_month", "channels_per_workspace"} <= {k["key"] for k in limits["limits"]} and limits["provider"]["kind"] == "manual"
+    assert {"pages_per_month", "channels_per_workspace"} <= {k["key"] for k in limits["limits"]}
+    assert [m["key"] for m in limits["methods"]] == ["bank_transfer", "staff_recorded"]
 
     draft = await client.post(f"{API}/sysadmin/billing/catalog", headers=ADMIN_APP, json={
         "kind": "credits", "key": "pages-1000", "name": "1,000 pages", "price_cents": 2500, "pages": 1000, "reason": "First credit pack"})
@@ -82,7 +83,7 @@ async def test_staff_build_the_catalog_in_versions_and_a_published_one_never_cha
                               json={"reason": "Not allowed"})).status_code == 403
 
 
-async def test_a_customer_asks_for_credits_and_staff_record_the_payment_that_switches_them_on(client):
+async def test_only_the_people_who_manage_billing_see_what_is_on_offer_or_buy_it(client):
     org = await organization("buyer")
     tenant = "tenant_buyer"
     pack = (await client.post(f"{API}/sysadmin/billing/catalog", headers=ADMIN_APP, json={
@@ -91,10 +92,7 @@ async def test_a_customer_asks_for_credits_and_staff_record_the_payment_that_swi
 
     offers = (await client.get(f"{API}/billing/catalog", headers=org)).json()
     assert pack["id"] in [c["id"] for c in offers["credits"]] and [p["key"] for p in offers["plan"]][:3] == ["free", "team", "business"]
-    asked = await client.post(f"{API}/billing/purchases", headers=org, json={"item_id": pack["id"], "quantity": 2, "note": "Invoice to accounts"})
-    assert asked.status_code == 201 and asked.json()["status"] == "requested", asked.text
 
-    # A member who doesn't manage billing can't see or buy.
     member = person("usr_bill_member", "Mo Member")
     await register(member, None)
     from app.models.identity import OrgMember
@@ -102,26 +100,8 @@ async def test_a_customer_asks_for_credits_and_staff_record_the_payment_that_swi
         db.add(OrgMember(tenant_id=tenant, user_id="usr_bill_member", role="member"))
         await db.commit()
     assert (await client.get(f"{API}/billing", headers={**org, **member})).status_code == 403
-
-    waiting = (await client.get(f"{API}/sysadmin/billing/requests", headers=ADMIN_APP)).json()
-    request = next(r for r in waiting if r["id"] == asked.json()["request_id"])
-    assert (request["quantity"], request["note"], request["organization"]["slug"]) == (2, "Invoice to accounts", "buyer")
-    done = await client.post(f"{API}/sysadmin/billing/requests/{request['id']}", headers=ADMIN_APP, json={
-        "action": "fulfil", "amount_cents": 3000, "reference": "INV-1001", "note": "Paid by transfer", "reason": "Payment received"})
-    assert done.status_code == 200 and done.json()["status"] == "done", done.text
-    assert await balance(tenant) == 1000
-    again = await client.post(f"{API}/sysadmin/billing/requests/{request['id']}", headers=ADMIN_APP, json={"action": "fulfil", "reason": "Twice?"})
-    assert again.status_code == 409
-
-    mine = (await client.get(f"{API}/billing", headers=org)).json()
-    assert mine["credits"]["balance"] == 1000 and mine["payments"][0]["reference"] == "INV-1001" and mine["requests"][0]["status"] == "done"
-    activity = (await client.get(f"{API}/organization/activity", headers=org)).json()["items"]
-    said = [a["text"] for a in activity]
-    assert any("asked Syruss for 500 pages (× 2)" in t for t in said)
-    assert any("of Syruss support recorded a payment of 30.00 USD and added 1,000 prepaid pages" in t and "Payment received" in t for t in said)
-    async with AsyncSessionLocal() as db:
-        actions = (await db.execute(select(PlatformAuditEntry.action).where(PlatformAuditEntry.tenant_id == tenant))).scalars().all()
-        assert "billing.request_fulfilled" in actions
+    assert (await client.post(f"{API}/billing/purchases", headers={**org, **member}, json={"item_id": pack["id"]})).status_code == 403
+    assert (await client.get(f"{API}/billing/invoices", headers={**org, **member})).status_code == 403
 
 
 async def test_staff_change_an_organizations_plan_add_ons_limits_trial_and_credits(client):
@@ -154,11 +134,9 @@ async def test_staff_change_an_organizations_plan_add_ons_limits_trial_and_credi
     assert trial.status_code == 200
     follow_up = (await client.get(f"{API}/sysadmin/billing/expiring", headers=ADMIN_APP, params={"days": 30})).json()
     assert any(f["tenant_id"] == tenant and f["status"] == "trialing" for f in follow_up)
-    paid = await client.post(f"{base}/payments", headers=ADMIN_APP, json={
-        "amount_cents": 4900, "item_id": team["id"], "reference": "INV-2001", "reason": "First month paid"})
-    assert paid.status_code == 201
-    after = (await client.get(base, headers=ADMIN_APP)).json()["subscription"]
-    assert after["status"] == "active" and after["paid_until"] == after["period_end"]
+    async with AsyncSessionLocal() as db:
+        actions = (await db.execute(select(PlatformAuditEntry.action).where(PlatformAuditEntry.tenant_id == tenant))).scalars().all()
+        assert {"billing.plan_changed", "billing.addon_set", "billing.override_set", "billing.credits_changed", "billing.trial_started"} <= set(actions)
 
 
 async def test_the_owners_hear_once_when_pages_run_low_and_when_they_run_out(client, mailbox):
