@@ -16,9 +16,21 @@
 | :--- | :--- | :--- | :--- |
 | **admin** | `0.5.1-dev.1` | 2026-11-08 | [What changed](#admin-051-dev1) |
 | **agent** | `0.6.0-dev.1` | 2026-11-06 | [What changed](#agent-060-dev1) |
-| **server** | `0.12.1-dev.1` | 2026-11-08 | [What changed](#server-0121-dev1) |
+| **server** | `0.12.2-dev.1` | 2026-11-08 | [What changed](#server-0122-dev1) |
 | **site** | `0.2.3-dev.1` | 2026-11-08 | [What changed](#site-023-dev1) |
-| **www** | `0.8.1-dev.1` | 2026-11-08 | [What changed](#www-081-dev1) |
+| **www** | `0.8.2-dev.1` | 2026-11-08 | [What changed](#www-082-dev1) |
+
+## [2026-11-08] - Release via dev
+
+### server (0.12.2-dev.1)
+- Fixes from code scanning: the CI workflow's token is read-only; an API source that can't be reached says so in a plain sentence (the library's error goes to the server log); the development reset no longer returns raw error text; reading times in rules can't be slowed down by a long run of spaces.
+- Connecting a destination through a provider's sign-in now comes back to the destination's page in the main app (PUBLIC_APP_URL), not to the public site.
+- An SFTP channel's page shows where to connect (host, port, username) and its password: once, right after the channel is made (kept only in the tab's memory, no longer in browser storage), and again whenever a new one is set.
+
+### www (0.8.2-dev.1)
+- Fixes from code scanning: the CI workflow's token is read-only; an API source that can't be reached says so in a plain sentence (the library's error goes to the server log); the development reset no longer returns raw error text; reading times in rules can't be slowed down by a long run of spaces.
+- Connecting a destination through a provider's sign-in now comes back to the destination's page in the main app (PUBLIC_APP_URL), not to the public site.
+- An SFTP channel's page shows where to connect (host, port, username) and its password: once, right after the channel is made (kept only in the tab's memory, no longer in browser storage), and again whenever a new one is set.
 
 ## [2026-11-08] - Release via dev
 
