@@ -134,4 +134,27 @@ PAYMENT_RECEIVED = Kind(
     ),
 )
 
-KINDS: Dict[str, Kind] = {k.key: k for k in (INVITATION, EMAIL_CODE, DEVICE_CODE, DEVICE_ADDED, BILLING_ALERT, INVOICE_ISSUED, PAYMENT_RECEIVED)}
+PAYMENT_SUBMITTED = Kind(
+    key="payment_submitted",
+    variables=("organization", "number", "amount", "method", "url"),
+    email=EmailSpec("payment_submitted", "{{ organization }} sent a payment for invoice {{ number }}"),
+)
+
+PAYMENT_REJECTED = Kind(
+    key="payment_rejected",
+    variables=("organization", "number", "amount", "reason", "url", "invoice"),
+    email=EmailSpec("payment_rejected", "We couldn't confirm the payment for invoice {{ number }}"),
+    in_app=InAppSpec(
+        type="billing.invoice",
+        title="We couldn't confirm the payment for invoice {{ number }}",
+        body="{{ reason }}",
+        link="{{ url }}",
+        severity="warning",
+        scope="tenant",
+        keep=("invoice",),
+        replace_by="invoice",
+    ),
+)
+
+KINDS: Dict[str, Kind] = {k.key: k for k in (INVITATION, EMAIL_CODE, DEVICE_CODE, DEVICE_ADDED, BILLING_ALERT, INVOICE_ISSUED, PAYMENT_RECEIVED,
+                                             PAYMENT_SUBMITTED, PAYMENT_REJECTED)}

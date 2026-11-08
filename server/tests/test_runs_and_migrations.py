@@ -122,6 +122,14 @@ async def test_migrations_build_the_same_schema_as_the_models():
                 with pytest.raises(Exception, match="append-only"):
                     async with conn.begin_nested():
                         await conn.execute(text(change))
+            # Proof of payment is kept as it was sent: only its storage key is filled in, once.
+            await conn.execute(text("INSERT INTO payment_files (id, tenant_id, payment_id, object_key, filename, content_type, size, sha256, "
+                                    "uploaded_by, created_at) VALUES ('f1', 't', 'p1', '', 'slip.pdf', 'application/pdf', 10, 'abc', 'u', now())"))
+            await conn.execute(text("UPDATE payment_files SET object_key = 'billing/t/proofs/f1.pdf' WHERE id = 'f1'"))
+            for change in ("UPDATE payment_files SET filename = 'other.pdf'", "DELETE FROM payment_files"):
+                with pytest.raises(Exception, match="append-only"):
+                    async with conn.begin_nested():
+                        await conn.execute(text(change))
         await fresh.dispose()
         assert diff == []
     finally:
