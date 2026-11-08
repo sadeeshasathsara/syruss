@@ -83,6 +83,7 @@ async def overview(auth: AuthContext = BILLING, db: AsyncSession = Depends(get_d
         "invoices_waiting": [invoices.describe(i) for i in waiting],
         "billing_details_missing": parties.profile_missing(await parties.profile(db, tenant_id)),
         "methods": [m.describe() for m in enabled() if m.customer_can_use],
+        "invoicing_ready": not parties.seller_missing(await parties.seller(db)),  # Syruss's own billing details are in
         "card": _card(await parties.profile(db, tenant_id)),
     }
     await db.commit()  # the subscription may have been created or brought up to date
