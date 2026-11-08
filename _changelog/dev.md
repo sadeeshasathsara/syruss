@@ -16,9 +16,19 @@
 | :--- | :--- | :--- | :--- |
 | **admin** | `0.5.1-dev.1` | 2026-11-08 | [What changed](#admin-051-dev1) |
 | **agent** | `0.6.0-dev.1` | 2026-11-06 | [What changed](#agent-060-dev1) |
-| **server** | `0.12.0-dev.1` | 2026-11-08 | [What changed](#server-0120-dev1) |
+| **server** | `0.12.1-dev.1` | 2026-11-08 | [What changed](#server-0121-dev1) |
 | **site** | `0.2.3-dev.1` | 2026-11-08 | [What changed](#site-023-dev1) |
-| **www** | `0.8.0-dev.1` | 2026-11-08 | [What changed](#www-080-dev1) |
+| **www** | `0.8.1-dev.1` | 2026-11-08 | [What changed](#www-081-dev1) |
+
+## [2026-11-08] - Release via dev
+
+### server (0.12.1-dev.1)
+- Plans and credits doesn't offer to buy while an invoice can't be issued: it says why instead (the organization's billing details are missing, or Syruss's own aren't filled in yet). The buttons in an offer wrap instead of spilling out of the card.
+- Buying asks for the organization's billing details before saying Syruss isn't ready, since that is the part the customer can fix.
+
+### www (0.8.1-dev.1)
+- Plans and credits doesn't offer to buy while an invoice can't be issued: it says why instead (the organization's billing details are missing, or Syruss's own aren't filled in yet). The buttons in an offer wrap instead of spilling out of the card.
+- Buying asks for the organization's billing details before saying Syruss isn't ready, since that is the part the customer can fix.
 
 ## [2026-11-08] - Release via dev
 
