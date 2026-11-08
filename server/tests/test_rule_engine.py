@@ -96,3 +96,14 @@ def test_reference_definitions_are_checked():
     problems = check_rule_definitions(schema)
     assert len(problems) == 3
     assert any("no identity" in p for p in problems)
+
+
+def test_times_read_the_same_however_they_are_spaced_and_a_long_run_of_spaces_is_quick():
+    import time
+    from app.services.rules.engine import parse_time_minutes
+    assert parse_time_minutes("19:00") == 19 * 60 and parse_time_minutes(" 7.30 pm ") == 19 * 60 + 30 and parse_time_minutes("0700") == 7 * 60
+    assert parse_time_minutes("12:15 a.m.") == 15 and parse_time_minutes("7:30   PM") == 19 * 60 + 30
+    assert parse_time_minutes("25:00") is None and parse_time_minutes("noon") is None
+    started = time.perf_counter()
+    assert parse_time_minutes("1" + " " * 50_000 + "x") is None
+    assert time.perf_counter() - started < 0.5

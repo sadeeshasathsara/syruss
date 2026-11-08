@@ -55,9 +55,9 @@ async def trigger_clean_slate_reset():
             count += 1
         results.append(f"MinIO: deleted {count} object(s)")
         logger.info(f"MinIO purged: {count} object(s) removed.")
-    except Exception as ex:
-        results.append(f"MinIO purge skipped: {ex}")
-        logger.warning(f"MinIO purge warning: {ex}")
+    except Exception:
+        results.append("MinIO purge skipped (the server log says why)")
+        logger.warning("MinIO purge failed", exc_info=True)
 
     # 2. Reset all core tables (the agent service keeps its own memory store)
     async with AsyncSessionLocal() as session:
@@ -71,8 +71,9 @@ async def trigger_clean_slate_reset():
         async with AsyncSessionLocal() as session:
             await ensure_system_roles(session)
             results.append("Roles: built-in roles re-created")
-    except Exception as ex:
-        results.append(f"Roles re-seed error: {ex}")
+    except Exception:
+        results.append("Roles re-seed failed (the server log says why)")
+        logger.exception("Re-seeding the built-in roles failed")
 
     # 4. Clear broadcaster history so stale WS events don't replay
     broadcaster.clear_history()

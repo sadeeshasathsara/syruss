@@ -374,10 +374,10 @@ async def oauth_callback(code: Optional[str] = None, state: str = "", realmId: O
     claim = oauth.read_state(state)
     d = await db.get(Destination, claim["d"]) if claim else None
     if d is None or d.tenant_id != claim["t"]:
-        return RedirectResponse(f"{settings.PUBLIC_SITE_URL.rstrip('/')}/", status_code=303)
+        return RedirectResponse(f"{settings.PUBLIC_APP_URL.rstrip('/')}/", status_code=303)
     stored = unseal(d.secrets)
     tenant, workspace = await db.get(Tenant, d.tenant_id), await db.get(Workspace, d.template_id)
-    back = f"{settings.PUBLIC_SITE_URL.rstrip('/')}/{tenant.slug if tenant else ''}/w/{workspace.slug if workspace else ''}/connections/publish/{d.id}"
+    back = f"{settings.PUBLIC_APP_URL.rstrip('/')}/{tenant.slug if tenant else ''}/w/{workspace.slug if workspace else ''}/connections/publish/{d.id}"
 
     def leave(message: str):
         from urllib.parse import quote
