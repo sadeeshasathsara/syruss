@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     PUBLIC_SITE_URL: str = "http://localhost:3100"
     # The main app, for links to an organization's own pages (billing lands at <app>/<org>/settings/billing)
     PUBLIC_APP_URL: str = "http://localhost:3000"
+    # The system admin app, for links in emails to Syruss's own staff (a payment slip to check)
+    PUBLIC_ADMIN_URL: str = "http://localhost:3200"
 
     # Email. "smtp" sends through SMTP_*; "console" only logs the message (local work without a mail server);
     # "memory" keeps messages in a list (tests). Locally, Mailpit (bridge/docker-compose.yml) catches everything on 1025.
