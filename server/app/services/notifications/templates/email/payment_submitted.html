@@ -1,0 +1,11 @@
+{#- For Syruss's billing inbox: a customer sent a payment slip to check. Variables: organization, number, amount, method, url -#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+{% block preheader %}{{ organization }} sent a payment for invoice {{ number }}{% endblock %}
+{% block heading %}A payment to check{% endblock %}
+{% block content %}
+{{ ui.paragraph(organization ~ " sent proof of a payment for invoice " ~ number ~ ". Check it against the account before approving it.") }}
+{{ ui.facts([("Invoice", number), ("Amount sent", amount), ("Paid by", method)]) }}
+{{ ui.button("Check it", url) }}
+{% endblock %}
+{% block footer %}You get this because it is Syruss's billing address.{% endblock %}

@@ -323,3 +323,48 @@ class InvoiceLine(Base):
     tax_rate_bp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     period_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     period_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PaymentSubmission(Base):
+    """
+    A payment a customer reports for an invoice, with proof (the bank slip): counted only once staff approve it, for
+    what actually arrived. Rejected ones keep the reason the customer was given; one waiting to be checked can be withdrawn.
+    """
+    __tablename__ = "payment_submissions"
+    __table_args__ = (Index("ix_payment_submissions_status_created", "status", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    invoice_id: Mapped[str] = mapped_column(String(64), ForeignKey("invoices.id"), nullable=False, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    method: Mapped[str] = mapped_column(String(32), nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    paid_on: Mapped[date] = mapped_column(Date, nullable=False)
+    payer_reference: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # the reference on the customer's bank transfer
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="submitted", nullable=False)
+    submitted_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    submitted_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    reviewed_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    reviewed_by_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # shown to the customer
+    payment_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("billing_payments.id"), nullable=True)  # once approved
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class PaymentFile(Base):
+    """A file of proof: a customer's bank slip, or a receipt staff attached to a payment they recorded. Kept, never changed."""
+    __tablename__ = "payment_files"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_id)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    submission_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("payment_submissions.id"), nullable=True, index=True)
+    payment_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("billing_payments.id"), nullable=True, index=True)
+    object_key: Mapped[str] = mapped_column(String(300), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)  # the same slip sent twice shows up
+    uploaded_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)

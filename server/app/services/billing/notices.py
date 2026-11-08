@@ -9,13 +9,15 @@ from typing import List, Optional
 from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
-from app.models.billing import Invoice
+from app.models.billing import Invoice, PaymentSubmission
 from app.models.identity import OrgMember, User
 from app.models.tenant import Tenant
+from app.services.billing import parties
 from app.services.billing.invoices import lines_of
+from app.services.billing.methods import METHODS
 from app.services.billing.pdf import money
 from app.services.notifications import Recipient, inapp, notify
-from app.services.notifications.kinds import INVOICE_ISSUED, PAYMENT_RECEIVED, Kind
+from app.services.notifications.kinds import INVOICE_ISSUED, PAYMENT_RECEIVED, PAYMENT_REJECTED, PAYMENT_SUBMITTED, Kind
 from app.services.storage_service import storage_service
 
 logger = logging.getLogger("core.billing.notices")
@@ -70,3 +72,32 @@ async def invoice_paid(invoice_id: str, done: Optional[str]) -> None:
     async def data(db, invoice):
         return {"amount": money(invoice.amount_paid_cents, invoice.currency), "done": done}
     await _send(PAYMENT_RECEIVED, invoice_id, data, lambda i: i.receipt_key)
+
+
+async def payment_submitted(submission_id: str) -> None:
+    """Tells Syruss's billing address that a customer sent proof of a payment to check. Never raises."""
+    try:
+        async with AsyncSessionLocal() as db:
+            s = await db.get(PaymentSubmission, submission_id)
+            invoice = await db.get(Invoice, s.invoice_id) if s else None
+            seller = await parties.seller(db)
+            tenant = await db.get(Tenant, s.tenant_id) if s else None
+            if not (s and invoice and tenant and seller.email):
+                return
+            await notify(PAYMENT_SUBMITTED, Recipient(email=seller.email), {
+                "organization": tenant.name, "number": invoice.number, "amount": money(s.amount_cents, s.currency),
+                "method": METHODS[s.method].label if s.method in METHODS else s.method,
+                "url": f"{settings.PUBLIC_ADMIN_URL.rstrip('/')}/billing?tab=payments&submission={s.id}"})
+    except Exception:
+        logger.exception("Telling Syruss about payment %s failed", submission_id)
+
+
+async def payment_rejected(submission_id: str) -> None:
+    """Tells the organization its proof of payment wasn't accepted, and why. Never raises."""
+    async def data(db, invoice):
+        s = await db.get(PaymentSubmission, submission_id)
+        return {"amount": money(s.amount_cents, s.currency), "reason": s.rejection_reason or "No reason was given."}
+    async with AsyncSessionLocal() as db:
+        s = await db.get(PaymentSubmission, submission_id)
+    if s is not None:
+        await _send(PAYMENT_REJECTED, s.invoice_id, data, lambda i: None)

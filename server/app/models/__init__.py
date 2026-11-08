@@ -48,7 +48,7 @@ from app.models.system_lesson import SystemLesson
 from app.models.platform import PlatformAccessGrant, PlatformAuditEntry, PlatformStaff
 from app.models.billing import (
     BankAccount, BillingPayment, BillingProfile, BillingSequence, BillingSettings, CatalogItem, CreditEntry, Invoice, InvoiceLine,
-    OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, TaxRate, UsageEvent,
+    OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, PaymentFile, PaymentSubmission, TaxRate, UsageEvent,
 )
 
 __all__ = [
@@ -111,4 +111,6 @@ __all__ = [
     "BillingSequence",
     "Invoice",
     "InvoiceLine",
+    "PaymentSubmission",
+    "PaymentFile",
 ]
