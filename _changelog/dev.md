@@ -14,11 +14,32 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.4.1-dev.1` | 2026-11-08 | [What changed](#admin-041-dev1) |
+| **admin** | `0.4.2-dev.1` | 2026-11-08 | [What changed](#admin-042-dev1) |
 | **agent** | `0.6.0-dev.1` | 2026-11-06 | [What changed](#agent-060-dev1) |
-| **server** | `0.10.0-dev.1` | 2026-11-08 | [What changed](#server-0100-dev1) |
+| **server** | `0.11.0-dev.1` | 2026-11-08 | [What changed](#server-0110-dev1) |
 | **site** | `0.2.3-dev.1` | 2026-11-08 | [What changed](#site-023-dev1) |
-| **www** | `0.7.1-dev.1` | 2026-11-08 | [What changed](#www-071-dev1) |
+| **www** | `0.7.2-dev.1` | 2026-11-08 | [What changed](#www-072-dev1) |
+
+## [2026-11-08] - Release via dev
+
+### admin (0.4.2-dev.1)
+- Plan and add-on descriptions read "1 API key", not "1 API keys" (every limit has a word for exactly one), and pages read "a month".
+- admin: removing a custom limit refreshes the organization's billing page; the payment form no longer keeps a hidden credit-pack quantity when a plan is picked; a free item reads "No charge".
+
+### server (0.11.0-dev.1)
+- Every purchase is now an invoice from Syruss to the organization. Buying a plan, an add-on or credits issues one at once, and what it sells is switched on only once it is paid.
+- Invoices are numbered with no gaps (SYR-2026-00042), carry both parties' details and tax IDs, and are emailed with their PDF. Once issued, the database refuses to change what an invoice says: a mistake is voided.
+- Owners keep the organization's billing details (legal name, billing email, address, country, tax ID, purchase order) at /billing/profile, list their invoices and download each PDF, and the receipt once paid.
+- Platform staff keep Syruss's own billing details (seller, numbering prefix, payment terms), the bank accounts customers pay into and tax rates by the buyer's country (with reverse charge for buyers with a tax ID).
+- Staff draft invoices for custom deals, issue, void or throw away drafts, record payments against an invoice (partial payments leave it open with the balance due), and switch an invoice on before it is paid for an organization they trust. Every action needs a reason and a fresh sign-in, and shows in the organization's activity.
+- Payment methods are adapters (BILLING_METHODS: bank_transfer and staff_recorded by default). They replace the earlier payment providers and billing requests; open requests become draft invoices.
+- Moving from a free plan to a paid one starts a whole new period once it is paid. Moving to a free plan isn't invoiced: it happens when the current period ends.
+- Billing alert emails now link to the main app (PUBLIC_APP_URL) instead of the public site.
+- A limit's refusal reads "The Free plan allows 1 intake channel", not "1 intake channels".
+
+### www (0.7.2-dev.1)
+- Plan and add-on descriptions read "1 API key", not "1 API keys" (every limit has a word for exactly one), and pages read "a month".
+- admin: removing a custom limit refreshes the organization's billing page; the payment form no longer keeps a hidden credit-pack quantity when a plan is picked; a free item reads "No charge".
 
 ## [2026-11-08] - Release via dev
 
