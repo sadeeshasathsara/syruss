@@ -9,6 +9,7 @@ import io
 import json
 import re
 from typing import Any, Dict, List, Optional
+from app.core.downloads import csv_row
 from app.services.destinations.base import Adapter, Field, SendContext, SendResult, TestResult, register
 from app.services.notifications.transport import EmailError, EmailMessage, send
 
@@ -28,15 +29,15 @@ def csv_of(data: Dict[str, Any]) -> bytes:
     for obj, rows in (data or {}).items():
         for i, row in enumerate(rows if isinstance(rows, list) else [rows], start=1):
             for field, value in (row or {}).items() if isinstance(row, dict) else [("value", row)]:
-                writer.writerow([obj, i, field, json.dumps(value) if isinstance(value, (dict, list)) else value])
+                # read from a document someone sent in: a value that looks like a formula is written as text
+                writer.writerow(csv_row([obj, i, field, json.dumps(value) if isinstance(value, (dict, list)) else value]))
     return out.getvalue().encode()
 
 
 def subject_for(template: str, doc: Dict[str, Any], revision: int) -> str:
-    class Safe(dict):
-        def __missing__(self, key: str) -> str:
-            return ""
-    text = (template or "Approved: {filename}").format_map(Safe(filename=doc.get("filename") or "document", external_id=doc.get("external_id") or "", revision=revision))
+    # Only plain {name} placeholders are filled (str.format would also follow {filename.__class__...} written into the template).
+    values = {"filename": doc.get("filename") or "document", "external_id": doc.get("external_id") or "", "revision": revision}
+    text = re.sub(r"\{(\w+)\}", lambda m: str(values.get(m.group(1), "")), template or "Approved: {filename}")
     return re.sub(r"[\r\n]+", " ", text)[:200]
 
 

@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.settings import common
 from app.core.database import get_db_session
-from app.core.permissions import Access, get_access, require
+from app.core.permissions import Access, get_access, permissions_of, require
 from app.models.workspace_admin import WorkspaceMember
 
 router = APIRouter()
@@ -33,6 +33,15 @@ async def _member(db: AsyncSession, access: Access, member_id: str) -> Workspace
     return m
 
 
+async def _not_above_you(db: AsyncSession, access: Access, target: WorkspaceMember) -> None:
+    """Someone whose role grants privileges you don't hold can't be moved or removed by you (only an owner outranks everyone)."""
+    if access.role == "owner" or target.user_id == access.auth.user_id:
+        return
+    beyond = await permissions_of(db, target.role) - access.permissions
+    if beyond:
+        raise HTTPException(status_code=403, detail="Their role has privileges yours doesn't, so you can't change it or remove them.")
+
+
 def _guard_owners(members: List[WorkspaceMember], target: WorkspaceMember, new_role: Optional[str]) -> None:
     owners = [m for m in members if m.role == "owner"]
     if target.role == "owner" and new_role != "owner" and len(owners) == 1:
@@ -44,6 +53,7 @@ async def change_role(member_id: str, body: RoleChange, access: Access = Depends
     target = await _member(db, access, member_id)
     if target.role == "owner" and access.role != "owner":
         raise HTTPException(status_code=403, detail="Only an owner can remove the owner role.")
+    await _not_above_you(db, access, target)
     role = await common.assignable(db, access, body.role)
     _guard_owners(await common.members(db, access.scope.template_id), target, role.id)
     target.role = role.id
@@ -59,6 +69,7 @@ async def remove_member(member_id: str, access: Access = Depends(get_access), db
         raise HTTPException(status_code=403, detail="Your role can't remove other members.")
     if target.role == "owner" and access.role != "owner" and target.user_id != access.auth.user_id:
         raise HTTPException(status_code=403, detail="Only an owner can remove an owner.")
+    await _not_above_you(db, access, target)
     _guard_owners(await common.members(db, access.scope.template_id), target, None)
     await db.delete(target)
     await db.commit()

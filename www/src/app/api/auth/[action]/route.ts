@@ -50,7 +50,7 @@ async function callback(request: NextRequest) {
   }
   const returnTo = safeReturnTo(tx.returnTo, "/");
   // Is this a browser the person has confirmed? A new one is sent to the site for the code before anything opens.
-  const ip = (request.headers.get("x-forwarded-for") ?? "").split(",")[0].trim();
+  const ip = (request.headers.get("x-forwarded-for") ?? "").split(",").pop()?.trim() ?? ""; // the last entry: the one our proxy added
   const device = await checkDevice(session, await ensureDeviceToken(), request.headers.get("user-agent") ?? "", ip);
   if (device === "challenge") {
     const { siteOrigin, appOrigin } = authConfig();

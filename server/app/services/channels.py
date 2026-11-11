@@ -5,9 +5,9 @@ A browser can't send an Authorization header on a WebSocket and a token must nev
 web app's server asks for a ticket here (as the signed-in person), and the browser opens the socket with it.
 A ticket is bound to one person and one channel, lasts seconds, and works once.
 
-Channels: `user:{id}` (your notifications), `tenant:{id}` (your organization), `template:{id}` (a workspace,
-for its members), a conversation id (a private chat is its person's alone), a document id (workspace
-members who can see documents).
+Channels: `user:{id}` (your notifications), `template:{id}` (a workspace, for its members), a conversation id (a
+private chat is its person's alone), a document id (workspace members who can see documents). There is no
+organization-wide channel: being in an organization opens no workspace's data, so no live event goes to all of it.
 """
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -33,7 +33,7 @@ async def can_listen(db: AsyncSession, auth: AuthContext, channel: str) -> bool:
     if channel.startswith("user:"):
         return channel == f"user:{auth.user_id}"
     if channel.startswith("tenant:"):
-        return channel == f"tenant:{auth.tenant_id}"
+        return False
     if channel.startswith("template:"):
         template = await db.get(DocumentTemplate, channel.removeprefix("template:"))
         return bool(template and template.tenant_id == auth.tenant_id and await membership(db, template.id, auth.user_id))

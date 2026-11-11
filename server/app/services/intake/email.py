@@ -46,6 +46,7 @@ def sender_allowed(address: str, allowlist: List[str]) -> bool:
     if not allowlist:
         return True
     address = address.lower()
+    allowlist = [a.strip().lower() for a in allowlist if a.strip()]
     return any(address == a or (a.startswith("@") and address.endswith(a)) or (not a.startswith("@") and "@" not in a and address.endswith("@" + a)) for a in allowlist)
 
 

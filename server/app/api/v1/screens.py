@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
+from app.core.downloads import content_disposition
 from app.core.permissions import Access, require
 from app.core.scope import TemplateScope, get_template_scope
 from app.models.audit import AuditLog
@@ -150,7 +151,7 @@ async def export_screen(slug: str, db: AsyncSession = Depends(get_db_session), s
         definition=screen_engine.ScreenDefinition.model_validate(s.definition), limit=100000, page_cap=100000)
     name = "".join(c if c.isalnum() or c in "-_" else "-" for c in s.slug)
     return Response(content="﻿" + screen_engine.to_csv(result), media_type="text/csv; charset=utf-8",
-                    headers={"Content-Disposition": f'attachment; filename="{name}.csv"'})
+                    headers={"Content-Disposition": content_disposition("attachment", f"{name}.csv")})
 
 
 @router.post("/{slug}/accept")

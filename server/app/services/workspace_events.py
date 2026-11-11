@@ -136,9 +136,10 @@ async def deliver(hook_id: str, event: Dict[str, Any]) -> Optional[WebhookDelive
         status_code, error = None, None
         try:
             await source_data.check_host(hook.url)
-            async with httpx.AsyncClient(transport=source_data.HTTP_TRANSPORT, timeout=WEBHOOK_TIMEOUT_SECONDS, follow_redirects=False) as client:
-                response = await client.post(hook.url, content=body, headers=headers)
-            status_code = response.status_code
+            async with httpx.AsyncClient(transport=source_data.transport(), timeout=WEBHOOK_TIMEOUT_SECONDS, follow_redirects=False) as client:
+                # Only the status matters: the reply's body is never read (an endpoint can't make the server hold a huge one)
+                async with client.stream("POST", hook.url, content=body, headers=headers) as response:
+                    status_code = response.status_code
             if not 200 <= status_code < 300:
                 error = f"The endpoint answered HTTP {status_code}."
         except SourceError as exc:
