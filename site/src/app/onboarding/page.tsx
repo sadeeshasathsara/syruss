@@ -24,7 +24,9 @@ function Steps({ at, invite }: { at: "email" | "profile" | "organization"; invit
  * (not needed for Google), the profile, then the organization. Then the app.
  */
 export default async function Onboarding({ searchParams }: { searchParams: Promise<{ invite?: string }> }) {
-  const { invite } = await searchParams;
+  // Only something shaped like an invitation token is carried along: it goes into addresses this page redirects to.
+  const given = (await searchParams).invite;
+  const invite = given && /^[A-Za-z0-9_-]{16,80}$/.test(given) ? given : undefined;
   const here = invite ? `/onboarding?invite=${invite}` : "/onboarding";
   const session = await requireSession(here);
   let ctx: Context;

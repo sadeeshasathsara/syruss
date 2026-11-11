@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import AuthContext, require_org_permission
 from app.core.database import get_db_session
+from app.core.downloads import content_disposition
 from app.models.audit import AuditLog
 from app.models.billing import (
     BillingPayment, BillingProfile, CatalogItem, CreditNote, Invoice, OrgSubscriptionAddon, PaymentFile, PaymentSubmission,
@@ -176,7 +177,7 @@ async def credit_note_pdf(note_id: str, auth: AuthContext = BILLING, db: AsyncSe
         raise HTTPException(status_code=404, detail="No such credit note.")
     data = await asyncio.to_thread(storage_service.download_file, note.pdf_key)
     return Response(content=data, media_type="application/pdf", headers={
-        "Content-Disposition": f'inline; filename="Credit note {note.number}.pdf"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+        "Content-Disposition": content_disposition("inline", f"Credit note {note.number}.pdf"), "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 
 async def _pdf(invoice: Invoice, which: str) -> Response:
@@ -185,7 +186,7 @@ async def _pdf(invoice: Invoice, which: str) -> Response:
         raise HTTPException(status_code=404, detail="There is no receipt until the invoice is paid." if which == "receipt" else "No PDF yet.")
     name = f"{'Receipt' if which == 'receipt' else 'Invoice'} {invoice.number}.pdf"
     return Response(content=data, media_type="application/pdf", headers={
-        "Content-Disposition": f'inline; filename="{name}"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+        "Content-Disposition": content_disposition("inline", name), "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/invoices/{invoice_id}/pdf")
@@ -255,9 +256,9 @@ def file_response(f: PaymentFile, data: bytes) -> Response:
     """
     headers = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
     if f.content_type == "application/pdf":
-        headers["Content-Disposition"] = f'attachment; filename="{f.filename}"'
+        headers["Content-Disposition"] = content_disposition("attachment", f.filename)
     else:
-        headers["Content-Disposition"] = f'inline; filename="{f.filename}"'
+        headers["Content-Disposition"] = content_disposition("inline", f.filename)
         headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"
     return Response(content=data, media_type=f.content_type, headers=headers)
 

@@ -14,6 +14,7 @@ import logging
 import socket
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
+import httpcore
 import httpx
 from app.core.config import settings
 
@@ -129,9 +130,54 @@ async def check_host(url: str) -> None:
     except socket.gaierror as exc:
         raise SourceError(f"The host '{parts.hostname}' could not be found.") from exc
     for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+        if not_public(info[4][0]):
             raise SourceError(f"'{parts.hostname}' is on a private network, which this server does not call.")
+
+
+def not_public(address: str) -> bool:
+    """Private, loopback, link-local (cloud metadata), shared (100.64/10), reserved or multicast, IPv4 written as IPv6 included."""
+    ip = ipaddress.ip_address(address.split("%")[0])
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return not ip.is_global or ip.is_multicast
+
+
+class _PublicAddressesOnly(httpcore.AsyncNetworkBackend):
+    """
+    Connects to the address a name resolves to at the moment of connecting, and only if it is public. check_host looks
+    first, but the name is looked up again to connect: one that answers with a public address and then a private one
+    (DNS rebinding) would otherwise reach the private network. The TLS name stays the host's own.
+    """
+
+    def __init__(self) -> None:
+        self._inner = httpcore.AnyIOBackend()
+
+    async def connect_tcp(self, host: str, port: int, timeout: Optional[float] = None, local_address: Optional[str] = None,
+                          socket_options=None) -> httpcore.AsyncNetworkStream:
+        try:
+            infos = await asyncio.to_thread(socket.getaddrinfo, host, port, type=socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            raise httpcore.ConnectError(f"{host} could not be found") from exc
+        addresses = [info[4][0] for info in infos]
+        if not addresses or any(not_public(a) for a in addresses):
+            raise httpcore.ConnectError(f"{host} is on a private network")
+        return await self._inner.connect_tcp(addresses[0], port, timeout=timeout, local_address=local_address, socket_options=socket_options)
+
+    async def connect_unix_socket(self, path: str, timeout: Optional[float] = None, socket_options=None) -> httpcore.AsyncNetworkStream:
+        raise httpcore.ConnectError("Calls go to public addresses only.")
+
+    async def sleep(self, seconds: float) -> None:
+        await self._inner.sleep(seconds)
+
+
+def transport() -> httpx.AsyncBaseTransport:
+    """How every call to a customer's system is made (knowledge sources, destinations, webhooks): public addresses only."""
+    if HTTP_TRANSPORT is not None:
+        return HTTP_TRANSPORT
+    t = httpx.AsyncHTTPTransport(retries=0)
+    if not settings.KNOWLEDGE_SOURCES_ALLOW_PRIVATE_HOSTS:
+        t._pool._network_backend = _PublicAddressesOnly()  # httpx has no public setting for it; httpcore's pool takes any backend
+    return t
 
 
 async def _read_capped(response: httpx.Response) -> bytes:
@@ -175,7 +221,7 @@ async def fetch_api(config: Dict[str, Any], secrets: Dict[str, Any]) -> Any:
     kind = auth.get("type", "none")
 
     async with httpx.AsyncClient(
-        transport=HTTP_TRANSPORT, timeout=settings.KNOWLEDGE_SOURCE_TIMEOUT_SECONDS, follow_redirects=False,
+        transport=transport(), timeout=settings.KNOWLEDGE_SOURCE_TIMEOUT_SECONDS, follow_redirects=False,
     ) as client:
         if kind == "bearer":
             headers["Authorization"] = f"Bearer {secrets.get('token', '')}"

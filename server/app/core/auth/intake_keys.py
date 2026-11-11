@@ -38,9 +38,13 @@ class IntakeCaller:
 
 
 def client_ip(request: Request) -> str:
-    """The sender's address. X-Forwarded-For is believed only when the API runs behind a proxy you control (TRUST_PROXY_HEADERS)."""
+    """
+    The sender's address. X-Forwarded-For is believed only when the API runs behind a proxy you control (TRUST_PROXY_HEADERS),
+    and then only its last entry: the one that proxy added. Anything before it came from the sender, who can write whatever
+    they like there (a proxy that appends would otherwise let anyone claim an address on a key's allowlist).
+    """
     if settings.TRUST_PROXY_HEADERS:
-        forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
         if forwarded:
             return forwarded
     return request.client.host if request.client else ""
