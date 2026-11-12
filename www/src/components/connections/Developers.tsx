@@ -48,7 +48,7 @@ const ERRORS: [string, string, string][] = [
   ["409", "conflict", "Your own reference (external_id) was already used for a different file, or the workspace has no published template yet."],
   ["410", "expired", "The upload link has expired."],
   ["413", "file_too_large", "The file or picture is bigger than the channel allows."],
-  ["415", "unsupported_type", "The file isn’t one of the accepted image types. What the file really is counts, not its name."],
+  ["415", "unsupported_type", "The file isn’t one of the accepted types. What the file really is counts, not its name."],
   ["422", "invalid_request", "A field is malformed: external_id, metadata, or an Idempotency-Key reused with a different file."],
   ["429", "rate_limited · quota_exceeded", "Too many requests a minute, or the key’s daily limit. Retry-After says when to try again."],
 ];
@@ -65,7 +65,7 @@ export function DevelopersPage() {
 
   const base = info.data?.base_url ?? "https://api.example.com/api/v1";
   const intake = `${base}/intake`;
-  const accepts = (info.data?.accepts ?? []).map((t) => TYPE_LABEL[t] ?? t).join(", ") || "JPEG, PNG, TIFF, WebP";
+  const accepts = (info.data?.accepts ?? []).map((t) => TYPE_LABEL[t] ?? t).join(", ") || "PDF, JPEG, PNG, TIFF, WebP";
 
   const send = [
     { label: "curl", code: `curl -X POST "${intake}/documents" \\\n  -H "Authorization: Bearer $SYRUSS_KEY" \\\n  -H "Idempotency-Key: invoice-1001" \\\n  -F "file=@invoice.png" \\\n  -F "external_id=INV-1001" \\\n  -F 'metadata={"branch":"North","currency":"EUR"}'` },
@@ -145,7 +145,7 @@ export function DevelopersPage() {
 
       <Section title="Errors" description="Every error has the same shape, with a code to program against and a sentence to show a person.">
         <div className="flex flex-col gap-4">
-          <CodeBlock samples={[{ label: "415", code: `{\n  "detail": {\n    "code": "unsupported_type",\n    "message": "This is a PDF. Send a JPG, PNG, TIFF or WebP image."\n  }\n}` }]} />
+          <CodeBlock samples={[{ label: "415", code: `{\n  "detail": {\n    "code": "unsupported_type",\n    "message": "This is a zip archive. Send a PDF, or a JPG, PNG, TIFF or WebP image."\n  }\n}` }]} />
           <Table head={["Status", "Code", "Meaning"]} rows={ERRORS.map(([s, c, m]) => [s, <code key={c} className="font-mono text-meta">{c}</code>, m])} />
           <p className="text-body text-muted">Retry 429 and 5xx with a pause, using the same Idempotency-Key. Don’t retry 4xx without changing something.</p>
         </div>

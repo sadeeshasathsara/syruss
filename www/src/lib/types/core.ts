@@ -105,6 +105,8 @@ export interface DocumentItem {
   display_name: string | null;
   content_type: string;
   file_size_bytes: number;
+  /** What reading it is charged: a PDF's or TIFF's pages, or the sheets one picture shows. */
+  page_count: number;
   status: DocumentStatus;
   error_message: string | null;
   created_at: string;

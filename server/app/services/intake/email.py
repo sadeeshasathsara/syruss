@@ -116,8 +116,8 @@ class IntakeHandler:
                 return "550 5.7.26 This mailbox only accepts mail that passes SPF or DKIM"
             files = attachments_of(msg)
             if not files:
-                await intake_service.reject(**where, sender=who, reason="The message has no attached file. Attach the document as an image file.")
-                return "554 5.6.0 No attached file found. Attach the document as an image file (JPG, PNG, TIFF or WebP)"
+                await intake_service.reject(**where, sender=who, reason="The message has no attached file. Attach the document as a PDF or an image file.")
+                return "554 5.6.0 No attached file found. Attach the document as a PDF or an image file (JPG, PNG, TIFF or WebP)"
             message_id = re.sub(r"[^\w .:/#@+=,-]", "", str(msg.get("Message-ID") or "")).strip()[:150] or hashlib.sha1(envelope.content).hexdigest()
             meta = {"subject": str(msg.get("Subject") or "")[:200], "from": sender[:200]}
             for index, (name, data) in enumerate(files, start=1):

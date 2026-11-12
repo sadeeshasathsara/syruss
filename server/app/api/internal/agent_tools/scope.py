@@ -30,7 +30,7 @@ class Workspace:
 
 
 # What the agent may still call while evaluating (everything else that writes is refused).
-EVAL_WRITES = re.compile(r"/(documents/[^/]+/record|documents/[^/]+/status|records/validate|records/query|memories/search|traces(/[^/]+)?|evals/outcome)$")
+EVAL_WRITES = re.compile(r"/(documents/[^/]+/record|documents/[^/]+/status|documents/[^/]+/pages|records/validate|records/query|memories/search|traces(/[^/]+)?|evals/outcome)$")
 
 
 # In a person's private chat the agent acts as that person: what they may do bounds every call it makes
@@ -39,7 +39,7 @@ CHAT_POLICY = [
     (re.compile(r"^/(documents(/|$)|records/|reviews/|quality|questions$)"), {"GET"}, "documents.view"),
     (re.compile(r"^/records/(validate|query)$"), {"POST"}, "documents.view"),
     (re.compile(r"^/documents/[^/]+/record$"), {"POST"}, "documents.review"),
-    (re.compile(r"^/documents/[^/]+/status$"), {"POST"}, "documents.upload"),
+    (re.compile(r"^/documents/[^/]+/(status|pages)$"), {"POST"}, "documents.upload"),
     (re.compile(r"^/screens(/|$)"), {"GET"}, "documents.view"),
     (re.compile(r"^/rules(/check)?$"), {"GET", "POST"}, "documents.view"),
     (re.compile(r"^/screens/(preview|[^/]+/run)$"), {"POST"}, "documents.view"),
