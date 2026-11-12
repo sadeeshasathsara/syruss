@@ -41,6 +41,11 @@ def _days(rows, since: date, days: int = DAYS) -> List[Dict[str, Any]]:
     return [{"day": (since + timedelta(days=i)).isoformat(), "value": float(got.get(since + timedelta(days=i), 0) or 0)} for i in range(days)]
 
 
+def _action(e: PlatformAuditEntry) -> Dict[str, Any]:
+    return {"id": e.id, "actor_id": e.actor_id, "actor_name": e.actor_name, "action": e.action, "target_type": e.target_type,
+            "target_id": e.target_id, "tenant_id": e.tenant_id, "reason": e.reason, "details": e.details or {}, "created_at": e.created_at, "ip": None}
+
+
 class Reason(BaseModel):
     reason: str = Field(..., min_length=5, max_length=1000)
 
@@ -222,7 +227,7 @@ async def organization_profile(tenant_id: str, db: AsyncSession = Depends(get_db
         "workspaces": [{"id": w.id, "name": w.name, "slug": w.slug, "documents": int(n or 0), "last_document_at": last, "members": seats.get(w.id, 0),
                         "created_at": w.created_at} for w, n, last in ws_rows],
         "notes": [_note(n) for n in notes],
-        "staff_actions": [{"id": e.id, "actor_name": e.actor_name, "action": e.action, "reason": e.reason, "created_at": e.created_at} for e in staff_actions],
+        "staff_actions": [_action(e) for e in staff_actions],
         "access_grants": [{"staff_name": g.staff_name, "reason": g.reason, "created_at": g.created_at, "expires_at": g.expires_at, "ended_at": g.ended_at}
                           for g in grants],
         "agent_paused": tenant_id in controls.agent_paused_orgs,
@@ -319,7 +324,7 @@ async def person_profile(user_id: str, db: AsyncSession = Depends(get_db_session
         "workspaces": [{"id": w.id, "name": w.name, "tenant_id": w.tenant_id, "role": role} for w, role in spaces],
         "browsers": [{"id": d.id, "label": d.label, "ip": d.ip, "last_seen_at": d.last_seen_at, "trusted_until": d.trusted_until} for d in devices],
         "security_events": [{"kind": e.kind, "summary": e.summary, "device": e.device, "ip": e.ip, "created_at": e.created_at} for e in events],
-        "staff_actions": [{"actor_name": a.actor_name, "action": a.action, "reason": a.reason, "created_at": a.created_at} for a in actions],
+        "staff_actions": [_action(a) for a in actions],
     }
 
 

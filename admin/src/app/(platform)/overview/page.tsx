@@ -1,15 +1,17 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, TriangleAlert } from "lucide-react";
 import Link from "next/link";
+import { TrendBars } from "@/components/charts/TrendBars";
 import { Bar, ErrorNote, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { Pill, type Tone } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
 import { describeAction } from "@/lib/audit";
 import { ago, cn, plural } from "@/lib/format";
-import type { PlatformHealth, PlatformStats, ServiceStatus } from "@/lib/types";
+import { money } from "@/lib/billing";
+import type { AtRisk, BusinessMetrics, PlatformControls, PlatformHealth, PlatformStats, ServiceStatus } from "@/lib/types";
 
 const STATUS: Record<ServiceStatus, { tone: Tone; dot: string; label: string }> = {
   ok: { tone: "positive", dot: "bg-positive", label: "Answering" },
@@ -21,6 +23,9 @@ export default function PlatformOverview() {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 30_000 });
   const stats = useQuery({ queryKey: ["stats"], queryFn: api.stats, refetchInterval: 60_000 });
   const actions = useQuery({ queryKey: ["audit", "latest"], queryFn: () => api.audit({ limit: 8 }) });
+  const metrics = useQuery({ queryKey: ["console", "metrics"], queryFn: api.console.metrics, refetchInterval: 5 * 60_000 });
+  const risk = useQuery({ queryKey: ["console", "at-risk"], queryFn: api.console.atRisk, refetchInterval: 5 * 60_000 });
+  const controls = useQuery({ queryKey: ["console", "platform"], queryFn: api.console.platform, refetchInterval: 60_000 });
   const failing = (health.data?.services ?? []).filter((s) => s.status !== "ok");
 
   return (
@@ -36,8 +41,11 @@ export default function PlatformOverview() {
       />
       {(health.isError || stats.isError) && <ErrorNote message="Couldn't load the platform's state." onRetry={() => { health.refetch(); stats.refetch(); }} />}
 
+      <ControlsNotice controls={controls.data} />
+      <Business metrics={metrics.data} />
       <Services health={health.data} />
       <Figures stats={stats.data} />
+      <AtRiskList rows={risk.data} />
 
       <Panel title="Latest staff actions" aside={<Link href="/audit" className="hover:text-ink">Open the audit log</Link>}>
         {!actions.data ? (
@@ -59,6 +67,87 @@ export default function PlatformOverview() {
         )}
       </Panel>
     </div>
+  );
+}
+
+/** Anything switched off on the platform, said first: it changes what every customer sees. */
+function ControlsNotice({ controls }: { controls?: PlatformControls }) {
+  if (!controls) return null;
+  const off = [
+    controls.maintenance.on && "maintenance mode is on (the platform is read-only)",
+    !controls.switches.signups && "new sign-ups are paused",
+    !controls.switches.agent && "the agent is paused for everyone",
+    !controls.switches.intake && "documents from other systems are paused",
+    controls.agent_paused_orgs.length > 0 && `the agent is paused for ${plural(controls.agent_paused_orgs.length, "organization")}`,
+  ].filter(Boolean) as string[];
+  if (!off.length) return null;
+  return (
+    <div role="status" className="flex items-start gap-2 rounded-card bg-[var(--pill-warning-bg)] px-4 py-3 text-body text-[var(--pill-warning-ink)]">
+      <TriangleAlert className="mt-0.5 size-4 flex-none" aria-hidden />
+      <p className="min-w-0 flex-1">Right now {off.join("; ")}. <Link href="/platform" className="font-medium underline underline-offset-2">Platform controls</Link></p>
+    </div>
+  );
+}
+
+function Tile({ label, value, notes }: { label: string; value?: string; notes?: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1 rounded-card bg-card px-4 py-3 [box-shadow:var(--shadow-card)]">
+      <span className="truncate text-body text-muted">{label}</span>
+      {value === undefined ? <Bar className="h-7 w-24" /> : <span className="num text-figure text-ink">{value}</span>}
+      {value !== undefined && notes && <span className="text-meta text-muted">{notes}</span>}
+    </div>
+  );
+}
+
+/** How the business is doing: what recurs each month, who is paying and active, and the last 30 days a day at a time. */
+function Business({ metrics: m }: { metrics?: BusinessMetrics }) {
+  const revenue = m?.revenue[0];
+  const others = m?.revenue.slice(1) ?? [];
+  const o = m?.organizations;
+  const usd = (v: number) => `$${v.toFixed(v >= 100 ? 0 : 2)}`;
+  return (
+    <section aria-label="The business" className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2 @4xl:grid-cols-4">
+        <Tile label="Monthly recurring revenue" value={m ? (revenue ? money(revenue.mrr_cents, revenue.currency) : money(0)) : undefined}
+          notes={m && [revenue && `${money(revenue.arr_cents, revenue.currency)} a year`, ...others.map((r) => `+ ${money(r.mrr_cents, r.currency)}`)].filter(Boolean).join(" · ")} />
+        <Tile label="Paying organizations" value={o?.paying.toLocaleString()} notes={o && `${o.trialing} on a trial · ${o.active.toLocaleString()} open in all`} />
+        <Tile label="Active this week" value={o?.active_7d.toLocaleString()} notes={o && `${o.active_30d} this month · sent a document or ran the agent`} />
+        <Tile label="Lost this month" value={o ? String(o.closed_this_month + o.lapsed_this_month) : undefined}
+          notes={o && `${o.closed_this_month} closed · ${o.lapsed_this_month} moved to Free unpaid`} />
+      </div>
+      <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2 @5xl:grid-cols-4">
+        <TrendBars title="New organizations" points={m?.series.organizations} note={m && `${m.series.people.reduce((a, p) => a + p.value, 0)} new people`} />
+        <TrendBars title="Documents received" points={m?.series.documents} />
+        <TrendBars title="Pages read" points={m?.series.pages} />
+        <TrendBars title="Agent cost" points={m?.series.agent_cost_usd} format={usd}
+          note={m && `${m.runs.last_30d.toLocaleString()} runs · ${m.runs.failed_30d} failed`} />
+      </div>
+    </section>
+  );
+}
+
+const LEVEL: Record<string, Tone> = { high: "negative", medium: "warning", low: "neutral" };
+
+/** Customers worth a look now, and why. */
+function AtRiskList({ rows }: { rows?: AtRisk[] }) {
+  return (
+    <Panel title="Customers worth a look" aside={rows ? <span className="num">{rows.length}</span> : undefined}>
+      {!rows ? (
+        <div className="flex flex-col gap-3">{[0, 1, 2].map((i) => <Bar key={i} className="h-5 w-full" />)}</div>
+      ) : rows.length === 0 ? (
+        <p className="text-body text-muted">Nobody right now: no renewal past due, no trial ending this week, no sharp drop in use and no run of failures.</p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-rule">
+          {rows.map((r) => (
+            <li key={r.tenant_id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5">
+              <Link href={`/accounts/organizations/${r.tenant_id}`} className="min-w-0 flex-1 truncate text-body font-medium text-ink hover:underline">{r.name}</Link>
+              {r.plan && <span className="text-meta text-muted">{r.plan}</span>}
+              <span className="flex flex-wrap gap-1.5">{r.reasons.map((x) => <Pill key={x.code} tone={LEVEL[x.level]}>{x.text}</Pill>)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
   );
 }
 

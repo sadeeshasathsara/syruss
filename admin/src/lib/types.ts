@@ -631,3 +631,70 @@ export interface FollowUp {
   paid_until: string | null;
   period_end: string;
 }
+
+// ---- the operator's console ---------------------------------------------------------------------
+
+export interface DayPoint { day: string; value: number }
+
+export interface BusinessMetrics {
+  as_of: string;
+  revenue: { currency: string; mrr_cents: number; arr_cents: number }[];
+  organizations: { active: number; paying: number; trialing: number; active_7d: number; active_30d: number; closed_this_month: number; lapsed_this_month: number };
+  runs: { last_30d: number; failed_30d: number };
+  series: { organizations: DayPoint[]; people: DayPoint[]; documents: DayPoint[]; pages: DayPoint[]; agent_cost_usd: DayPoint[] };
+}
+
+export interface RiskReason { code: string; text: string; level: "high" | "medium" | "low" }
+export interface AtRisk { tenant_id: string; name: string; slug: string | null; plan: string | null; reasons: RiskReason[] }
+
+export interface OrgNote { id: string; body: string; pinned: boolean; author_name: string; author_id: string; created_at: string }
+
+export interface OrganizationProfile {
+  organization: { id: string; name: string; slug: string; status: "active" | "suspended" | "closed"; status_reason: string | null; status_changed_at: string | null; created_at: string; purged_at: string | null };
+  plan: { name: string; key: string; price_cents: number; currency: string; status: string; period_start: string; period_end: string; trial_ends_at: string | null; paid_until: string | null };
+  usage: { pages_used: number; pages_limit: number | null; credits: number; documents_30d: DayPoint[]; runs_30d: number; agent_cost_30d_usd: number; last_run_at: string | null };
+  money: { open_invoices: number; owed_cents: number; currency: string; overdue: number };
+  members: { user_id: string; name: string; email: string; role: string; status: string; last_seen_at: string | null; joined_at: string }[];
+  workspaces: { id: string; name: string; slug: string; documents: number; last_document_at: string | null; members: number; created_at: string }[];
+  notes: OrgNote[];
+  staff_actions: StaffAction[];
+  access_grants: { staff_name: string; reason: string; created_at: string; expires_at: string; ended_at: string | null }[];
+  agent_paused: boolean;
+}
+
+export interface PersonProfile {
+  person: { id: string; name: string; email: string; email_verified: boolean; status: "active" | "disabled" | "deleted"; created_at: string; last_seen_at: string | null; timezone: string; staff_role: string | null };
+  organizations: { id: string; name: string; status: string; role: string }[];
+  workspaces: { id: string; name: string; tenant_id: string; role: string }[];
+  browsers: { id: string; label: string; ip: string; last_seen_at: string; trusted_until: string | null }[];
+  security_events: { kind: string; summary: string; device: string; ip: string; created_at: string }[];
+  staff_actions: StaffAction[];
+}
+
+export type Severity = "info" | "warning" | "critical";
+export interface Announcement {
+  id: string; title: string; body: string; severity: Severity; tenant_id: string | null; organization: string | null;
+  starts_at: string; ends_at: string | null; created_by_name: string; created_at: string; state: "live" | "scheduled" | "ended";
+}
+export type SwitchName = "signups" | "agent" | "intake";
+export interface PlatformControls {
+  maintenance: { on: boolean; message: string };
+  switches: Record<SwitchName, boolean>;
+  agent_paused_orgs: { id: string; name: string }[];
+  announcements: Announcement[];
+}
+
+export interface SearchResults {
+  organizations: { id: string; name: string; slug: string; status: string }[];
+  people: { id: string; name: string; email: string; status: string }[];
+  invoices: { id: string; number: string; status: string; tenant_id: string }[];
+  documents: { id: string; tenant_id: string; status: string }[];
+  runs: { id: string; tenant_id: string; status: string }[];
+}
+
+export interface SecurityView {
+  last_7_days: { wrong_codes: number; browsers_confirmed: number; browsers_removed: number; codes_sent: number };
+  wrong_code_bursts: { user_id: string; name: string; email: string | null; count: number; last_at: string }[];
+  open_access: { staff_name: string; organization: string; tenant_id: string; reason: string; expires_at: string }[];
+  staff_review: { user_id: string; name: string; email: string; role: string; status: string; last_seen_at: string | null; last_action_at: string | null; stale: boolean }[];
+}

@@ -426,6 +426,9 @@ export const api = {
       request<{ workspace: { id: string; slug: string }; role: Role }>(`/invitations/${encodeURIComponent(token)}/accept`, { method: "POST" }),
   },
 
+  // What Syruss is telling everyone now: announcements and maintenance (for the banner at the top of every page)
+  announcements: () => request<{ maintenance: { on: boolean; message: string } | null; items: { id: string; title: string; body: string; severity: "info" | "warning" | "critical"; starts_at: string; ends_at: string | null }[] }>("/announcements"),
+
   notifications: {
     list: (opts: { unreadOnly?: boolean; before?: string; limit?: number } = {}) => {
       const q = new URLSearchParams();
