@@ -21,7 +21,7 @@ from app.api.v1.sysadmin.common import names, tell_organization
 from app.core.database import get_db_session
 from app.core.downloads import content_disposition, csv_row
 from app.models.billing import (
-    BankAccount, BillingPayment, CatalogItem, CreditNote, Invoice, OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, PaymentFile,
+    BankAccount, BillingPayment, BillingRefund, CatalogItem, CreditNote, Invoice, OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, PaymentFile,
     PaymentSubmission, TaxRate,
 )
 from app.models.tenant import Tenant
@@ -990,6 +990,61 @@ async def reject_submission(submission_id: str, body: RejectIn, staff: Staff = D
     await db.commit()
     await notices.payment_rejected(s.id)
     return {"status": "rejected"}
+
+
+@router.get("/summary", dependencies=[VIEW])
+async def money_summary(db: AsyncSession = Depends(get_db_session)) -> List[Dict[str, Any]]:
+    """
+    Where the money stands, for each currency invoices are in: what is owed and how much of it is overdue, what was
+    invoiced and what actually arrived this month and last (payments less refunds), and what the paid plans and their
+    add-ons bring in a month.
+    """
+    now = datetime.now(timezone.utc)
+    this_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    last_month = (this_month - timedelta(days=1)).replace(day=1)
+    out: Dict[str, Dict[str, Any]] = {}
+
+    def of(currency: str) -> Dict[str, Any]:
+        return out.setdefault(currency, {"currency": currency, "owed_cents": 0, "owed_invoices": 0, "overdue_cents": 0, "overdue_invoices": 0,
+                                         "invoiced_this_month_cents": 0, "received_this_month_cents": 0, "received_last_month_cents": 0,
+                                         "monthly_recurring_cents": 0, "paying_organizations": 0})
+
+    due = Invoice.total_cents - Invoice.amount_paid_cents - Invoice.amount_credited_cents + Invoice.amount_refunded_cents
+    is_late = (Invoice.due_at < now).label("is_late")  # (grouped by its name: the same expression twice is two parameters to Postgres)
+    for currency, late, cents, count in (await db.execute(
+            select(Invoice.currency, is_late, func.sum(due), func.count()).where(Invoice.status == "open")
+            .group_by(Invoice.currency, is_late))).all():
+        row = of(currency)
+        row["owed_cents"] += int(cents or 0)
+        row["owed_invoices"] += count
+        if late:
+            row["overdue_cents"] += int(cents or 0)
+            row["overdue_invoices"] += count
+    for currency, cents in (await db.execute(select(Invoice.currency, func.sum(Invoice.total_cents)).where(
+            Invoice.status.in_(("open", "paid", "uncollectible")), Invoice.issued_at >= this_month).group_by(Invoice.currency))).all():
+        of(currency)["invoiced_this_month_cents"] = int(cents or 0)
+    for model, sign in ((BillingPayment, 1), (BillingRefund, -1)):
+        is_recent = (model.created_at >= this_month).label("is_recent")
+        for currency, recent, cents in (await db.execute(
+                select(model.currency, is_recent, func.sum(model.amount_cents)).where(model.created_at >= last_month)
+                .group_by(model.currency, is_recent))).all():
+            of(currency)["received_this_month_cents" if recent else "received_last_month_cents"] += sign * int(cents or 0)
+    # What recurs: each organization on a paid plan it has paid for (not a trial, not past due), and its add-ons
+    paying = (await db.execute(select(OrgSubscription.tenant_id, CatalogItem.currency, CatalogItem.price_cents)
+                               .join(CatalogItem, CatalogItem.id == OrgSubscription.plan_id)
+                               .where(OrgSubscription.status == "active", CatalogItem.price_cents > 0, OrgSubscription.paid_until >= now))).all()
+    for _, currency, cents in paying:
+        row = of(currency)
+        row["monthly_recurring_cents"] += int(cents)
+        row["paying_organizations"] += 1
+    ids = [tenant_id for tenant_id, _, _ in paying]
+    if ids:
+        for currency, cents in (await db.execute(
+                select(CatalogItem.currency, func.sum(CatalogItem.price_cents * OrgSubscriptionAddon.quantity))
+                .join(OrgSubscriptionAddon, OrgSubscriptionAddon.addon_id == CatalogItem.id)
+                .where(OrgSubscriptionAddon.tenant_id.in_(ids)).group_by(CatalogItem.currency))).all():
+            of(currency)["monthly_recurring_cents"] += int(cents or 0)
+    return sorted(out.values(), key=lambda r: -r["owed_cents"] - r["monthly_recurring_cents"])
 
 
 @router.get("/expiring", dependencies=[VIEW])

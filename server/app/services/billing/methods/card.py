@@ -28,6 +28,10 @@ register(Card())
 
 # ---- Stripe ------------------------------------------------------------------------------------
 
+# A call that timed out is tried again by the library; with an idempotency key Stripe does the thing once however often it is asked.
+stripe.max_network_retries = 2
+
+
 def _key() -> str:
     return settings.STRIPE_SECRET_KEY
 
@@ -63,17 +67,22 @@ def card_of(payment_intent_id: str) -> Dict[str, Optional[str]]:
     return {"customer": intent.get("customer"), "payment_method": method.get("id"), "label": label}
 
 
-def charge(*, amount_cents: int, currency: str, customer: str, payment_method: str, invoice_id: str, tenant_id: str) -> Dict[str, Any]:
-    """Charges a kept card without the customer present. Returns {"id", "status", "amount_received"}; a declined card raises."""
+def charge(*, amount_cents: int, currency: str, customer: str, payment_method: str, invoice_id: str, tenant_id: str, attempt: str = "") -> Dict[str, Any]:
+    """
+    Charges a kept card without the customer present. Returns {"id", "status", "amount_received"}; a declined card raises.
+    `attempt` names the try (a day): asking twice for the same try charges once.
+    """
     intent = stripe.PaymentIntent.create(api_key=_key(), amount=amount_cents, currency=currency.lower(), customer=customer,
                                          payment_method=payment_method, off_session=True, confirm=True,
-                                         metadata={"invoice_id": invoice_id, "tenant_id": tenant_id, "via": "saved_card"})
+                                         metadata={"invoice_id": invoice_id, "tenant_id": tenant_id, "via": "saved_card"},
+                                         idempotency_key=f"renewal:{invoice_id}:{amount_cents}:{attempt}")
     return {"id": intent["id"], "status": intent["status"], "amount_received": intent.get("amount_received") or 0}
 
 
-def refund(*, payment_intent: str, amount_cents: int) -> str:
-    """Gives back part or all of a card payment. Returns Stripe's refund id."""
-    return stripe.Refund.create(api_key=_key(), payment_intent=payment_intent, amount=amount_cents)["id"]
+def refund(*, payment_intent: str, amount_cents: int, key: str = "") -> str:
+    """Gives back part or all of a card payment, once for each `key` (the credit note). Returns Stripe's refund id."""
+    return stripe.Refund.create(api_key=_key(), payment_intent=payment_intent, amount=amount_cents,
+                                idempotency_key=f"refund:{key}" if key else None)["id"]
 
 
 def portal(*, customer: str, return_url: str) -> str:

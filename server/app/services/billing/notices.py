@@ -18,7 +18,7 @@ from app.services.billing.methods import METHODS
 from app.services.billing.pdf import money
 from app.services.notifications import Recipient, inapp, notify
 from app.services.notifications.kinds import (
-    CREDIT_NOTE_ISSUED, INVOICE_ISSUED, INVOICE_REMINDER, PAYMENT_RECEIVED, PAYMENT_REJECTED, PAYMENT_SUBMITTED, PLAN_LAPSED, Kind,
+    CREDIT_NOTE_ISSUED, INVOICE_ISSUED, INVOICE_REMINDER, PAYMENT_RECEIVED, PAYMENT_REJECTED, PAYMENT_SUBMITTED, PLAN_LAPSED, STAFF_ATTENTION, Kind,
 )
 from app.services.storage_service import storage_service
 
@@ -124,6 +124,23 @@ async def credit_note_issued(note_id: str) -> None:
                 attachments=files)
     except Exception:
         logger.exception("Telling about credit note %s failed", note_id)
+
+
+async def staff_attention(tenant_id: Optional[str], title: str, body: str) -> None:
+    """Tells Syruss's billing address about something only a person can sort out (a disputed card payment). Never raises."""
+    try:
+        async with AsyncSessionLocal() as db:
+            seller = await parties.seller(db)
+            tenant = await db.get(Tenant, tenant_id) if tenant_id else None
+            if not seller.email:
+                logger.warning("No billing address is set for Syruss; not sent: %s. %s", title, body)
+                return
+            base = settings.PUBLIC_ADMIN_URL.rstrip("/")
+            await notify(STAFF_ATTENTION, Recipient(email=seller.email), {
+                "title": title, "body": body, "organization": tenant.name if tenant else "Unknown",
+                "url": f"{base}/billing/{tenant.id}" if tenant else f"{base}/billing"})
+    except Exception:
+        logger.exception("Telling Syruss's billing address failed: %s", title)
 
 
 async def payment_submitted(submission_id: str) -> None:

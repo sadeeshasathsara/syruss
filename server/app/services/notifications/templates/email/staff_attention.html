@@ -1,0 +1,11 @@
+{#- For Syruss's billing inbox: something about an organization's payments needs a person. Variables: title, body, organization, url -#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+{% block preheader %}{{ title }}{% endblock %}
+{% block heading %}{{ title }}{% endblock %}
+{% block content %}
+{{ ui.paragraph(body) }}
+{{ ui.facts([("Organization", organization)]) }}
+{{ ui.button("Open its billing", url) }}
+{% endblock %}
+{% block footer %}You get this because it is Syruss's billing address.{% endblock %}

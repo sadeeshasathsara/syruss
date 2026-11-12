@@ -1,5 +1,5 @@
 import type {
-  BankAccountInfo, BillingPayment, BillingSettingsPage, BillingSetup, CatalogDraft, CatalogItem, CatalogKind, CreditNoteInfo, FollowUp,
+  BankAccountInfo, BillingPayment, BillingSettingsPage, BillingSetup, CatalogDraft, CatalogItem, CatalogKind, CreditNoteInfo, FollowUp, MoneySummary,
   Invoice, OrgBilling, OrgBillingRow, PaymentFileInfo, SellerSettings, Submission, TaxRateInfo,
   Grant, GrantList, Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
   StaffActionPage, StaffList, StaffMe, StaffMember, StaffRole,
@@ -120,6 +120,7 @@ export const api = {
     removeOverride: (id: string, overrideId: string, reason: string) =>
       request<{ done: string }>(`/billing/organizations/${encodeURIComponent(id)}/overrides/${encodeURIComponent(overrideId)}/remove`, { method: "POST", body: json({ reason }) }),
     followUps: (days = 7) => request<FollowUp[]>(`/billing/expiring?days=${days}`),
+    summary: () => request<MoneySummary[]>("/billing/summary"),
 
     settings: () => request<BillingSettingsPage>("/billing/settings"),
     saveSettings: (body: Omit<SellerSettings, "updated_at" | "missing"> & { reason: string }) =>
