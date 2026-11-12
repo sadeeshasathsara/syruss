@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 /**
  * A thin bar along the top while a page change is under way: it starts when you click a link inside the app
@@ -11,7 +11,13 @@ function Bar() {
   const pathname = usePathname();
   const search = useSearchParams();
   const [state, setState] = useState<"idle" | "running" | "done">("idle");
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The address it last saw: when it changes, a page change under way is done.
+  const where = `${pathname}?${search.toString()}`;
+  const [seen, setSeen] = useState(where);
+  if (where !== seen) {
+    setSeen(where);
+    if (state === "running") setState("done");
+  }
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -20,7 +26,6 @@ function Bar() {
       if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
       const url = new URL(a.href, location.href);
       if (url.origin !== location.origin || url.pathname + url.search === location.pathname + location.search) return;
-      clearTimeout(timer.current);
       setState("running");
     };
     document.addEventListener("click", onClick);
@@ -28,10 +33,10 @@ function Bar() {
   }, []);
 
   useEffect(() => {
-    setState((s) => (s === "running" ? "done" : s));
-    timer.current = setTimeout(() => setState("idle"), 400);
-    return () => clearTimeout(timer.current);
-  }, [pathname, search]);
+    if (state !== "done") return;
+    const fade = setTimeout(() => setState("idle"), 400);
+    return () => clearTimeout(fade);
+  }, [state]);
 
   return <div className="syruss-progress" data-state={state} role="progressbar" aria-hidden={state === "idle"} />;
 }

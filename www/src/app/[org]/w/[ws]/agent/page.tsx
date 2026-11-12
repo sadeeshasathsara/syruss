@@ -33,7 +33,7 @@ function useDocumentNames() {
 
 /** The documents an item is about: the first one to look at, the rest as links. */
 function Documents({ ids }: { ids: string[] }) {
-  const { workspace, href } = useWorkspace();
+  const { href } = useWorkspace();
   const nameOf = useDocumentNames();
   if (!ids.length) return null;
   return (

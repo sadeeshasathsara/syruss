@@ -15,7 +15,7 @@ from app.services import pages as pages_of
 
 # What the agent can read today, with the extension each is stored under.
 SUPPORTED = {"image/jpeg": "jpg", "image/png": "png", "image/tiff": "tif", "image/webp": "webp", "application/pdf": "pdf"}
-LABELS = {"image/jpeg": "JPG", "image/png": "PNG", "image/tiff": "TIFF", "image/webp": "WebP", "application/pdf": "PDF"}
+LABELS = {"image/jpeg": "JPEG", "image/png": "PNG", "image/tiff": "TIFF", "image/webp": "WebP", "application/pdf": "PDF"}
 
 
 CODES = {400: "invalid_file", 401: "unauthorized", 402: "plan_limit_reached", 403: "forbidden", 404: "not_found", 409: "conflict", 410: "expired",
