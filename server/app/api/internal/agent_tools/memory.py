@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from app.models.memory import Memory
+from app.core.scope import membership
 from app.models.outbox import AgentEventOutbox
 from app.services import memory_service
 from app.api.internal.agent_tools.scope import Workspace, get_workspace
@@ -18,6 +19,20 @@ async def _actor(ws: Workspace) -> Dict[str, Any]:
     """Who the run is for: a person chatting (with their conversation), or nobody in particular."""
     event = await ws.db.get(AgentEventOutbox, ws.event_id)
     return (event.actor or {}) if event else {}
+
+
+async def _may_change_workspace_memory(ws: Workspace, actor: Dict[str, Any]) -> None:
+    """
+    What the workspace knows steers every run, for everyone. Working for a person, the agent changes it only when that
+    person could (knowledge.manage), as in the app: otherwise anyone could teach it anything by asking in a chat.
+    """
+    if actor.get("type") != "user":
+        return  # the workspace's own work (reading documents, reflecting): the agent's own judgement
+    found = await membership(ws.db, ws.template_id, actor.get("id") or "")
+    if found is None or "knowledge.manage" not in (found[1].permissions or []):
+        raise HTTPException(status_code=403, detail=(
+            f"{actor.get('name') or 'This person'}'s role can't change what Syruss knows about the workspace. Keep it as their "
+            "personal memory (scope personal), or ask someone who manages the workspace's knowledge to teach it."))
 
 
 class RememberBody(BaseModel):
@@ -42,6 +57,8 @@ async def remember(body: RememberBody, ws: Workspace = Depends(get_workspace)):
         user_id = actor.get("id")
     elif body.kind == "preference":
         raise HTTPException(status_code=422, detail="Preferences belong to a person: use scope personal.")
+    else:
+        await _may_change_workspace_memory(ws, actor)
     memory, created = await memory_service.add(
         ws.db, tenant_id=ws.tenant_id, template_id=ws.template_id, scope=body.scope, kind=body.kind, content=body.content,
         created_by="agent", user_id=user_id, importance=body.importance, data=body.data, embedding=body.embedding,
@@ -88,6 +105,8 @@ async def update_memory(memory_id: str, body: MemoryPatch, ws: Workspace = Depen
     actor = await _actor(ws)
     if not memory or memory.template_id != ws.template_id or (memory.scope != "workspace" and memory.user_id != actor.get("id")):
         raise HTTPException(status_code=404, detail="Memory not found.")
+    if memory.scope == "workspace":
+        await _may_change_workspace_memory(ws, actor)
     if body.content is not None and body.content != memory.content:
         memory.content, memory.needs_embedding = body.content.strip(), True
     for field in ("importance", "archived"):
@@ -123,12 +142,12 @@ async def store_embedding(memory_id: str, body: EmbeddingBody, ws: Workspace = D
 
 class LegacyNote(BaseModel):
     kind: str = Field(..., pattern="^(lesson|observation)$")
-    content: str
+    content: str = Field(..., min_length=3, max_length=2000)
     data: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ImportBody(BaseModel):
-    notes: List[LegacyNote]
+    notes: List[LegacyNote] = Field(..., max_length=500)
 
 
 @router.post("/memories/import")
