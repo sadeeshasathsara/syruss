@@ -117,5 +117,15 @@ class StorageService:
         except S3Error:
             pass
 
+    def remove_prefix(self, prefix: str) -> int:
+        """Removes every object under a folder (a deleted workspace's files, a closed organization's). Returns how many."""
+        if not prefix or not prefix.endswith("/") or prefix.count("/") < 2:
+            raise ValueError("A whole folder is removed only by its full path.")  # never the bucket, never everything of every tenant
+        removed = 0
+        for obj in self.client.list_objects(self.bucket_name, prefix=prefix, recursive=True):
+            self.remove_object(obj.object_name)
+            removed += 1
+        return removed
+
 
 storage_service = StorageService()

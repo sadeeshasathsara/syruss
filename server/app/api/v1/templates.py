@@ -40,7 +40,7 @@ from app.schemas.template import (
 from app.services.benchmark_service import run_benchmark
 from app.services.conversation_service import conversation_service
 from app.services.template_service import template_service
-from app.services import workspace_events
+from app.services import data_lifecycle, workspace_events
 from app.core.permissions import Access, require
 from app.core.permissions import check_permission
 
@@ -284,6 +284,7 @@ async def delete_template(db: AsyncSession = Depends(get_db_session), scope: Tem
         await db.delete(ws)
     await db.delete(scope.template)
     await db.commit()
+    await data_lifecycle.workspace_files_removed(scope.tenant_id, scope.template_id)
 
 
 # ==============================================================================

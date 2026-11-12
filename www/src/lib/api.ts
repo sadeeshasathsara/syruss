@@ -168,6 +168,7 @@ export const api = {
     activity: (before?: string | null, limit = 30) =>
       request<OrgActivityPage>(`/organization/activity?limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ""}`),
     close: (confirm: string) => request<void>("/organization", { method: "DELETE", body: json({ confirm }) }),
+    deleteMyAccount: () => request<void>("/me", { method: "DELETE" }),
     members: () => request<OrgMemberInfo[]>("/organization/members"),
     changeRole: (userId: string, role: OrgRole) =>
       request<OrgMemberInfo>(`/organization/members/${encodeURIComponent(userId)}`, { method: "PATCH", body: json({ role }) }),

@@ -127,6 +127,10 @@ class Settings(BaseSettings):
     # Long enough to cover an agent backlog; a token only ever grants one workspace, for one event.
     AGENT_TOKEN_TTL_SECONDS: int = 86400
 
+    # An organization its owner closed keeps its data this long, in case it was a mistake; then its workspaces, documents and
+    # files are removed for good (invoices and the audit trail stay). 0: never removed by itself.
+    CLOSED_ORG_RETENTION_DAYS: int = 30
+
     # Apply database migrations when the API starts. Production deploys run `alembic upgrade head`
     # as their own step and set this to false.
     AUTO_MIGRATE: bool = True

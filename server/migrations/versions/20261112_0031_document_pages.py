@@ -1,4 +1,4 @@
-"""documents with several pages: which page the agent looked at, and PDF among the types a workspace accepts
+"""documents with several pages (which page the agent looked at, PDF among accepted types); when a closed organization was purged
 
 Revision ID: 0031
 Revises: 0030
@@ -22,6 +22,7 @@ PDF = "application/pdf"
 def upgrade() -> None:
     op.add_column('agent_page_views', sa.Column('page', sa.Integer(), server_default='1', nullable=False))
     op.alter_column('agent_page_views', 'page', server_default=None)
+    op.add_column('tenants', sa.Column('purged_at', sa.DateTime(timezone=True), nullable=True))
     # A workspace that accepted every kind of picture accepts PDFs too; one that narrowed its list keeps its choice.
     bind = op.get_bind()
     for template_id, data in bind.execute(sa.text("SELECT template_id, data FROM workspace_settings")).fetchall():
@@ -33,4 +34,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_column('tenants', 'purged_at')
     op.drop_column('agent_page_views', 'page')
