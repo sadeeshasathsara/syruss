@@ -1,5 +1,6 @@
 import type {
   BankAccountInfo, BillingPayment, BillingSettingsPage, BillingSetup, CatalogDraft, CatalogItem, CatalogKind, CreditNoteInfo, FollowUp, MoneySummary, OrganizationAccount, PersonAccount,
+  Announcement, AtRisk, BusinessMetrics, OrgNote, OrganizationProfile, PersonProfile, PlatformControls, SearchResults, SecurityView, Severity, SwitchName,
   Invoice, OrgBilling, OrgBillingRow, PaymentFileInfo, SellerSettings, Submission, TaxRateInfo,
   Grant, GrantList, Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
   StaffActionPage, StaffList, StaffMe, StaffMember, StaffRole,
@@ -101,6 +102,31 @@ export const api = {
     open: (body: { tenant_id: string; reason: string; minutes: number }) => request<Grant>("/access", { method: "POST", body: json(body) }),
     end: (id: string) => request<void>(`/access/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
+  console: {
+    metrics: () => request<BusinessMetrics>("/metrics"),
+    atRisk: () => request<AtRisk[]>("/organizations/at-risk"),
+    organization: (id: string) => request<OrganizationProfile>(`/organizations/${encodeURIComponent(id)}/profile`),
+    addNote: (id: string, body: string, pinned = false) =>
+      request<OrgNote>(`/organizations/${encodeURIComponent(id)}/notes`, { method: "POST", body: json({ body, pinned }) }),
+    pinNote: (id: string, noteId: string) => request<OrgNote>(`/organizations/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}/pin`, { method: "POST" }),
+    removeNote: (id: string, noteId: string) => request<void>(`/organizations/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, { method: "DELETE" }),
+    pauseAgent: (id: string, paused: boolean, reason: string) =>
+      request<{ agent_paused: boolean }>(`/organizations/${encodeURIComponent(id)}/agent`, { method: "POST", body: json({ paused, reason }) }),
+    person: (id: string) => request<PersonProfile>(`/people/${encodeURIComponent(id)}/profile`),
+    forgetBrowsers: (id: string, reason: string) =>
+      request<{ browsers_forgotten: number }>(`/people/${encodeURIComponent(id)}/forget-browsers`, { method: "POST", body: json({ reason }) }),
+    platform: () => request<PlatformControls>("/platform"),
+    setMaintenance: (on: boolean, message: string, reason: string) =>
+      request<PlatformControls["maintenance"]>("/platform/maintenance", { method: "PUT", body: json({ on, message, reason }) }),
+    setSwitch: (name: SwitchName, on: boolean, reason: string) =>
+      request<Record<SwitchName, boolean>>("/platform/switches", { method: "PUT", body: json({ name, on, reason }) }),
+    announce: (body: { title: string; body: string; severity: Severity; tenant_id?: string | null; starts_at?: string | null; ends_at?: string | null; reason: string }) =>
+      request<Announcement>("/announcements", { method: "POST", body: json(body) }),
+    endAnnouncement: (id: string) => request<Announcement>(`/announcements/${encodeURIComponent(id)}/end`, { method: "POST" }),
+    search: (q: string) => request<SearchResults>(`/search?q=${encodeURIComponent(q)}`),
+    security: () => request<SecurityView>("/security"),
+  },
+
   accounts: {
     organizations: (q?: string) => request<OrganizationAccount[]>(`/organizations${q ? `?q=${encodeURIComponent(q)}` : ""}`),
     suspend: (id: string, reason: string) =>

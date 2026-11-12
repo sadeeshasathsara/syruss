@@ -52,8 +52,40 @@ export function describeAction(a: StaffAction): string {
       return "completed a customer's billing request";
     case "billing.request_declined":
       return "declined a customer's billing request";
-    default:
+    case "organization.suspended":
+      return `suspended ${d.organization ?? "an organization"}`;
+    case "organization.reactivated":
+      return `reactivated ${d.organization ?? "an organization"}`;
+    case "account.disabled":
+      return `disabled ${who}'s account`;
+    case "account.enabled":
+      return `enabled ${who}'s account again`;
+    case "account.browsers_forgotten":
+      return `made ${who} confirm every browser again`;
+    case "note.added":
+      return "added a staff note";
+    case "note.removed":
+      return "removed a staff note";
+    case "agent.paused":
+      return `paused the agent for ${d.organization ?? "an organization"}`;
+    case "agent.resumed":
+      return `resumed the agent for ${d.organization ?? "an organization"}`;
+    case "maintenance.on":
+      return "put the platform in maintenance (read-only)";
+    case "maintenance.off":
+      return "ended maintenance";
+    case "announcement.created":
+      return `announced “${d.title ?? ""}” to ${d.audience ?? "everyone"}`;
+    case "announcement.ended":
+      return `ended the announcement “${d.title ?? ""}”`;
+    default: {
+      const flip = /^switch\.(signups|agent|intake)\.(on|off)$/.exec(a.action);
+      if (flip) {
+        const what = { signups: "new sign-ups", agent: "the agent for everyone", intake: "documents from other systems" }[flip[1]];
+        return `${flip[2] === "on" ? "switched on" : "paused"} ${what}`;
+      }
       return `${a.action.replace(/[._]/g, " ")} (${a.target_type} ${a.target_id})`;
+    }
   }
 }
 
@@ -65,4 +97,6 @@ export const ACTION_GROUPS = [
   { key: "content", label: "Content viewed" },
   { key: "run,document,event", label: "Operations" },
   { key: "billing", label: "Billing" },
+  { key: "organization,account,note", label: "Accounts" },
+  { key: "maintenance,switch,announcement,agent", label: "Platform controls" },
 ] as const;

@@ -50,7 +50,7 @@ function OrganizationRow({ o, manage, onDone }: { o: OrganizationAccount; manage
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
       <div className="flex min-w-0 flex-1 flex-col">
-        <Link href={`/billing/${o.id}`} className="truncate text-body font-medium text-ink hover:underline">{o.name}</Link>
+        <Link href={`/accounts/organizations/${o.id}`} className="truncate text-body font-medium text-ink hover:underline">{o.name}</Link>
         <span className="truncate text-meta text-muted">
           {o.slug} · {o.members} {o.members === 1 ? "person" : "people"} · {o.workspaces} workspace{o.workspaces === 1 ? "" : "s"}
           {o.status !== "active" && o.status_changed_at ? ` · ${o.status} ${ago(o.status_changed_at).toLowerCase()}` : ""}
@@ -96,7 +96,7 @@ function PersonRow({ p, manage, onDone }: { p: PersonAccount; manage: boolean; o
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
       <div className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-body font-medium text-ink">{p.name}</span>
+        <Link href={`/accounts/people/${p.id}`} className="truncate text-body font-medium text-ink hover:underline">{p.name}</Link>
         <span className="truncate text-meta text-muted">{p.email}{p.last_seen_at ? ` · seen ${ago(p.last_seen_at).toLowerCase()}` : ""}</span>
         <span className="truncate text-meta text-muted">
           {p.organizations.length ? p.organizations.map((o) => `${o.name} (${o.role})`).join(", ") : "In no organization"}
