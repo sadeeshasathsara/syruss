@@ -583,6 +583,20 @@ export interface OrgBilling {
   billing_details_missing: string[];
 }
 
+/** Where the money stands in one currency (owed, overdue, received, recurring). */
+export interface MoneySummary {
+  currency: string;
+  owed_cents: number;
+  owed_invoices: number;
+  overdue_cents: number;
+  overdue_invoices: number;
+  invoiced_this_month_cents: number;
+  received_this_month_cents: number;
+  received_last_month_cents: number;
+  monthly_recurring_cents: number;
+  paying_organizations: number;
+}
+
 export interface FollowUp {
   tenant_id: string;
   organization?: { name: string; slug: string };

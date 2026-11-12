@@ -15,9 +15,9 @@ import { Bar, Empty, ErrorNote, PageHeader, Panel } from "@/components/ui/Blocks
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
-import { ITEM_STATUS, KIND_LABEL, amount, itemSummary, price } from "@/lib/billing";
+import { ITEM_STATUS, KIND_LABEL, amount, itemSummary, money, price } from "@/lib/billing";
 import { cn } from "@/lib/format";
-import type { CatalogItem, CatalogKind, OrgBillingRow } from "@/lib/types";
+import type { CatalogItem, CatalogKind, MoneySummary, OrgBillingRow } from "@/lib/types";
 
 const TABS = [
   { key: "organizations", label: "Organizations" },
@@ -74,12 +74,39 @@ function standing(o: OrgBillingRow): { label: string; tone: "positive" | "warnin
   return { label: o.subscription_status === "active" ? "Active" : "Canceled", tone: o.subscription_status === "active" ? "positive" : "neutral" };
 }
 
+function Figure({ label, value, note, tone }: { label: string; value: string; note?: string; tone?: "negative" }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5 rounded-card border border-border bg-sheet px-4 py-3">
+      <dt className="text-meta text-muted">{label}</dt>
+      <dd className={cn("num text-section font-semibold", tone === "negative" ? "text-negative" : "text-ink")}>{value}</dd>
+      {note && <dd className="text-meta text-muted">{note}</dd>}
+    </div>
+  );
+}
+
+/** Where the money stands in one currency: owed, overdue, what arrived, and what recurs each month. */
+function Money({ s }: { s: MoneySummary }) {
+  const invoices = (n: number) => `${n} invoice${n === 1 ? "" : "s"}`;
+  return (
+    <dl className="grid grid-cols-2 gap-3 @3xl:grid-cols-4" aria-label={`Money in ${s.currency}`}>
+      <Figure label="Owed to Syruss" value={money(s.owed_cents, s.currency)} note={invoices(s.owed_invoices)} />
+      <Figure label="Overdue" value={money(s.overdue_cents, s.currency)} note={invoices(s.overdue_invoices)} tone={s.overdue_cents > 0 ? "negative" : undefined} />
+      <Figure label="Received this month" value={money(s.received_this_month_cents, s.currency)}
+        note={`${money(s.received_last_month_cents, s.currency)} last month · ${money(s.invoiced_this_month_cents, s.currency)} invoiced`} />
+      <Figure label="Recurs each month" value={money(s.monthly_recurring_cents, s.currency)}
+        note={`${s.paying_organizations} paying organization${s.paying_organizations === 1 ? "" : "s"}`} />
+    </dl>
+  );
+}
+
 function Organizations() {
   const [q, setQ] = useState("");
   const orgs = useQuery({ queryKey: ["billing", "organizations", q], queryFn: () => api.billing.organizations(q || undefined) });
   const follow = useQuery({ queryKey: ["billing", "follow-ups"], queryFn: () => api.billing.followUps(7) });
+  const summary = useQuery({ queryKey: ["billing", "summary"], queryFn: api.billing.summary, refetchInterval: 60_000 });
   return (
     <>
+      {(summary.data ?? []).map((s) => <Money key={s.currency} s={s} />)}
       {!!follow.data?.length && (
         <Panel title="Follow up this week" aside={<span className="num">{follow.data.length}</span>}>
           <ul className="flex flex-col divide-y divide-rule">

@@ -1,0 +1,9 @@
+{{ title }}
+
+{{ body }}
+
+Organization: {{ organization }}
+
+Open its billing: {{ url }}
+
+You get this because it is Syruss's billing address.
