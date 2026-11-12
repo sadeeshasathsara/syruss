@@ -137,11 +137,19 @@ async def slug_is_free(db: AsyncSession, slug: str) -> bool:
     return (await db.execute(select(Tenant.id).where(Tenant.slug == slug))).first() is None
 
 
+async def _signups_open() -> None:
+    from app.services import platform_controls
+    if not (await platform_controls.current()).signups:
+        raise HTTPException(status_code=503, detail={"code": "signups_paused", "message": (
+            "New sign-ups are paused for a short while. Please try again later; an invitation from an organization still works.")})
+
+
 async def create_organization(db: AsyncSession, identity: Identity, *, name: str, slug: Optional[str]) -> Dict[str, Any]:
     """A new organization owned by an existing account. The address (slug) is theirs to choose and must be free."""
     user = await db.get(User, identity.user_id)
     if user is None:
         raise HTTPException(status_code=403, detail={"code": "onboarding_required", "message": "Finish setting up your account first."})
+    await _signups_open()
     name = name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="Give the organization a name.")
@@ -166,6 +174,7 @@ async def onboard(db: AsyncSession, identity: Identity, *, first_name: str, last
     """
     if await db.get(User, identity.user_id):
         return await context_for(db, identity)
+    await _signups_open()
     if not identity.email:
         raise HTTPException(status_code=422, detail="Your sign-in has no email address, so an account can't be created.")
     await email_verification.require_verified(db, identity)

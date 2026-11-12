@@ -5,7 +5,7 @@ admin app; their roles live here, not in Keycloak, and every action they take is
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import DateTime, ForeignKey, Index, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -69,3 +69,48 @@ class PlatformAccessGrant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PlatformSetting(Base):
+    """
+    A platform-wide control, by key: "maintenance" ({on, message}) and "switches" ({signups, agent, intake: bool,
+    agent_paused_orgs: [tenant ids]}). Read through app.services.platform_controls, which caches them for a few seconds.
+    """
+    __tablename__ = "platform_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    updated_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
+
+
+class PlatformAnnouncement(Base):
+    """A message from Syruss shown in the app: to everyone, or to one organization, between two times."""
+    __tablename__ = "platform_announcements"
+    __table_args__ = (Index("ix_platform_announcements_window", "starts_at", "ends_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    body: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), default="info", nullable=False)  # info | warning | critical
+    tenant_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)  # None: everyone
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+    ends_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class OrganizationNote(Base):
+    """Platform staff's own note about an organization (a call, a promise, a warning). Customers never see these."""
+    __tablename__ = "organization_notes"
+    __table_args__ = (Index("ix_organization_notes_tenant_created", "tenant_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    author_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    author_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
