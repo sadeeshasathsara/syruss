@@ -26,6 +26,7 @@ from app.models.outbox import AgentEventOutbox
 from app.models.question import AgentQuestion
 from app.models.review import ReviewTask
 from app.models.trace import AgentExecutionTrace as Run
+from app.services import pages as pages_of
 from app.services.document_key import labels_for
 from app.services.storage_service import storage_service
 
@@ -210,8 +211,9 @@ async def process(document_id: str, staff: Staff = Depends(require_staff()), db:
 
 
 @router.get("/processes/{document_id}/file")
-async def process_file(document_id: str, staff: Staff = Depends(require_staff()), db: AsyncSession = Depends(get_db_session)):
-    """The document's file itself, with content open."""
+async def process_file(document_id: str, page: int = Query(1, ge=1), staff: Staff = Depends(require_staff()),
+                       db: AsyncSession = Depends(get_db_session)):
+    """The document to look at, with content open: the picture itself, or the asked page of a PDF or TIFF as a JPEG."""
     d = await db.get(Document, document_id)
     if d is None:
         raise HTTPException(status_code=404, detail="No such document.")
@@ -219,6 +221,12 @@ async def process_file(document_id: str, staff: Staff = Depends(require_staff())
         raise content_refused()
     import asyncio
     data = await asyncio.to_thread(storage_service.read_object, d.minio_object_key, MAX_FILE_BYTES)
-    return Response(content=data, media_type=d.content_type, headers={
+    media_type = d.content_type
+    if page > 1 or d.content_type not in pages_of.SHOWN_AS_IS:
+        try:
+            data, media_type = await asyncio.to_thread(pages_of.jpeg, data, d.content_type, page), "image/jpeg"
+        except (IndexError, pages_of.Unreadable):
+            raise HTTPException(status_code=404, detail="This document has no such page.")
+    return Response(content=data, media_type=media_type, headers={
         "Content-Disposition": "inline", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy": "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"})

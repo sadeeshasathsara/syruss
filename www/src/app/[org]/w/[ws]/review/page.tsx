@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { QuestionCard } from "@/components/chat/cards";
-import { PageViewer } from "@/components/documents/PageViewer";
+import { DocumentViewer } from "@/components/documents/PageViewer";
 import { RecordView } from "@/components/documents/RecordView";
 import { useShell } from "@/components/shell/ShellContext";
 import { Bar, Empty, ErrorNote, PageHeader, PickOne } from "@/components/ui/Blocks";
@@ -55,7 +55,7 @@ function ReviewItem({ task, onDone }: { task: ReviewTask; onDone: () => void }) 
       </div>
       <WhatHappened documentId={task.document_id} />
       <div className="grid grid-cols-1 items-start gap-5 @5xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <PageViewer src={api.documents.fileUrl(wid, task.document_id)} alt="Scanned page" className="h-[50dvh] @5xl:h-[calc(100dvh-180px)]" />
+        <DocumentViewer documentId={task.document_id} className="h-[50dvh] @5xl:h-[calc(100dvh-180px)]" />
         <div className="flex min-w-0 flex-col gap-5">
           <RecordView
             data={data}
@@ -140,7 +140,7 @@ function FlagItem({ question }: { question: AgentQuestion }) {
       <div className={cn("grid grid-cols-1 items-start gap-5", docId && "@5xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")}>
         {docId && (
           <div className="flex flex-col gap-2">
-            <PageViewer src={api.documents.fileUrl(workspace.id, docId)} alt="Scanned page" className="h-[50dvh] @5xl:h-[calc(100dvh-220px)]" />
+            <DocumentViewer documentId={docId} className="h-[50dvh] @5xl:h-[calc(100dvh-220px)]" />
             <Link href={href(`documents/${docId}`)} className="text-body text-muted hover:text-ink hover:underline">{nameOf(docId)}</Link>
           </div>
         )}

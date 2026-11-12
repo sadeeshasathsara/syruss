@@ -11,6 +11,7 @@ import { useWorkspace } from "@/lib/workspace";
 import { NoAccess, SavedNote, Section, SettingRow, SettingsHeader, useWorkspaceSettings } from "./kit";
 
 const FILE_TYPES: { type: string; label: string }[] = [
+  { type: "application/pdf", label: "PDF" },
   { type: "image/jpeg", label: "JPEG" },
   { type: "image/png", label: "PNG" },
   { type: "image/webp", label: "WebP" },

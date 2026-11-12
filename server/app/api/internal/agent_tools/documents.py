@@ -15,7 +15,11 @@ from app.models.document import Document, DocumentStatus, DocumentRole
 from app.models.outbox import AgentEventOutbox
 from app.models.workspace_admin import WorkspaceMember
 from app.models.page_view import AgentPageView
+from app.core.config import settings
 from app.services import eval_service, extraction_log, system_lessons, settings_service, workspace_events
+from app.services import pages as pages_of
+from app.services.billing import service as billing
+from app.services.intake.rules import IntakeRejected
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
 from app.services.document_key import document_label, identification_key, identification_spec
 from app.services.storage_service import storage_service
@@ -50,8 +54,7 @@ async def get_document(document_id: str, ws: Workspace = Depends(get_workspace))
     doc = await document_in(ws, document_id)
     width = height = None
     try:
-        with Image.open(io.BytesIO(storage_service.download_file(doc.minio_object_key))) as img:
-            width, height = img.size
+        width, height = pages_of.size(storage_service.download_file(doc.minio_object_key), doc.content_type)
     except Exception:
         pass
     record = None
@@ -70,11 +73,11 @@ async def get_document(document_id: str, ws: Workspace = Depends(get_workspace))
         }
     if doc.id in ws.hidden:  # an evaluation: the document is to be read as if it had just arrived
         return {"id": doc.id, "name": doc.original_filename, "filename": doc.original_filename, "status": "QUEUED", "role": doc.role.value,
-                "content_type": doc.content_type, "image_size": {"width": width, "height": height},
+                "content_type": doc.content_type, "pages": _pages_in_file(doc), "image_size": {"width": width, "height": height},
                 "record": None, "review": None}
     return {
         "id": doc.id, "name": document_label(doc), "filename": doc.original_filename, "status": doc.status.value, "role": doc.role.value,
-        "content_type": doc.content_type, "image_size": {"width": width, "height": height},
+        "content_type": doc.content_type, "pages": _pages_in_file(doc), "image_size": {"width": width, "height": height},
         "record": record, "review": review,
     }
 
@@ -115,12 +118,17 @@ async def _page_budget(ws: Workspace) -> Dict[str, Any]:
     return {"kind": "work", "own_documents": sorted(own), "already_read_this_run": already_read, "left": already_read["left"]}
 
 
-async def _allow_page_view(ws: Workspace, doc: Document) -> Dict[str, Any]:
-    """Records a page view within the budget (or refuses it) and returns the budget left.
-    Zooming into a page already viewed in this run is free."""
+def _pages_in_file(doc: Document) -> int:
+    """The pages there are to look at. A picture is one image however many sheets it was counted (and charged) as."""
+    return 1 if doc.content_type in pages_of.SHOWN_AS_IS else doc.page_count
+
+
+async def _allow_page_view(ws: Workspace, doc: Document, page: int = 1) -> Dict[str, Any]:
+    """Records a page view within the budget (or refuses it) and returns the budget left. Each page of a document counts;
+    zooming into a page already viewed in this run is free."""
     budget = await _page_budget(ws)
     seen = (await ws.db.execute(select(AgentPageView.id).where(
-        AgentPageView.event_id == ws.event_id, AgentPageView.document_id == doc.id).limit(1))).first()
+        AgentPageView.event_id == ws.event_id, AgentPageView.document_id == doc.id, AgentPageView.page == page).limit(1))).first()
     if seen:
         return budget
     person = None
@@ -144,7 +152,7 @@ async def _allow_page_view(ws: Workspace, doc: Document) -> Dict[str, Any]:
                 f"{budget['already_read_this_run']['limit']} already-read pages in this run, the most allowed; use "
                 "get_document or search_past_records instead."))
     ws.db.add(AgentPageView(tenant_id=ws.tenant_id, template_id=ws.template_id, event_id=ws.event_id or "",
-                            document_id=doc.id, actor_id=person, purpose=purpose))
+                            document_id=doc.id, page=page, actor_id=person, purpose=purpose))
     await ws.db.commit()
     return await _page_budget(ws)
 
@@ -185,18 +193,20 @@ async def page_budget(ws: Workspace = Depends(get_workspace)):
 async def view_document_image(
     document_id: str,
     region: Optional[str] = Query(None, description="ymin,xmin,ymax,xmax on a 0-1000 scale"),
+    page: int = Query(1, ge=1, description="Which page of a document with several (see `pages` in get_document)"),
     max_side: int = Query(1600, ge=256, le=3000),
     ws: Workspace = Depends(get_workspace),
 ):
-    """Returns the page (or a zoomed region) as JPEG for the agent to look at, within the page caps."""
+    """Returns a page (or a zoomed region of it) as JPEG for the agent to look at, within the page caps."""
     doc = await document_in(ws, document_id)
-    budget = await _allow_page_view(ws, doc)
+    in_file = _pages_in_file(doc)
+    if page > in_file:
+        raise HTTPException(status_code=404, detail=f"This document has {in_file} page(s); there is no page {page}.")
+    budget = await _allow_page_view(ws, doc, page)
     try:
-        img = Image.open(io.BytesIO(storage_service.download_file(doc.minio_object_key)))
-        img.load()
-    except Exception:
+        img = pages_of.image(storage_service.download_file(doc.minio_object_key), doc.content_type, page)
+    except (pages_of.Unreadable, IndexError):
         raise HTTPException(status_code=415, detail=f"Cannot render '{doc.content_type}' as an image.")
-    img = img.convert("RGB")
     if region:
         try:
             ymin, xmin, ymax, xmax = [max(0.0, min(1000.0, float(v))) for v in region.split(",")]
@@ -214,6 +224,44 @@ async def view_document_image(
     img.save(buf, format="JPEG", quality=90)
     return Response(content=buf.getvalue(), media_type="image/jpeg",
                     headers={"X-Page-Budget": json.dumps({k: v for k, v in budget.items() if k != "person"})})
+
+
+class SheetsBody(BaseModel):
+    pages: int = Field(..., ge=2, description="How many separate pages (sheets) the one picture shows")
+    why: str = Field(..., min_length=5, max_length=500, description="What you see: e.g. 'two A4 pages photographed side by side'")
+
+
+@router.post("/documents/{document_id}/pages")
+async def report_pages(document_id: str, body: SheetsBody, ws: Workspace = Depends(get_workspace)):
+    """
+    One picture that shows several separate pages is read, and charged, as that many pages. Only for a single picture (a
+    PDF's or TIFF's pages are counted from the file), only upward, and at most PICTURE_MAX_PAGES. Written to the audit log
+    with what was seen, so the organization can see why a picture counted for more than one page.
+    """
+    doc = await document_in(ws, document_id)
+    if doc.content_type not in pages_of.SHOWN_AS_IS:
+        raise HTTPException(status_code=409, detail=f"This file's pages are counted from the file itself ({doc.page_count}). Nothing to report.")
+    pages = min(body.pages, max(1, settings.PICTURE_MAX_PAGES))
+    if pages <= doc.page_count:
+        return {"pages": doc.page_count, "charged": 0}
+    before = doc.page_count
+    if doc.role != DocumentRole.DOCUMENT or doc.is_test or ws.eval_item is not None:
+        doc.page_count = pages  # samples, test documents and evaluations are never charged
+        charged = 0
+    else:
+        try:
+            charged = await billing.charge_more_pages(ws.db, doc, pages)
+        except IntakeRejected as rejected:
+            await ws.db.rollback()
+            raise HTTPException(status_code=402, detail=(
+                f"This picture shows {pages} pages and was accepted as {before}. {rejected.reason} "
+                "Stop reading it: mark the document failed with this reason, so a person can buy pages and send it again."))
+    audit(ws, "DOCUMENT_PAGES_COUNTED", "Document", doc.id, {"from": before, "to": pages, "why": body.why, "charged": charged})
+    await ws.db.commit()
+    await extraction_log.record(tenant_id=ws.tenant_id, template_id=ws.template_id, stage="pages", document_id=doc.id,
+                                document_name=doc.original_filename, actor="Syruss",
+                                message=f"Counted as {pages} pages: {body.why.strip().rstrip('.')}.")
+    return {"pages": pages, "charged": charged}
 
 
 class DocumentStatusUpdate(BaseModel):

@@ -169,6 +169,30 @@ async def charge_pages(db: AsyncSession, document: Document) -> None:
     await db.flush()
 
 
+async def charge_more_pages(db: AsyncSession, document: Document, pages: int) -> int:
+    """
+    A document turned out to have more pages than it was charged for (one picture showing several sheets): charges the
+    difference, once for each new total, and sets the document's page count. Returns the pages added; raises
+    IntakeRejected (402) when they don't fit, leaving the document as it was.
+    """
+    extra = pages - document.page_count
+    if extra <= 0:
+        return 0
+    key = f"pages:{document.id}:to:{pages}"
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"billing:{document.tenant_id}"})
+    if not (await db.execute(select(UsageEvent.id).where(UsageEvent.idempotency_key == key))).first():
+        s = await standing(db, document.tenant_id)
+        from_credits = await _cover(db, s, extra)
+        if from_credits:
+            await credits.add(db, tenant_id=document.tenant_id, delta=-from_credits, kind="usage", created_by="system", ref=f"document:{document.id}")
+        db.add(UsageEvent(tenant_id=document.tenant_id, template_id=document.template_id, metric="pages", quantity=extra,
+                          from_credits=from_credits, source_type="document", source_id=document.id, idempotency_key=key,
+                          period_start=s.subscription.period_start))
+    document.page_count = pages
+    await db.flush()
+    return extra
+
+
 async def pages_by_workspace(db: AsyncSession, tenant_id: str, period_start: datetime) -> Dict[str, int]:
     """Pages each workspace used this period (allowance and credits alike)."""
     return {t: int(n) for t, n in (await db.execute(select(UsageEvent.template_id, func.sum(UsageEvent.quantity)).where(

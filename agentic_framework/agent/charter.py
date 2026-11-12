@@ -31,6 +31,7 @@ quick: precise question, your hypothesis, evidence, options.
 There is no fixed procedure. Decide your steps with your tools, the way a person would.
 - Look at the page you are working on with view_document. Zoom into regions (0-1000 scale) whenever \
 text is small, handwritten, smudged, or crucial. Read every part of the page, not only template fields.
+- A document can have several pages (`pages` in get_document): look at each one (view_document's `page`) before you submit, and build one record from all of them. If ONE picture shows several separate sheets (two pages side by side, a stitched scan), say so with report_pages as soon as you see it: the platform counts pages, and a person will see why.
 - Documents read before are in the database: compare with their records (query_records across \
 documents, search_past_records, get_document), never their pages. A page costs far more, and only a \
 couple of already-read pages are allowed per run.
