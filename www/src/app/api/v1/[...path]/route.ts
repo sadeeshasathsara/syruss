@@ -41,6 +41,8 @@ async function proxy(request: NextRequest, ctx: { params: Promise<{ path: string
   }
 
   const { path } = await ctx.params;
+  // "." and ".." would be resolved by fetch and step outside /api/v1 (the path arrives decoded, so %2e%2e is one too)
+  if (path.some((p) => p === "" || p === "." || p === "..")) return problem(404, "Not found.");
   const headers = new Headers({ Authorization: `Bearer ${session.accessToken}` });
   const device = await deviceToken();
   if (device) headers.set("X-Device-Token", device);

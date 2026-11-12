@@ -19,6 +19,7 @@ from app.api.v1.billing import file_response
 from app.api.v1.sysadmin.access import Staff, record, require_staff
 from app.api.v1.sysadmin.common import names, tell_organization
 from app.core.database import get_db_session
+from app.core.downloads import content_disposition, csv_row
 from app.models.billing import (
     BankAccount, BillingPayment, CatalogItem, CreditNote, Invoice, OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, PaymentFile,
     PaymentSubmission, TaxRate,
@@ -619,7 +620,7 @@ async def invoice_file(invoice_id: str, which: Literal["pdf", "receipt"], db: As
     if data is None:
         raise HTTPException(status_code=404, detail="It has no receipt until it is paid." if which == "receipt" else "It has no PDF until it is issued.")
     return Response(content=data, media_type="application/pdf", headers={
-        "Content-Disposition": f'inline; filename="{"Receipt" if which == "receipt" else "Invoice"} {invoice.number}.pdf"',
+        "Content-Disposition": content_disposition("inline", f"{'Receipt' if which == 'receipt' else 'Invoice'} {invoice.number}.pdf"),
         "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 
@@ -813,7 +814,7 @@ async def credit_note_pdf(note_id: str, db: AsyncSession = Depends(get_db_sessio
         raise HTTPException(status_code=404, detail="No such credit note.")
     data = await asyncio.to_thread(storage_service.download_file, note.pdf_key)
     return Response(content=data, media_type="application/pdf", headers={
-        "Content-Disposition": f'inline; filename="Credit note {note.number}.pdf"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+        "Content-Disposition": content_disposition("inline", f"Credit note {note.number}.pdf"), "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/export", dependencies=[VIEW])
@@ -823,7 +824,14 @@ async def export(what: Literal["invoices", "payments", "credit_notes"] = "invoic
     start = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc) if date_from else None
     end = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc) + timedelta(days=1) if date_to else None
     out = io.StringIO()
-    w = csv.writer(out)
+    writer = csv.writer(out)
+
+    class _Safe:  # buyer names, references and reasons are typed by people: never run as spreadsheet formulas
+        @staticmethod
+        def writerow(values):
+            writer.writerow(csv_row(values))
+
+    w = _Safe()
     cents = lambda c: f"{c / 100:.2f}"  # noqa: E731
     if what == "invoices":
         stmt = select(Invoice).where(Invoice.status != "draft").order_by(Invoice.issued_at)
@@ -853,7 +861,7 @@ async def export(what: Literal["invoices", "payments", "credit_notes"] = "invoic
         for n, number in (await db.execute(stmt)).all():
             w.writerow([n.number, f"{n.created_at:%Y-%m-%d}", number, n.currency, cents(n.amount_cents), n.reason])
     return Response(content=out.getvalue(), media_type="text/csv; charset=utf-8",
-                    headers={"Content-Disposition": f'attachment; filename="syruss-{what}.csv"', "Cache-Control": "no-store"})
+                    headers={"Content-Disposition": content_disposition("attachment", f"syruss-{what}.csv"), "Cache-Control": "no-store"})
 
 
 @router.post("/payments/{payment_id}/files", status_code=201)

@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.auth import AuthContext, get_current_auth
+from app.core.auth import AuthContext, get_current_auth, require_recent_login
 from app.core.database import get_db_session
 from app.core.scope import TemplateScope, get_template_scope, resolve_template_scope
 from app.models.audit import AuditLog
@@ -47,6 +47,12 @@ from app.core.permissions import check_permission
 router = APIRouter(prefix="/templates", tags=["Templates"])
 
 
+def _may_create_workspaces(auth: AuthContext) -> None:
+    """A new template is a new workspace: the same organization permission as POST /workspaces (API keys have none)."""
+    if not auth.can_org("workspaces.create"):
+        raise HTTPException(status_code=403, detail={"code": "org_permission_denied", "message": "Your organization role can't create workspaces."})
+
+
 # ==============================================================================
 # Designing a template with the agent
 # ==============================================================================
@@ -70,6 +76,8 @@ async def discover_template_from_samples(
         scope = await resolve_template_scope(db, auth, template_id)
         await check_permission(db, scope, auth, "template.publish")
         template = scope.template
+    else:
+        _may_create_workspaces(auth)  # no template named: this starts a new workspace
     conversation_id = None
     if template is not None:
         conversation_id = await conversation_service.linked_conversation(db, scope, session_id)
@@ -180,6 +188,7 @@ async def create_template(
         if ws:
             ws.name = payload.name
     else:
+        _may_create_workspaces(auth)
         template = await template_service.create_template(
             db, tenant_id=auth.tenant_id, user_id=auth.user_id, name=payload.name,
             document_type=payload.document_type, description=payload.description,
@@ -267,7 +276,7 @@ async def set_document_identification(
     return _with_slug(template, await db.get(Workspace, template.id))
 
 
-@router.delete("/{template_id}", status_code=204)
+@router.delete("/{template_id}", status_code=204, dependencies=[Depends(require_recent_login)])
 async def delete_template(db: AsyncSession = Depends(get_db_session), scope: TemplateScope = Depends(get_template_scope), _access: Access = Depends(require("workspace.delete"))):
     """Deletes the template workspace and everything in it."""
     ws = await db.get(Workspace, scope.template_id)
