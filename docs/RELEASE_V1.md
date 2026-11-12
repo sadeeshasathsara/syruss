@@ -23,18 +23,46 @@ workflow and `CHANGELOG.md`; the `_changelog/` files and the current `package.ym
 ## 1. Decide what 1.0 is
 
 - [ ] Which services go to 1.0.0 (all five, or leave `site` and `admin` on 0.x).
-- [ ] The flows that must work end to end before it ships, written down here. Nothing in the repository defines them yet.
+- [x] The flows that must work end to end before it ships: the list below. QA on `test` and the check on production both
+      follow it; a flow passes when every step does what it says, with nothing unexpected in the server log.
+
+### The 1.0 flows
+
+1. **Sign up and in.** Create an account with email and password, confirm the email with its code, fill in the
+   profile, create an organization. Sign out, sign in again from another browser: it asks for the emailed code first.
+   Google sign-in, where it is configured.
+2. **A workspace and its template.** Create a workspace, upload 2 or 3 sample documents, let the agent propose a
+   template, change a field, publish it.
+3. **Reading documents.** Upload a picture, a multi-page PDF and a TIFF. Each is read into a record; the PDF's and
+   TIFF's pages can all be paged through in the document view; each document's page count is what billing charged.
+4. **Review.** A document the agent is unsure of goes to Review; correct a value and approve it; the record shows the
+   correction and the agent's chat about it.
+5. **Rules and analytics.** Add a rule and see a record fail it; build a screen with a calculated column and export it
+   to CSV.
+6. **Receiving.** Send a document through the API with an intake key (and with a key whose address allowlist excludes
+   you: refused), by e-mail to a channel address, and by SFTP.
+7. **Publishing.** Connect a webhook destination, approve a record, see the signed delivery arrive; pause and replay.
+8. **People.** Invite someone to the organization and to a workspace with a role; they accept; change their role;
+   remove them. A member can't change someone whose role outranks theirs.
+9. **Billing.** As the owner, fill in billing details, buy a credit pack: an invoice arrives by email with its PDF.
+   Pay one invoice by bank transfer (send the slip; approve it in the admin app) and one by card (Stripe test mode). The
+   credits appear and the receipt is ready. In the admin app, the money summary moves accordingly.
+10. **The admin app.** Sign in with the admin client; see the overview, a run, a document's process (open its content
+    with a reason); suspend and reactivate a test organization; disable and enable a test account.
+11. **Leaving.** Delete a workspace (its files leave storage). Close a test organization (it stops opening). Delete a
+    test account.
+12. **Backups.** On the server: `deploy/prod/backup.sh`, then `restore.sh` of that backup on a spare machine, and flow 3's
+    documents open there.
 
 ## 2. Get `dev` ready
 
 - [ ] Billing settles on `dev`: invoices, bank slips, card payments, renewals, credit notes (migrations 0025 to 0030). It
       has not reached `test` yet.
-- [ ] The server's pytest suite passes, and the migrations run both on an empty database and on a copy of the `test`
-      database (`alembic upgrade head`).
-- [ ] Decide on the `www` lint errors: 5 `react-hooks/set-state-in-effect` errors and 7 warnings on `dev`. CI runs
-      `tsc` and the build but not lint, so nothing blocks them today.
-- [ ] Optional: `MappingPreview` in `www/src/lib/types/core.ts` is two interfaces (knowledge source preview and
-      destination preview) that merge into one type; give them separate names.
+- [x] The server's pytest suite passes (on `feat/production-readiness`, 2026-11-12). Still to check: the migrations on a copy
+      of the `test` database (`alembic upgrade head`), at the first promotion.
+- [x] The `www` lint errors are fixed (and `site`'s), and CI now runs eslint for `www`, `site` and `admin`: an error
+      fails the check.
+- [x] The destination preview type is `DeliveryPreview`; `MappingPreview` is the knowledge source's alone.
 
 ## 3. Bump to 1.0.0 on `dev`
 
@@ -61,10 +89,11 @@ workflow and `CHANGELOG.md`; the `_changelog/` files and the current `package.ym
 
 ## 5. Production setup
 
-None of this is in the repository yet; `deploy/` only has the test server.
+`deploy/prod/` has the compose file, Caddyfile, deploy hook, backup and restore, and its README is the runbook.
 
-- [ ] A production server and its deploy: a `deploy/prod/` (compose file, Caddyfile, deploy hook) and a deploy job in
-      `package.yml` for `main`, like `deploy-test`.
+- [x] The files for a production server and its deploy: `deploy/prod/` and the `deploy-prod` job in `package.yml`
+      (it deploys only once `PROD_DEPLOY_ENABLED` is set and the `production` environment exists).
+- [ ] The production server itself, set up by following `deploy/prod/README.md`.
 - [ ] Production secrets:
   - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, using live keys and a webhook pointing at production
   - the model provider: `LLM_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `CHAT_MODEL`, on a paid tier (the free tier allows 15 requests a minute)
@@ -72,7 +101,8 @@ None of this is in the repository yet; `deploy/` only has the test server.
   - `SMTP_*` for e-mail
 - [ ] Keycloak realm for production, hardened with `bridge/keycloak/harden.py`.
 - [ ] Syruss's own billing details filled in (invoices cannot be issued without them).
-- [ ] Backups of Postgres and MinIO, with one restore tried. Nothing in the repository sets these up yet.
+- [x] Backup and restore scripts (`deploy/prod/backup.sh`, `restore.sh`), both tried against a local copy.
+- [ ] On the production server: the nightly backup in cron, copies off the machine, and one restore tried there.
 - [ ] Domain and TLS.
 
 ## 6. Release to `main`
