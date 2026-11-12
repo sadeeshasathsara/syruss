@@ -26,6 +26,7 @@ from app.services.intake.rules import IntakeRejected
 
 logger = logging.getLogger("core.intake.sftp")
 FXF_READ = 0x01
+MAX_FILE_BYTES = 120_000_000
 
 
 def hash_password(password: str, salt: Optional[bytes] = None) -> str:
@@ -151,6 +152,17 @@ class IntakeSftp(asyncssh.SFTPServer):
         self._opened[handle] = flat.decode()
         return handle
 
+    def write(self, file_obj, offset: int, data: bytes):
+        # Checked as it is written, not when it is closed: a sender can't fill the server's disk with one endless file
+        if offset + len(data) > MAX_FILE_BYTES:
+            raise SFTPFailure(f"Files can be up to {MAX_FILE_BYTES // 1_000_000} MB.")
+        return super().write(file_obj, offset, data)
+
+    def symlink(self, oldpath, newpath):
+        raise SFTPPermissionDenied("Links cannot be made here.")
+
+    link = symlink
+
     def mkdir(self, path, attrs):
         raise SFTPPermissionDenied("Folders cannot be made here.")
 
@@ -172,7 +184,7 @@ class IntakeSftp(asyncssh.SFTPServer):
             return
         path = Path(self._root) / name.lstrip("/")
         try:
-            content = path.read_bytes() if path.stat().st_size <= 120_000_000 else b""
+            content = path.read_bytes() if path.stat().st_size <= MAX_FILE_BYTES else b""
         finally:
             path.unlink(missing_ok=True)
         if not content:

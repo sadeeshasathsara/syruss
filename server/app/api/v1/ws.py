@@ -37,11 +37,6 @@ async def ws_ticket(body: TicketIn, db: AsyncSession = Depends(get_db_session), 
     return {"ticket": token, "channel": channel, "expires_in": 30}
 
 
-@router.websocket("/tenant/{tenant_id}")
-async def websocket_tenant_stream(websocket: WebSocket, tenant_id: str):
-    await _stream_channel(websocket, f"tenant:{tenant_id}", f"tenant {tenant_id}")
-
-
 @router.websocket("/documents/{document_id}")
 async def websocket_document_stream(websocket: WebSocket, document_id: str):
     await _stream_channel(websocket, document_id, "document")

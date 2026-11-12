@@ -11,6 +11,7 @@ Two kinds of conversation:
          it (its audience). Replying wakes Syruss with its saved working state for that issue.
 """
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import AsyncIterator, List, Optional
@@ -20,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.scope import TemplateScope
 from app.models.conversation import ChatMessage, Conversation
+from app.models.document import Document
 from app.models.outbox import AgentEventOutbox
 from app.models.trace import AgentExecutionTrace
 from app.schemas.conversation import ChatMessageCreate, ConversationCreate, ConversationUpdate
@@ -28,6 +30,8 @@ from app.services import budget_service, document_key
 from app.services.live.ui_events import listen_channel, publish_ui_event
 
 REPLY_TIMEOUT_SECONDS = 180
+# A live session's id (the web app makes them, e.g. tpl_1a2b3c4d): no ':' so it can never name a user: or template: channel
+SESSION_ID = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
 
 
 DEFAULT_TITLE = "New chat"
@@ -125,14 +129,26 @@ class ConversationService:
 
     @staticmethod
     async def get_or_create_for_channel(db: AsyncSession, scope: TemplateScope, channel_id: str) -> Conversation:
-        """Live sessions (template wizard, help panel) use their channel id as the conversation id."""
-        conv = await db.get(Conversation, channel_id)
+        """
+        Live sessions (template wizard, help panel) use their channel id as the conversation id. The id comes from the
+        caller, so it must be theirs: an existing conversation of someone else is refused (it would put words in their
+        chat), and a new one may not take a document's id (its live channel would then be the caller's to open).
+        """
+        if not SESSION_ID.match(channel_id or ""):
+            raise HTTPException(status_code=422, detail="A session id is 6 to 64 letters, digits, '_' or '-'.")
+        # Its messages come with it: posting to it reads them, and a lazy load can't happen in async code
+        conv = (await db.execute(select(Conversation).where(Conversation.id == channel_id)
+                                 .options(selectinload(Conversation.messages)))).scalar_one_or_none()
         if conv and conv.template_id != scope.template_id:
             raise HTTPException(status_code=409, detail="This session belongs to another workspace.")
+        if conv and conv.user_id != scope.user_id:
+            raise HTTPException(status_code=409, detail="This session belongs to someone else. Start a new one.")
+        if conv is None and await db.get(Document, channel_id) is not None:
+            raise HTTPException(status_code=409, detail="That id is taken. Start a new session.")
         if conv is None:
             conv = Conversation(
                 id=channel_id, tenant_id=scope.tenant_id, template_id=scope.template_id,
-                user_id=scope.user_id, title="Workspace session", context_metadata={"channel_id": channel_id},
+                user_id=scope.user_id, title="Workspace session", context_metadata={"channel_id": channel_id}, messages=[],
             )
             db.add(conv)
             await db.flush()

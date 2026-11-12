@@ -2,13 +2,14 @@ import io
 import re
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
 from app.core.auth import AuthContext, get_current_auth
+from app.core.downloads import content_disposition
 from app.core.scope import TemplateScope, get_template_scope, resolve_template_scope
 from app.models.audit import AuditLog
 from app.models.document import DocumentRole, DocumentStatus
@@ -80,8 +81,8 @@ async def upload_document(
 async def list_documents(
     status: Optional[DocumentStatus] = None,
     role: DocumentRole = DocumentRole.DOCUMENT,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db_session),
     scope: TemplateScope = Depends(get_template_scope),
 ):
@@ -110,7 +111,7 @@ async def download_document_file(
     return StreamingResponse(
         io.BytesIO(storage_service.download_file(doc.minio_object_key)),
         media_type=doc.content_type,
-        headers={"Content-Disposition": f'inline; filename="{doc.original_filename}"'},
+        headers={"Content-Disposition": content_disposition("inline", doc.original_filename)},
     )
 
 

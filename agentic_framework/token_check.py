@@ -24,7 +24,8 @@ class BadToken(Exception):
 @lru_cache(maxsize=1)
 def _public_key():
     if settings.AGENT_TOKEN_PUBLIC_KEY:
-        return serialization.load_pem_public_key(settings.AGENT_TOKEN_PUBLIC_KEY.replace("\n", "\n").encode())
+        # A key in a one-line env value has its line breaks written as \n (the core server reads its keys the same way)
+        return serialization.load_pem_public_key(settings.AGENT_TOKEN_PUBLIC_KEY.replace("\\n", "\n").encode())
     if settings.ENV.lower() == "production":
         raise RuntimeError("Set AGENT_TOKEN_PUBLIC_KEY in production.")
     # Development: the same keypair the core derives from the shared dev secret

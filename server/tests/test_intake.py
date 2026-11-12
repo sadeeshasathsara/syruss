@@ -228,8 +228,10 @@ async def test_a_key_can_be_limited_to_the_senders_own_addresses(client, monkeyp
     assert (await client.get(f"{API}/intake/me", headers=auth(secret, **{"X-Forwarded-For": "203.0.113.7"}))).status_code == 403
     monkeypatch.setattr(settings, "TRUST_PROXY_HEADERS", True)
     assert (await client.get(f"{API}/intake/me", headers=auth(secret, **{"X-Forwarded-For": "203.0.113.7"}))).status_code == 200
-    assert (await client.get(f"{API}/intake/me", headers=auth(secret, **{"X-Forwarded-For": "10.20.5.9, 1.2.3.4"}))).status_code == 200
+    assert (await client.get(f"{API}/intake/me", headers=auth(secret, **{"X-Forwarded-For": "1.2.3.4, 10.20.5.9"}))).status_code == 200
     assert (await client.get(f"{API}/intake/me", headers=auth(secret, **{"X-Forwarded-For": "10.21.0.1"}))).status_code == 403
+    # Only the address the proxy added (the last one) counts: a sender can't put an allowed address in front of it.
+    assert (await client.get(f"{API}/intake/me", headers=auth(secret, **{"X-Forwarded-For": "203.0.113.7, 1.2.3.4"}))).status_code == 403
     bad = await client.post(f"{API}/channels/{ch['id']}/keys", headers=ws(tpl), json={"name": "x", "ip_allowlist": ["not-an-ip"]})
     assert bad.status_code == 422
     log = (await client.get(f"{API}/channels/{ch['id']}/activity", headers=ws(tpl), params={"outcome": "rejected"})).json()["items"]
