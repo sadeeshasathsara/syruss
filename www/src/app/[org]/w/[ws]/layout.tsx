@@ -13,7 +13,7 @@ import { NavList, OrgSwitcher, WorkspaceSwitcher, type NavItem } from "@/compone
 import { Loader } from "@/components/shell/Loader";
 import { OrgFrame } from "@/components/shell/OrgFrame";
 import { SETTINGS, settingsHref } from "@/components/settings/sections";
-import { Bar, ErrorNote } from "@/components/ui/Blocks";
+import { ErrorNote } from "@/components/ui/Blocks";
 import { ApiError, api } from "@/lib/api";
 import { useAccess } from "@/lib/access";
 import { LiveProvider } from "@/lib/live";

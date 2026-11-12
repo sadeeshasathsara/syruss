@@ -50,7 +50,9 @@ async def refund(db: AsyncSession, payment: BillingPayment, amount_cents: int, *
     if payment.method == "card":
         if not payment.external_ref:
             raise ValueError("This card payment can't be found at Stripe.")
-        external = card_api.refund(payment_intent=payment.external_ref, amount_cents=amount_cents)
+        # Asked once for each credit note (or each amount, without one): a retry after a timeout can't refund twice
+        external = await asyncio.to_thread(card_api.refund, payment_intent=payment.external_ref, amount_cents=amount_cents,
+                                           key=f"{credit_note.id if credit_note else payment.id}:{given}:{amount_cents}")
     row = BillingRefund(payment_id=payment.id, credit_note_id=credit_note.id if credit_note else None, tenant_id=payment.tenant_id,
                         amount_cents=amount_cents, currency=payment.currency, method=payment.method, reference=(reference or "").strip() or None,
                         external_ref=external, created_by=by_id, created_by_name=by_name)
@@ -93,8 +95,8 @@ async def credit_note(db: AsyncSession, invoice: Invoice, *, amount_cents: int, 
     return note
 
 
-async def refunded_by_stripe(db: AsyncSession, payment_intent: str, refunds: List[dict]) -> List[BillingRefund]:
-    """Refunds Stripe reports (from a credit note here, or made in Stripe's dashboard): each recorded once."""
+async def refunded_by_stripe(db: AsyncSession, payment_intent: str, refunds: List[dict], reference: str = "Refunded in Stripe") -> List[BillingRefund]:
+    """Money Stripe reports going back (a credit note here, a refund in Stripe's dashboard, a lost dispute): each recorded once."""
     payment = (await db.execute(select(BillingPayment).where(BillingPayment.external_ref == payment_intent))).scalar_one_or_none()
     if payment is None:
         return []
@@ -105,7 +107,7 @@ async def refunded_by_stripe(db: AsyncSession, payment_intent: str, refunds: Lis
         if (await db.execute(select(BillingRefund.id).where(BillingRefund.external_ref == r["id"]))).first():
             continue
         row = BillingRefund(payment_id=payment.id, tenant_id=payment.tenant_id, amount_cents=int(r["amount"]), currency=payment.currency,
-                            method="card", reference="Refunded in Stripe", external_ref=r["id"], created_by="stripe", created_by_name="Stripe")
+                            method="card", reference=reference, external_ref=r["id"], created_by="stripe", created_by_name="Stripe")
         db.add(row)
         made.append(row)
     await db.flush()

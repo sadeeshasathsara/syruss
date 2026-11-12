@@ -140,6 +140,12 @@ PAYMENT_SUBMITTED = Kind(
     email=EmailSpec("payment_submitted", "{{ organization }} sent a payment for invoice {{ number }}"),
 )
 
+STAFF_ATTENTION = Kind(
+    key="staff_attention",
+    variables=("title", "body", "organization", "url"),
+    email=EmailSpec("staff_attention", "{{ title }}"),
+)
+
 PAYMENT_REJECTED = Kind(
     key="payment_rejected",
     variables=("organization", "number", "amount", "reason", "url", "invoice"),
@@ -196,4 +202,4 @@ CREDIT_NOTE_ISSUED = Kind(
 )
 
 KINDS: Dict[str, Kind] = {k.key: k for k in (INVITATION, EMAIL_CODE, DEVICE_CODE, DEVICE_ADDED, BILLING_ALERT, INVOICE_ISSUED, PAYMENT_RECEIVED,
-                                             PAYMENT_SUBMITTED, PAYMENT_REJECTED, INVOICE_REMINDER, PLAN_LAPSED, CREDIT_NOTE_ISSUED)}
+                                             PAYMENT_SUBMITTED, PAYMENT_REJECTED, INVOICE_REMINDER, PLAN_LAPSED, CREDIT_NOTE_ISSUED, STAFF_ATTENTION)}

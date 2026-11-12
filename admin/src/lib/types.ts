@@ -583,6 +583,45 @@ export interface OrgBilling {
   billing_details_missing: string[];
 }
 
+/** An organization as staff find it: whether it opens, and how big it is. Never its content. */
+export interface OrganizationAccount {
+  id: string;
+  name: string;
+  slug: string;
+  status: "active" | "suspended" | "closed";
+  status_reason: string | null;
+  status_changed_at: string | null;
+  purged_at: string | null;
+  created_at: string;
+  members: number;
+  workspaces: number;
+}
+
+export interface PersonAccount {
+  id: string;
+  name: string;
+  email: string;
+  status: "active" | "disabled" | "deleted";
+  last_seen_at: string | null;
+  created_at: string;
+  organizations: { id: string; name: string; role: string }[];
+  is_staff: boolean;
+}
+
+/** Where the money stands in one currency (owed, overdue, received, recurring). */
+export interface MoneySummary {
+  currency: string;
+  owed_cents: number;
+  owed_invoices: number;
+  overdue_cents: number;
+  overdue_invoices: number;
+  invoiced_this_month_cents: number;
+  received_this_month_cents: number;
+  received_last_month_cents: number;
+  monthly_recurring_cents: number;
+  paying_organizations: number;
+}
+
 export interface FollowUp {
   tenant_id: string;
   organization?: { name: string; slug: string };

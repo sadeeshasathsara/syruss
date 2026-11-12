@@ -211,7 +211,11 @@ function RoleEditor({ catalogue, role, mine, workspaceId, onDone }: {
 }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<Draft>(role);
-  useEffect(() => setDraft(role), [role]);
+  const [from, setFrom] = useState<Draft>(role);
+  if (role !== from) {  // another role picked (or the saved one reloaded): start from it
+    setFrom(role);
+    setDraft(role);
+  }
   const editable = !draft.system && catalogue.can_manage;
   const included = useMemo(() => withImplied(draft.permissions, catalogue.implies), [draft.permissions, catalogue.implies]);
   const refresh = () => ["roles", "members", "invitations"].forEach((k) => queryClient.invalidateQueries({ queryKey: [k, workspaceId] }));

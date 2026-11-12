@@ -1,17 +1,22 @@
 "use client";
 
 import { Moon, Sun } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 /** Dark is the default; this switches to light and remembers it on this device. */
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
-  useEffect(() => {
-    setTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
-  }, []);
+  // The page's own theme attribute is the one source: this follows it (the server renders dark, the default)
+  const theme = useSyncExternalStore(
+    (onChange) => {
+      const watch = new MutationObserver(onChange);
+      watch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+      return () => watch.disconnect();
+    },
+    () => (document.documentElement.dataset.theme === "light" ? "light" : "dark"),
+    () => "dark" as const,
+  );
   const flip = () => {
     const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
     document.documentElement.dataset.theme = next;
     try {
       localStorage.setItem("syruss-theme", next);

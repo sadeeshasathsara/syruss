@@ -104,7 +104,7 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
               {x.filename && <Fact label="File name" className="col-span-2">{x.filename}</Fact>}
               {x.external_id && <Fact label="Sender's reference" className="col-span-2">{x.external_id}</Fact>}
             </dl>
-            {d.content_open && (x.content_type.startsWith("image/") ? (
+            {d.content_open && (x.content_type.startsWith("image/") || x.content_type === "application/pdf" ? (
               // eslint-disable-next-line @next/next/no-img-element
               <a href={api.processes.fileUrl(x.id)} target="_blank" rel="noreferrer"><img src={api.processes.fileUrl(x.id)} alt="The document" className="mt-3 max-h-80 w-full rounded-control border border-border object-contain" /></a>
             ) : (

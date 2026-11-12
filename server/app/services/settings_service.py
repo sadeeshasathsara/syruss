@@ -18,7 +18,7 @@ from app.models.knowledge import Entity
 from app.models.trace import AgentExecutionTrace
 from app.models.workspace_admin import ApiKey, WorkspaceMember, WorkspaceSettings
 
-IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/tiff"]
+IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/tiff", "application/pdf"]
 
 
 class GeneralPrefs(BaseModel):

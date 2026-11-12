@@ -155,7 +155,7 @@ async def test_what_a_file_really_is_decides_whether_it_is_let_in(client):
     res = await send(client, secret, exe, name="invoice.png", ctype="image/png")
     assert res.status_code == 415 and res.json()["detail"]["code"] == "unsupported_type"
     pdf = await send(client, secret, b"%PDF-1.7\n" + os.urandom(500), name="invoice.png", ctype="image/png")
-    assert pdf.status_code == 415 and "PDF" in pdf.json()["detail"]["message"]
+    assert pdf.status_code == 422 and "PDF" in pdf.json()["detail"]["message"]  # PDFs are accepted; this one is damaged
     assert (await send(client, secret, b"", name="a.png")).status_code == 400
     broken = png_bytes()[:200]
     assert (await send(client, secret, broken)).status_code == 422
@@ -168,7 +168,7 @@ async def test_a_channel_can_narrow_what_the_workspace_accepts_but_not_widen_it(
     jpeg = io.BytesIO()
     Image.new("RGB", (80, 60), (3, 4, 5)).save(jpeg, "JPEG")
     assert (await send(client, secret, jpeg.getvalue(), name="a.jpg", ctype="image/jpeg")).status_code == 202
-    bad = await client.post(f"{API}/channels", headers=ws(tpl), json={"name": "Odd", "config": {"allowed_types": ["application/pdf"]}})
+    bad = await client.post(f"{API}/channels", headers=ws(tpl), json={"name": "Odd", "config": {"allowed_types": ["application/zip"]}})
     assert bad.status_code == 422
 
 
@@ -435,7 +435,7 @@ async def test_an_upload_link_is_for_its_own_channel_and_expires(client):
         await db.commit()
     assert (await client.post(path, headers=auth(secret))).status_code == 410
     unsupported = await client.post(f"{API}/intake/uploads", headers=auth(secret), json={
-        "filename": "a.pdf", "content_type": "application/pdf", "size_bytes": 100})
+        "filename": "a.zip", "content_type": "application/zip", "size_bytes": 100})
     assert unsupported.status_code == 415
     huge = await client.post(f"{API}/intake/uploads", headers=auth(secret), json={
         "filename": "a.png", "content_type": "image/png", "size_bytes": 10_000_000_000})

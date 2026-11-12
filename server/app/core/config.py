@@ -127,6 +127,10 @@ class Settings(BaseSettings):
     # Long enough to cover an agent backlog; a token only ever grants one workspace, for one event.
     AGENT_TOKEN_TTL_SECONDS: int = 86400
 
+    # An organization its owner closed keeps its data this long, in case it was a mistake; then its workspaces, documents and
+    # files are removed for good (invoices and the audit trail stay). 0: never removed by itself.
+    CLOSED_ORG_RETENTION_DAYS: int = 30
+
     # Apply database migrations when the API starts. Production deploys run `alembic upgrade head`
     # as their own step and set this to false.
     AUTO_MIGRATE: bool = True
@@ -160,6 +164,10 @@ class Settings(BaseSettings):
     MINIO_PUBLIC_SECURE: bool = False
     TRUST_PROXY_HEADERS: bool = False                      # read the sender's address from X-Forwarded-For (only behind a proxy you control)
     INTAKE_MAX_PIXELS: int = 100_000_000                   # an image larger than this is refused (decompression bombs)
+    INTAKE_MAX_PAGES: int = 100                            # a PDF or TIFF with more pages than this is refused (split it)
+    # One picture can show several sheets (two pages side by side, a stitched scan). The agent says so when it reads one and the
+    # extra pages are charged, up to this many pages a picture. 1 turns it off: a picture is always one page.
+    PICTURE_MAX_PAGES: int = 10
     INTAKE_UPLOAD_MINUTES: int = 15                        # how long a presigned upload link works
     CLAMAV_HOST: str = ""                                  # when set, every intake file is scanned by clamd before it is stored
     CLAMAV_PORT: int = 3310
