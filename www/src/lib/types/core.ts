@@ -243,8 +243,8 @@ export interface MappingPreview {
   examples: { id: string; name: string; attributes: Record<string, unknown>; aliases: string[] }[];
 }
 
-// The destination mapping preview (Connections > Publish) shares this name; the two declarations merge.
-export interface MappingPreview {
+/** What a destination would receive for one document with a mapping (Connections > Publish). */
+export interface DeliveryPreview {
   envelope: Record<string, unknown>;
   problems: string[];
 }

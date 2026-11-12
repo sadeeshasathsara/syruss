@@ -478,3 +478,45 @@ jobs:
             -H "X-Syruss-Timestamp: $stamp" -H "X-Syruss-Signature: $sig" -H "Content-Type: application/json" \
             --data "$body"
           echo " asked the server to pull:$services"
+
+  deploy-prod:
+    name: Tell the production server to pull
+    needs: [prepare-release, release-server, release-agent, release-www, release-site, release-admin, detect-infra, release-infra]
+    # Runs even when some services had no release (their jobs are skipped), but not when one failed.
+    if: ${{ !cancelled() && github.ref_name == 'main' && vars.PROD_DEPLOY_ENABLED == 'true' && !contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-latest
+    # A GitHub environment, so a required reviewer can be set on it (Settings > Environments > production)
+    environment: production
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Call the deploy hook
+        env:
+          URL: ${{ secrets.PROD_DEPLOY_URL }}
+          SECRET: ${{ secrets.PROD_DEPLOY_SECRET }}
+          SERVER: ${{ needs.release-server.result }}
+          AGENT: ${{ needs.release-agent.result }}
+          WWW: ${{ needs.release-www.result }}
+          SITE: ${{ needs.release-site.result }}
+          ADMIN: ${{ needs.release-admin.result }}
+          INFRA: ${{ needs.release-infra.result }}
+          INFRA_NAMES: ${{ needs.detect-infra.outputs.names }}
+        run: |
+          services=""
+          [ "$SERVER" = success ] && services="$services server"
+          [ "$AGENT" = success ] && services="$services agent"
+          [ "$WWW" = success ] && services="$services www"
+          [ "$SITE" = success ] && services="$services site"
+          [ "$ADMIN" = success ] && services="$services admin"
+          [ "$INFRA" = success ] && services="$services $INFRA_NAMES"
+          list=$(printf '%s\n' $services | jq -R . | jq -sc .)
+          body=$(jq -nc --argjson services "$list" --arg compose "$(base64 -w0 deploy/prod/docker-compose.yml)" '{services: $services, compose: $compose}')
+          stamp=$(date +%s)
+          sig=$(printf '%s.%s' "$stamp" "$body" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')
+          curl --fail --show-error --silent --max-time 30 -X POST "$URL" \
+            -H "X-Syruss-Timestamp: $stamp" -H "X-Syruss-Signature: $sig" -H "Content-Type: application/json" \
+            --data "$body"
+          echo " asked production to pull:$services"
