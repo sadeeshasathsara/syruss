@@ -380,8 +380,13 @@ export function ChannelPage({ slug }: { slug: string }) {
     mutationFn: () => api.channels.remove(workspace.id, channel!.id),
     onSuccess: () => { refresh(); router.replace(href("connections/receive")); },
   });
-  const [name, setName] = useState("");
-  useEffect(() => { if (channel) setName(channel.name); }, [channel?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The rename field starts from the saved name, and follows it when it changes.
+  const [name, setName] = useState(channel?.name ?? "");
+  const [savedName, setSavedName] = useState(channel?.name);
+  if (channel && channel.name !== savedName) {
+    setSavedName(channel.name);
+    setName(channel.name);
+  }
   const rename = useMutation({ mutationFn: () => api.channels.update(workspace.id, channel!.id, { name: name.trim() }), onSuccess: refresh });
 
   const back = <Link href={href("connections/receive")} className="mb-1 inline-block text-body text-muted hover:text-ink">All channels</Link>;

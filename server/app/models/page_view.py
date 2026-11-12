@@ -5,7 +5,7 @@ records are already in the database, and looking at a page again costs a model c
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import DateTime, ForeignKey, Index, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -22,6 +22,7 @@ class AgentPageView(Base):
     template_id: Mapped[str] = mapped_column(String(64), ForeignKey("document_templates.id", ondelete="CASCADE"), nullable=False)
     event_id: Mapped[str] = mapped_column(String(64), nullable=False)
     document_id: Mapped[str] = mapped_column(String(64), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    page: Mapped[int] = mapped_column(Integer, default=1, nullable=False)  # which page of the document (1 is the first)
     # Who the run works for: the person chatting, or None for the workspace's own work
     actor_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     # "chat" (answering a person) | "own" (the run's own document) | "past" (a document already recorded)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useState, useSyncExternalStore } from "react";
 import { CodeForm } from "@/components/CodeForm";
 import { checkSlug, confirmCode, createOrganization, saveProfile, sendCode, type EmailStatus, type FormState } from "./actions";
 
@@ -22,26 +22,37 @@ function Field({ id, label, hint, error, children }: { id: string; label: string
  * differs between the server's runtime and the browser's, so it is read after mount; the first render (server and
  * client alike) holds only the current value.
  */
+const unchanging = () => () => {};
+const NO_ZONES: string[] = [];
+let zoneList: string[] | null = null;
+function allZones(): string[] {
+  if (zoneList === null) {
+    try {
+      zoneList = (Intl as unknown as { supportedValuesOf: (k: string) => string[] }).supportedValuesOf("timeZone");
+    } catch {
+      zoneList = NO_ZONES; // the current value alone is enough
+    }
+  }
+  return zoneList;
+}
+function deviceZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
 function TimezoneField({ initialValue }: { initialValue?: string }) {
-  const [zone, setZone] = useState(initialValue ?? "UTC");
-  const [zones, setZones] = useState<string[]>([]);
-  useEffect(() => {
-    try {
-      setZones((Intl as unknown as { supportedValuesOf: (k: string) => string[] }).supportedValuesOf("timeZone"));
-    } catch {
-      /* the current value alone is enough */
-    }
-    if (initialValue) return;
-    try {
-      setZone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
-    } catch {
-      /* keep UTC */
-    }
-  }, [initialValue]);
+  // The browser's own values, read where the page runs (the server renders UTC and no list)
+  const zones = useSyncExternalStore(unchanging, allZones, () => NO_ZONES);
+  const device = useSyncExternalStore(unchanging, deviceZone, () => "UTC");
+  const [picked, setPicked] = useState<string | null>(initialValue ?? null);
+  const zone = picked ?? device;
   const options = zones.includes(zone) ? zones : [zone, ...zones];
   return (
     <Field id="timezone" label="Time zone" hint="Picked from your device. Change it if it's wrong, or leave it.">
-      <select id="timezone" name="timezone" value={zone} onChange={(e) => setZone(e.target.value)}>
+      <select id="timezone" name="timezone" value={zone} onChange={(e) => setPicked(e.target.value)}>
         {options.map((z) => <option key={z} value={z}>{z.replace(/_/g, " ")}</option>)}
       </select>
     </Field>
@@ -104,21 +115,21 @@ export function OrganizationForm({ suggestedName }: { suggestedName: string }) {
   const [name, setName] = useState(v.name ?? suggestedName);
   const [slug, setSlug] = useState(v.slug ?? slugify(suggestedName));
   const [edited, setEdited] = useState(false); // once the address is typed by hand, the name stops rewriting it
-  const [check, setCheck] = useState<Check>({ state: "idle" });
-  const latest = useRef(0);
+  // The answer for the address it was asked about: while the typed address has none yet, it is being checked
+  const [answer, setAnswer] = useState<Check & { slug: string } | null>(null);
+  const check: Check = !slug ? { state: "idle" } : answer?.slug === slug ? answer : { state: "checking" };
 
   useEffect(() => {
-    if (!slug) {
-      setCheck({ state: "idle" });
-      return;
-    }
-    const mine = ++latest.current;
-    setCheck({ state: "checking" });
+    if (!slug) return;
+    let current = true;
     const timer = setTimeout(async () => {
       const result = await checkSlug(slug);
-      if (mine === latest.current) setCheck({ state: result.available ? "free" : "taken", reason: result.reason });
+      if (current) setAnswer({ slug, state: result.available ? "free" : "taken", reason: result.reason });
     }, 350);
-    return () => clearTimeout(timer);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
   }, [slug]);
 
   const address = e.slug ?? (check.state === "taken" ? check.reason ?? "That address is taken." : undefined);

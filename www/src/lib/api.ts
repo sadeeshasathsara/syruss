@@ -4,7 +4,7 @@ import type {
   InviteIssued, LogPage, OrgActivityPage, OrgOverview, OrgPeriod, Organization, Overview, SecurityEventPage, TrustedDevice, Proposal, RecordSet, ReviewTask, Role, RoleCatalogue, Template, TemplateSchema, TemplateVersion, OrgMemberInfo, OrgInvitationInfo, OrgRole, Permission,
   WebhookDeliveryInfo, WebhookInfo, Workspace, WorkspaceEventType, WorkspaceSettingsData, BudgetStatus, ReflectionState,
   IntakeActivityPage, IntakeChannelInfo, IntakeKeyInfo, DeveloperInfo, ChannelConfigPatch, NewIntakeKey,
-  ConnectionsOverview, DeliveryDetail, DeliveryPage, DeliveryStats, DeliveryStatus, DestinationInfo, DestinationKind, MappingPreview, MappingSources, MappingSpec,
+  ConnectionsOverview, DeliveryDetail, DeliveryPage, DeliveryStats, DeliveryStatus, DestinationInfo, DestinationKind, DeliveryPreview, MappingSources, MappingSpec,
   NewDestination, TryResult,
   WorkspaceJobInfo, LiveQuality, GoldenDocument, EvalRunInfo, FlagAnswer, ConversationPage, SystemLesson,
   Rule, RuleCheckResult, RuleDraft, RuleInput, RuleLanguage, ValidationRule,
@@ -168,6 +168,7 @@ export const api = {
     activity: (before?: string | null, limit = 30) =>
       request<OrgActivityPage>(`/organization/activity?limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ""}`),
     close: (confirm: string) => request<void>("/organization", { method: "DELETE", body: json({ confirm }) }),
+    deleteMyAccount: () => request<void>("/me", { method: "DELETE" }),
     members: () => request<OrgMemberInfo[]>("/organization/members"),
     changeRole: (userId: string, role: OrgRole) =>
       request<OrgMemberInfo>(`/organization/members/${encodeURIComponent(userId)}`, { method: "PATCH", body: json({ role }) }),
@@ -487,7 +488,7 @@ export const api = {
     oauthStart: (workspaceId: string, id: string) => request<{ url: string }>(`/destinations/${id}/oauth/start`, { method: "POST", workspaceId }),
     suggestMapping: (workspaceId: string, kind: string) => request<MappingSpec>("/destinations/suggest", { method: "POST", body: json({ kind }), workspaceId }),
     preview: (workspaceId: string, body: { kind: string; mapping: MappingSpec; document_id: string }) =>
-      request<MappingPreview>("/destinations/preview", { method: "POST", body: json(body), workspaceId }),
+      request<DeliveryPreview>("/destinations/preview", { method: "POST", body: json(body), workspaceId }),
   },
   deliveries: {
     list: (workspaceId: string, opts: { status?: DeliveryStatus[]; destinationId?: string; documentId?: string; q?: string; offset?: number; limit?: number } = {}) => {

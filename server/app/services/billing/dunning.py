@@ -102,6 +102,24 @@ async def _pay_with_kept_card(db: AsyncSession, invoice: Invoice) -> None:
     await notices.invoice_issued(invoice.id)
 
 
+async def _try_kept_card_again(db: AsyncSession, invoice_id: str) -> bool:
+    """True when the kept card paid the invoice now."""
+    from app.services.billing import cards
+    invoice = await db.get(Invoice, invoice_id)
+    profile = await parties.profile(db, invoice.tenant_id)
+    if not (profile and profile.card_payment_method and METHODS["card"].available()):
+        return False
+    try:
+        paid = await cards.charge_saved_card(db, invoice)
+        await db.commit()
+    except ValueError:
+        await db.rollback()
+        return False
+    if paid:
+        await notices.invoice_paid(invoice_id, paid[1])
+    return bool(paid)
+
+
 async def send_reminders(db: AsyncSession, now: datetime) -> int:
     """Sends each reminder an open invoice is due, once (only the latest one, when several came due at once)."""
     seller = await parties.seller(db)
@@ -118,9 +136,14 @@ async def send_reminders(db: AsyncSession, now: datetime) -> int:
             continue
         latest = min(came_due)
         invoice.reminders = sorted(already | set(came_due), reverse=True)
+        invoice_id, renewal = invoice.id, invoice.kind == "renewal"  # read now: a rolled-back card attempt forgets the row
         await db.commit()
         if latest not in already:
-            await notices.invoice_reminder(invoice.id, latest)
+            # A renewal with a kept card is tried on the card again before anyone is chased: cards are declined for
+            # passing reasons (a limit, a bank's check), and most go through a few days later.
+            if renewal and await _try_kept_card_again(db, invoice_id):
+                continue
+            await notices.invoice_reminder(invoice_id, latest)
             sent_now += 1
     return sent_now
 

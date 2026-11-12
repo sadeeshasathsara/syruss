@@ -105,6 +105,8 @@ export interface DocumentItem {
   display_name: string | null;
   content_type: string;
   file_size_bytes: number;
+  /** What reading it is charged: a PDF's or TIFF's pages, or the sheets one picture shows. */
+  page_count: number;
   status: DocumentStatus;
   error_message: string | null;
   created_at: string;
@@ -241,8 +243,8 @@ export interface MappingPreview {
   examples: { id: string; name: string; attributes: Record<string, unknown>; aliases: string[] }[];
 }
 
-// The destination mapping preview (Connections > Publish) shares this name; the two declarations merge.
-export interface MappingPreview {
+/** What a destination would receive for one document with a mapping (Connections > Publish). */
+export interface DeliveryPreview {
   envelope: Record<string, unknown>;
   problems: string[];
 }

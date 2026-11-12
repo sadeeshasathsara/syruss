@@ -148,7 +148,7 @@ async def find_documents(
 
 class UploadIn(BaseModel):
     filename: str = Field(..., min_length=1, max_length=255)
-    content_type: str = Field(..., description="image/jpeg, image/png, image/tiff or image/webp")
+    content_type: str = Field(..., description="application/pdf, image/jpeg, image/png, image/tiff or image/webp")
     size_bytes: int = Field(..., ge=1, description="The file's exact size; storage refuses anything larger")
     external_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None

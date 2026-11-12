@@ -17,7 +17,7 @@ CHAT_TOOLS = (
 EVAL_TOOLS = (
     "get_workspace", "get_document", "view_document", "search_past_records", "search_entities", "review_history",
     "recall", "related", "calculate", "validate_record", "submit_record", "mark_document_failed", "query_records",
-    "read_guide",
+    "read_guide", "report_pages",
 )
 
 # Every tool's description is resent with every model call, so each kind of work gets the tools it
@@ -30,7 +30,7 @@ WORK_CORE = (
 )
 RULE_TOOLS = ("list_rules", "check_rule", "suggest_rule")
 TOOLSETS: Dict[str, Sequence[str]] = {
-    "document.submitted": WORK_CORE + ("identify_document", "validate_record", "submit_record", "mark_document_failed", "create_entity",
+    "document.submitted": WORK_CORE + ("report_pages", "identify_document", "validate_record", "submit_record", "mark_document_failed", "create_entity",
                                        "update_entity", "add_entity_alias", "propose_entity_merge", "propose_template_change") + RULE_TOOLS,
     "template.samples_added": WORK_CORE + ("list_documents", "validate_record", "propose_template_change") + RULE_TOOLS,
     "knowledge.source_added": WORK_CORE + ("list_documents", "inspect_source", "propose_source_mapping", "propose_template_change"),

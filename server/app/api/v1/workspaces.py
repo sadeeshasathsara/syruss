@@ -12,6 +12,7 @@ from app.models.identity import User
 from app.models.workspace import Workspace
 from app.models.workspace_admin import WorkspaceMember
 from app.schemas.workspace import OrganizationResponse, WorkspaceCreate, WorkspaceSummary, WorkspaceUpdate
+from app.services import data_lifecycle
 from app.services.template_service import template_service
 from app.services.workspace_service import workspace_service
 
@@ -112,9 +113,11 @@ async def delete_workspace(
     template = await template_service.get_template(db, ws.id)
     db.add(AuditLog(tenant_id=auth.tenant_id, template_id=None, event_type="WORKSPACE_DELETED", entity_type="Workspace",
                     entity_id=ws.id, actor=auth.user_id, details={"name": ws.name, "slug": ws.slug}))
+    tenant_id, template_id = ws.tenant_id, ws.id
     await db.delete(ws)
     await db.delete(template)
     await db.commit()
+    await data_lifecycle.workspace_files_removed(tenant_id, template_id)
 
 
 class JoinIn(BaseModel):

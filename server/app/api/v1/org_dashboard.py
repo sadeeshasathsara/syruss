@@ -152,8 +152,9 @@ class CloseIn(BaseModel):
 @router.delete("/organization", status_code=204, dependencies=[Depends(require_recent_login)])
 async def close_organization(body: CloseIn, auth: AuthContext = Depends(get_current_auth), db: AsyncSession = Depends(get_db_session)):
     """
-    Closes the organization for everyone. Only an owner may, and only by typing its name. Nothing is erased here: the
-    organization stops opening, and its data can be removed later by the platform.
+    Closes the organization for everyone. Only an owner may, and only by typing its name. Nothing is erased at once: the
+    organization stops opening, and CLOSED_ORG_RETENTION_DAYS later its workspaces, documents and files are removed for
+    good (services/data_lifecycle.py). Invoices and the activity log are kept.
     """
     if auth.org_role != "owner":
         raise HTTPException(status_code=403, detail="Only an owner can close the organization.")

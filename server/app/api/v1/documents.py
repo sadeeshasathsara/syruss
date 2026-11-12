@@ -1,9 +1,9 @@
-import io
+import asyncio
 import re
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,7 @@ from app.services.storage_service import storage_service
 from app.core.permissions import Access, require
 from app.core.permissions import check_permission
 from app.services import document_key, extraction_log, quality_service, settings_service, workspace_events
+from app.services import pages as pages_of
 from app.services.billing import alerts as billing_alerts
 from app.services.record_service import record_service
 
@@ -104,15 +105,29 @@ async def get_document(
 @router.get("/{document_id}/file", dependencies=[Depends(require("documents.view"))])
 async def download_document_file(
     document_id: str,
+    page: Optional[int] = Query(None, ge=1, description="A page of a document with several, as a JPEG"),
+    original: bool = Query(False, description="The file exactly as it was sent, whatever its type"),
     db: AsyncSession = Depends(get_db_session),
     scope: TemplateScope = Depends(get_template_scope),
 ):
+    """
+    The document to look at. A JPEG, PNG or WebP comes as it is. A PDF or TIFF (which a browser can't show in a picture
+    frame) comes as a JPEG of the page asked for, the first by default; `original=true` gives the file itself.
+    """
     doc = await document_service.get_document(db, scope.tenant_id, scope.template_id, document_id)
-    return StreamingResponse(
-        io.BytesIO(storage_service.download_file(doc.minio_object_key)),
-        media_type=doc.content_type,
-        headers={"Content-Disposition": content_disposition("inline", doc.original_filename)},
-    )
+    content = await asyncio.to_thread(storage_service.download_file, doc.minio_object_key)
+    if original or (page in (None, 1) and doc.content_type in pages_of.SHOWN_AS_IS):
+        return Response(content=content, media_type=doc.content_type, headers={
+            "Content-Disposition": content_disposition("attachment" if original else "inline", doc.original_filename)})
+    try:
+        picture = await asyncio.to_thread(pages_of.jpeg, content, doc.content_type, page or 1)
+    except IndexError:
+        raise HTTPException(status_code=404, detail="This document has no such page.")
+    except pages_of.Unreadable as exc:
+        raise HTTPException(status_code=415, detail=str(exc))
+    return Response(content=picture, media_type="image/jpeg", headers={
+        "Content-Disposition": content_disposition("inline", f"{doc.original_filename} (page {page or 1}).jpg"),
+        "Cache-Control": "private, max-age=300"})
 
 
 @router.post("/{document_id}/process", status_code=202)

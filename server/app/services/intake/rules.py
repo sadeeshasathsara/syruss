@@ -11,9 +11,11 @@ from typing import Iterable, Optional, Tuple
 import filetype
 from PIL import Image
 from app.core.config import settings
+from app.services import pages as pages_of
 
 # What the agent can read today, with the extension each is stored under.
-SUPPORTED = {"image/jpeg": "jpg", "image/png": "png", "image/tiff": "tif", "image/webp": "webp"}
+SUPPORTED = {"image/jpeg": "jpg", "image/png": "png", "image/tiff": "tif", "image/webp": "webp", "application/pdf": "pdf"}
+LABELS = {"image/jpeg": "JPEG", "image/png": "PNG", "image/tiff": "TIFF", "image/webp": "WebP", "application/pdf": "PDF"}
 
 
 CODES = {400: "invalid_file", 401: "unauthorized", 402: "plan_limit_reached", 403: "forbidden", 404: "not_found", 409: "conflict", 410: "expired",
@@ -43,30 +45,44 @@ def clean_filename(name: Optional[str]) -> str:
     return base[:200] or "document"
 
 
-def inspect_image(content: bytes, allowed: Iterable[str]) -> Tuple[str, str, int]:
-    """(content type, extension, pages) of a file that really is an allowed image, or IntakeRejected. A TIFF can hold several pages."""
+def inspect_file(content: bytes, allowed: Iterable[str]) -> Tuple[str, str, int]:
+    """
+    (content type, extension, pages) of a file that really is an allowed picture or PDF, or IntakeRejected. The pages are
+    what reading it is charged: one for a picture, one per frame of a TIFF, one per page of a PDF.
+    """
     if not content:
         raise IntakeRejected(400, "The file is empty.")
     kind = filetype.guess(content)
     found = kind.mime if kind else None
     if found not in SUPPORTED:
-        shown = {"application/pdf": "a PDF", "application/zip": "a zip archive"}.get(found or "", f"'{found}'" if found else "an unknown kind of file")
-        raise IntakeRejected(415, f"This is {shown}. Send a JPG, PNG, TIFF or WebP image.")
+        shown = {"application/zip": "a zip archive"}.get(found or "", f"'{found}'" if found else "an unknown kind of file")
+        raise IntakeRejected(415, f"This is {shown}. Send a PDF, or a JPG, PNG, TIFF or WebP image.")
     if found not in set(allowed):
-        accepted = ", ".join(sorted(t.split("/")[1].upper() for t in allowed if t in SUPPORTED)) or "none"
-        raise IntakeRejected(415, f"{found.split('/')[1].upper()} images are not accepted here. This channel accepts: {accepted}.")
+        accepted = ", ".join(sorted(LABELS[t] for t in allowed if t in SUPPORTED)) or "none"
+        raise IntakeRejected(415, f"{LABELS[found]} files are not accepted here. This channel accepts: {accepted}.")
+    if found != pages_of.PDF:
+        try:
+            with Image.open(io.BytesIO(content)) as image:
+                width, height = image.size
+                if width * height > settings.INTAKE_MAX_PIXELS:
+                    raise IntakeRejected(413, f"The picture is {width} x {height} pixels, larger than the {settings.INTAKE_MAX_PIXELS // 1_000_000} megapixels allowed.")
+                image.verify()
+        except IntakeRejected:
+            raise
+        except Exception:
+            raise IntakeRejected(422, "The picture is damaged or incomplete and cannot be opened.")
     try:
-        with Image.open(io.BytesIO(content)) as image:
-            width, height = image.size
-            if width * height > settings.INTAKE_MAX_PIXELS:
-                raise IntakeRejected(413, f"The picture is {width} x {height} pixels, larger than the {settings.INTAKE_MAX_PIXELS // 1_000_000} megapixels allowed.")
-            pages = max(1, int(getattr(image, "n_frames", 1)))
-            image.verify()
-    except IntakeRejected:
-        raise
-    except Exception:
-        raise IntakeRejected(422, "The picture is damaged or incomplete and cannot be opened.")
+        pages = pages_of.count(content, found)
+    except pages_of.Unreadable as exc:
+        raise IntakeRejected(422, str(exc))
+    if pages < 1:
+        raise IntakeRejected(422, "The file has no pages.")
+    if pages > settings.INTAKE_MAX_PAGES:
+        raise IntakeRejected(413, f"The file has {pages} pages; a file can have up to {settings.INTAKE_MAX_PAGES}. Split it and send the parts.")
     return found, SUPPORTED[found], pages
+
+
+inspect_image = inspect_file  # the older name
 
 
 async def read_capped(upload, max_bytes: int) -> bytes:

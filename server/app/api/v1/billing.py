@@ -330,6 +330,7 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
     await db.commit()
     if paid:
         await notices.invoice_paid(paid[0].id, paid[1])
+    await cards.follow_up(db)
     return {"received": True}
 
 

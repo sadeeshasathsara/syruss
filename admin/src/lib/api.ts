@@ -1,5 +1,5 @@
 import type {
-  BankAccountInfo, BillingPayment, BillingSettingsPage, BillingSetup, CatalogDraft, CatalogItem, CatalogKind, CreditNoteInfo, FollowUp,
+  BankAccountInfo, BillingPayment, BillingSettingsPage, BillingSetup, CatalogDraft, CatalogItem, CatalogKind, CreditNoteInfo, FollowUp, MoneySummary, OrganizationAccount, PersonAccount,
   Invoice, OrgBilling, OrgBillingRow, PaymentFileInfo, SellerSettings, Submission, TaxRateInfo,
   Grant, GrantList, Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
   StaffActionPage, StaffList, StaffMe, StaffMember, StaffRole,
@@ -101,6 +101,17 @@ export const api = {
     open: (body: { tenant_id: string; reason: string; minutes: number }) => request<Grant>("/access", { method: "POST", body: json(body) }),
     end: (id: string) => request<void>(`/access/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
+  accounts: {
+    organizations: (q?: string) => request<OrganizationAccount[]>(`/organizations${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+    suspend: (id: string, reason: string) =>
+      request<OrganizationAccount>(`/organizations/${encodeURIComponent(id)}/suspend`, { method: "POST", body: json({ reason }) }),
+    reactivate: (id: string, reason: string) =>
+      request<OrganizationAccount>(`/organizations/${encodeURIComponent(id)}/reactivate`, { method: "POST", body: json({ reason }) }),
+    people: (q: string) => request<PersonAccount[]>(`/people?q=${encodeURIComponent(q)}`),
+    disable: (id: string, reason: string) => request<PersonAccount>(`/people/${encodeURIComponent(id)}/disable`, { method: "POST", body: json({ reason }) }),
+    enable: (id: string, reason: string) => request<PersonAccount>(`/people/${encodeURIComponent(id)}/enable`, { method: "POST", body: json({ reason }) }),
+  },
+
   billing: {
     setup: () => request<BillingSetup>("/billing/limits"),
     catalog: (kind?: CatalogKind) => request<CatalogItem[]>(`/billing/catalog${kind ? `?kind=${kind}` : ""}`),
@@ -120,6 +131,7 @@ export const api = {
     removeOverride: (id: string, overrideId: string, reason: string) =>
       request<{ done: string }>(`/billing/organizations/${encodeURIComponent(id)}/overrides/${encodeURIComponent(overrideId)}/remove`, { method: "POST", body: json({ reason }) }),
     followUps: (days = 7) => request<FollowUp[]>(`/billing/expiring?days=${days}`),
+    summary: () => request<MoneySummary[]>("/billing/summary"),
 
     settings: () => request<BillingSettingsPage>("/billing/settings"),
     saveSettings: (body: Omit<SellerSettings, "updated_at" | "missing"> & { reason: string }) =>

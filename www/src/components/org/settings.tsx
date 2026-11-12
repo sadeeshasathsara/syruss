@@ -75,7 +75,7 @@ export function CloseOrganization() {
 
   return (
     <div className="flex flex-col">
-      <SettingsHeader title="Close the organization" description="Closing stops the organization opening for everyone. Nothing is erased straight away." />
+      <SettingsHeader title="Close the organization" description="Closing stops the organization opening for everyone. Its workspaces, documents and files are removed for good 30 days later; invoices are kept." />
       <Section title="Close it" description="Only an owner can. You will be asked to sign in again first, and to type the name.">
         {!owner ? <NoAccess what="close the organization" role={me?.org_role ?? undefined} /> : (
           <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); if (typed.trim() === name) close.mutate(); }}>
@@ -106,7 +106,24 @@ export function SignInSettings() {
         </div>
         <p className="mt-3 text-meta text-muted">You&apos;ll be asked to sign in again first. Risky actions here always ask for a recent sign-in.</p>
       </Section>
+      <DeleteAccount email={me?.email ?? ""} />
     </div>
+  );
+}
+
+/** Leaving Syruss for good. Typed confirmation, a recent sign-in, and the server refuses while an organization would be left ownerless. */
+function DeleteAccount({ email }: { email: string }) {
+  const [typed, setTyped] = useState("");
+  const remove = useMutation({ mutationFn: () => api.org.deleteMyAccount(), onSuccess: () => window.location.assign("/signed-out") });
+  const sure = !!email && typed.trim().toLowerCase() === email.toLowerCase();
+  return (
+    <Section title="Delete your account" description="You leave every organization and workspace, and your name and details are removed. Work you did stays with the organizations it belongs to. This can't be undone.">
+      <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); if (sure) remove.mutate(); }}>
+        <Field label="Type your email address to confirm">{(id) => <Input id={id} value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />}</Field>
+        {remove.error && <p className="text-body text-negative">{remove.error.message}</p>}
+        <div><Button type="submit" variant="danger" disabled={!sure || remove.isPending}>Delete my account</Button></div>
+      </form>
+    </Section>
   );
 }
 
