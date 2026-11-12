@@ -163,6 +163,9 @@ async def platform_lessons(ws: Workspace = Depends(get_workspace)):
     return [{"id": lesson.id, "content": lesson.content} for lesson in await system_lessons.active(ws.db)]
 
 
+LESSONS_PER_RUN, LESSONS_PER_DAY = 2, 5
+
+
 class SystemLessonBody(BaseModel):
     content: str = Field(..., min_length=10, max_length=600,
                          description="How to work in the platform: tools, refusals, commits. Never names, IDs or business facts.")
@@ -171,7 +174,19 @@ class SystemLessonBody(BaseModel):
 
 @router.post("/system-lessons", status_code=201)
 async def propose_system_lesson(body: SystemLessonBody, ws: Workspace = Depends(get_workspace)):
-    """Proposes a lesson about working in the platform. It applies everywhere once an admin approves it."""
+    """
+    Proposes a lesson about working in the platform. It applies everywhere once an admin approves it. A few a run and a
+    day per workspace: what a document says can't fill the platform's review queue (or carry its text there in bulk).
+    """
+    from datetime import timedelta
+    from app.models.system_lesson import SystemLesson
+    this_run = (await ws.db.execute(select(func.count(SystemLesson.id)).where(SystemLesson.event_id == ws.event_id))).scalar() or 0
+    since = datetime.now(timezone.utc) - timedelta(days=1)
+    today = (await ws.db.execute(select(func.count(SystemLesson.id)).where(
+        SystemLesson.template_id == ws.template_id, SystemLesson.created_at >= since))).scalar() or 0
+    if this_run >= LESSONS_PER_RUN or today >= LESSONS_PER_DAY:
+        raise HTTPException(status_code=429, detail=(
+            "Enough platform lessons have been proposed from this workspace for now. Keep it as a workspace memory instead."))
     return await system_lessons.propose(ws.db, content=body.content, why=body.why, template_id=ws.template_id,
                                         event_id=ws.event_id)
 
