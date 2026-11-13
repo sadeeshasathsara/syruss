@@ -10,6 +10,211 @@
 
 > Generated file. Do not edit.
 
+## Current versions
+
+| Service | Version | Released | Notes |
+| :--- | :--- | :--- | :--- |
+| **admin** | `0.6.0-rc.1` | 2026-11-13 | [What changed](#admin-060-rc1) |
+| **agent** | `0.7.0-rc.1` | 2026-11-13 | [What changed](#agent-070-rc1) |
+| **server** | `0.13.0-rc.1` | 2026-11-13 | [What changed](#server-0130-rc1) |
+| **site** | `0.2.5-rc.1` | 2026-11-13 | [What changed](#site-025-rc1) |
+| **www** | `0.9.0-rc.1` | 2026-11-13 | [What changed](#www-090-rc1) |
+
+## [2026-11-13] - Release Candidate (test)
+
+### admin (0.6.0-rc.1)
+- PDF documents are accepted everywhere a picture is (the app, the API, e-mail, SFTP). Pages are counted from the file (a PDF's pages, a TIFF's frames) and each one is charged; the agent and people in the app can look at every page. A file with more than INTAKE_MAX_PAGES pages (100) or a password-protected PDF is refused.
+- One picture that shows several sheets is counted as that many pages when the agent reports it: the extra pages are charged, capped by PICTURE_MAX_PAGES (10), written to the audit log with what was seen, and refused when they don't fit the plan.
+- Card payments: Stripe is called off the server's main thread with retries and idempotency keys; a disputed payment reaches Syruss's billing address and a lost dispute is recorded as money back; a bank debit that bounces tells the customer; a declined renewal card is tried again when each reminder comes due.
+- Billing in the admin app shows where the money stands for each currency: owed, overdue, received this month and last, invoiced, and what recurs monthly.
+- A deleted workspace's files leave storage with it. An organization its owner closed is emptied CLOSED_ORG_RETENTION_DAYS (30) later; invoices and the activity log are kept. People can delete their own account (Sign-in settings).
+- Platform staff get an Accounts page: find organizations and people, suspend or reactivate an organization, disable or enable an account, each with a reason in the audit log.
+- Working for a person in a chat, the agent changes what the whole workspace knows only when that person may (knowledge.manage), as in the app. Platform lesson proposals are limited to 2 a run and 5 a day per workspace.
+- Production: deploy/prod (compose, Caddy, deploy hook, backup and restore, runbook) and a deploy job for main that runs only once it is switched on.
+- The web apps have no lint errors (www, site, admin), and CI runs eslint on all three.
+- Live updates go only to the channel they were sent to. Every event used to be copied to an organization-wide channel that any member could open, which carried other people's notifications, private chats and workspaces they aren't in. That channel no longer exists.
+- Intake key address allowlists read only the last X-Forwarded-For entry (the one your proxy added) when TRUST_PROXY_HEADERS is on, so a sender can't put an allowed address in front of their own.
+- Sign-in return addresses can't be turned into links to other sites (a tab or line break in the path used to be dropped by the browser and make one), and the app's API proxies refuse "." and ".." in a path, so a request can't step outside /api/v1 (or outside /sysadmin in the admin app).
+- Calls to customers' systems (knowledge sources, destinations, webhooks) check the address again at the moment of connecting, so a name that answers with a public address and then a private one can't reach the private network. Shared (100.64/10) and IPv4-in-IPv6 addresses count as private too, and a webhook's reply body is no longer read.
+- Creating a template that starts a new workspace takes the organization's workspaces.create permission, like POST /workspaces. Deleting a workspace through the template route asks for a recent sign-in, like the workspace route.
+- A live session id must be the caller's own: another person's chat or a document's id is refused (it could put words in someone's chat or open a document's live feed). Asking the workspace agent from a new help session no longer fails.
+- Nobody but an owner can change the role of, or remove, a workspace member whose role has privileges theirs doesn't.
+- Files whose names are in other scripts (or contain quotes) download instead of failing; CSV exports (screens, the platform's billing export, the email destination's attachment) write values that a spreadsheet would run as formulas as text; the email destination's subject fills plain {name} placeholders only.
+- Request bodies sent without a length are held to MAX_REQUEST_MB as they arrive; a knowledge source file is limited like an API source's reply; SFTP files are limited while being written and links can't be made; document and audit lists take at most 500 and 200 a page; the sign-in rate limiter forgets old addresses; the live replay history keeps only recent channels; email intake sender lists match regardless of case.
+- The agent's calculator refuses powers, numbers and lists big enough to stall the worker, and the agent reads a public key given on one line (with \n for its line breaks).
+- A draft invoice shows nothing owed yet ("not issued yet") instead of $0.00, and says when it can't be issued because Syruss's own billing details aren't filled in, with a link to Billing settings.
+- Billing has new tabs: Invoices, Payments to check and Settings; the Requests tab is gone (purchases are invoices now).
+- Payments to check: each slip a customer sent, shown beside what its invoice asks for, with warnings (an amount that isn't what is due, a slip or bank reference sent before). Approve it for what actually arrived (more than is due asks to confirm) or reject it with a reason the customer sees. A count shows on the tab.
+- Invoices: filter by state (waiting, overdue, paid, drafts, not paid, void), find by number, download CSVs for the accountants, and make an invoice for a custom deal from catalog items or written lines, as a draft or issued at once.
+- Each invoice has its own page: lines and tax, both parties, payments with their files, slips sent, credit notes, the PDF and receipt, and the changes staff make: issue or throw away a draft, record a payment, switch it on before it's paid, void it, issue a credit note (optionally refunding), attach the receipt issued for a cash payment.
+- Settings: Syruss's billing details (shown as not ready until complete), numbering prefix, payment terms, renewal timetable, the bank accounts customers pay into and tax rates by country.
+- An organization's page shows its billing details, its invoices and whether a renewal is past due; "Record a payment" became "New invoice".
+- Files customers uploaded keep the API's protective headers through the admin app (never read as anything else, unable to run anything).
+- Plan and add-on descriptions read "1 API key", not "1 API keys" (every limit has a word for exactly one), and pages read "a month".
+- admin: removing a custom limit refreshes the organization's billing page; the payment form no longer keeps a hidden credit-pack quantity when a plan is picked; a free item reads "No charge".
+- When the server can't be reached, signing in and the account pages (continue, onboarding, invitations, confirming a browser) say "Syruss can't be reached right now" with a way to try again, instead of showing the web framework's error. Forms on those pages show the same sentence.
+- When the sign-in service is down, signing in comes back to the front page with that message, signing out still ends the session, and a short outage no longer signs anyone out of the apps.
+- Every app has an error page of its own: a page that fails to load says so plainly and offers Try again.
+- When the browser gets no answer at all (offline), the apps say "Can't reach Syruss. Check your connection and try again."
+- A Billing page for platform staff: every organization's plan, pages this period, credits and open requests, and who to follow up with (trials ending, plans not paid this period).
+- Plans and packs: create plans, add-ons and credit packs as drafts with the platform's own limits, put them on sale, make new versions, take them off sale, and move organizations from one plan version to another.
+- One organization's billing: where each limit comes from (plan, add-ons, custom), pages by workspace, credit history and payments, and the changes staff make (record a payment, change the plan, add-ons, credits, a custom limit, a trial), each with a reason.
+- Requests: complete what customers asked for (recording the payment with it) or decline it. The audit log has a Billing filter.
+
+### agent (0.7.0-rc.1)
+- PDF documents are accepted everywhere a picture is (the app, the API, e-mail, SFTP). Pages are counted from the file (a PDF's pages, a TIFF's frames) and each one is charged; the agent and people in the app can look at every page. A file with more than INTAKE_MAX_PAGES pages (100) or a password-protected PDF is refused.
+- One picture that shows several sheets is counted as that many pages when the agent reports it: the extra pages are charged, capped by PICTURE_MAX_PAGES (10), written to the audit log with what was seen, and refused when they don't fit the plan.
+- Card payments: Stripe is called off the server's main thread with retries and idempotency keys; a disputed payment reaches Syruss's billing address and a lost dispute is recorded as money back; a bank debit that bounces tells the customer; a declined renewal card is tried again when each reminder comes due.
+- Billing in the admin app shows where the money stands for each currency: owed, overdue, received this month and last, invoiced, and what recurs monthly.
+- A deleted workspace's files leave storage with it. An organization its owner closed is emptied CLOSED_ORG_RETENTION_DAYS (30) later; invoices and the activity log are kept. People can delete their own account (Sign-in settings).
+- Platform staff get an Accounts page: find organizations and people, suspend or reactivate an organization, disable or enable an account, each with a reason in the audit log.
+- Working for a person in a chat, the agent changes what the whole workspace knows only when that person may (knowledge.manage), as in the app. Platform lesson proposals are limited to 2 a run and 5 a day per workspace.
+- Production: deploy/prod (compose, Caddy, deploy hook, backup and restore, runbook) and a deploy job for main that runs only once it is switched on.
+- The web apps have no lint errors (www, site, admin), and CI runs eslint on all three.
+- Live updates go only to the channel they were sent to. Every event used to be copied to an organization-wide channel that any member could open, which carried other people's notifications, private chats and workspaces they aren't in. That channel no longer exists.
+- Intake key address allowlists read only the last X-Forwarded-For entry (the one your proxy added) when TRUST_PROXY_HEADERS is on, so a sender can't put an allowed address in front of their own.
+- Sign-in return addresses can't be turned into links to other sites (a tab or line break in the path used to be dropped by the browser and make one), and the app's API proxies refuse "." and ".." in a path, so a request can't step outside /api/v1 (or outside /sysadmin in the admin app).
+- Calls to customers' systems (knowledge sources, destinations, webhooks) check the address again at the moment of connecting, so a name that answers with a public address and then a private one can't reach the private network. Shared (100.64/10) and IPv4-in-IPv6 addresses count as private too, and a webhook's reply body is no longer read.
+- Creating a template that starts a new workspace takes the organization's workspaces.create permission, like POST /workspaces. Deleting a workspace through the template route asks for a recent sign-in, like the workspace route.
+- A live session id must be the caller's own: another person's chat or a document's id is refused (it could put words in someone's chat or open a document's live feed). Asking the workspace agent from a new help session no longer fails.
+- Nobody but an owner can change the role of, or remove, a workspace member whose role has privileges theirs doesn't.
+- Files whose names are in other scripts (or contain quotes) download instead of failing; CSV exports (screens, the platform's billing export, the email destination's attachment) write values that a spreadsheet would run as formulas as text; the email destination's subject fills plain {name} placeholders only.
+- Request bodies sent without a length are held to MAX_REQUEST_MB as they arrive; a knowledge source file is limited like an API source's reply; SFTP files are limited while being written and links can't be made; document and audit lists take at most 500 and 200 a page; the sign-in rate limiter forgets old addresses; the live replay history keeps only recent channels; email intake sender lists match regardless of case.
+- The agent's calculator refuses powers, numbers and lists big enough to stall the worker, and the agent reads a public key given on one line (with \n for its line breaks).
+
+### server (0.13.0-rc.1)
+- PDF documents are accepted everywhere a picture is (the app, the API, e-mail, SFTP). Pages are counted from the file (a PDF's pages, a TIFF's frames) and each one is charged; the agent and people in the app can look at every page. A file with more than INTAKE_MAX_PAGES pages (100) or a password-protected PDF is refused.
+- One picture that shows several sheets is counted as that many pages when the agent reports it: the extra pages are charged, capped by PICTURE_MAX_PAGES (10), written to the audit log with what was seen, and refused when they don't fit the plan.
+- Card payments: Stripe is called off the server's main thread with retries and idempotency keys; a disputed payment reaches Syruss's billing address and a lost dispute is recorded as money back; a bank debit that bounces tells the customer; a declined renewal card is tried again when each reminder comes due.
+- Billing in the admin app shows where the money stands for each currency: owed, overdue, received this month and last, invoiced, and what recurs monthly.
+- A deleted workspace's files leave storage with it. An organization its owner closed is emptied CLOSED_ORG_RETENTION_DAYS (30) later; invoices and the activity log are kept. People can delete their own account (Sign-in settings).
+- Platform staff get an Accounts page: find organizations and people, suspend or reactivate an organization, disable or enable an account, each with a reason in the audit log.
+- Working for a person in a chat, the agent changes what the whole workspace knows only when that person may (knowledge.manage), as in the app. Platform lesson proposals are limited to 2 a run and 5 a day per workspace.
+- Production: deploy/prod (compose, Caddy, deploy hook, backup and restore, runbook) and a deploy job for main that runs only once it is switched on.
+- The web apps have no lint errors (www, site, admin), and CI runs eslint on all three.
+- Live updates go only to the channel they were sent to. Every event used to be copied to an organization-wide channel that any member could open, which carried other people's notifications, private chats and workspaces they aren't in. That channel no longer exists.
+- Intake key address allowlists read only the last X-Forwarded-For entry (the one your proxy added) when TRUST_PROXY_HEADERS is on, so a sender can't put an allowed address in front of their own.
+- Sign-in return addresses can't be turned into links to other sites (a tab or line break in the path used to be dropped by the browser and make one), and the app's API proxies refuse "." and ".." in a path, so a request can't step outside /api/v1 (or outside /sysadmin in the admin app).
+- Calls to customers' systems (knowledge sources, destinations, webhooks) check the address again at the moment of connecting, so a name that answers with a public address and then a private one can't reach the private network. Shared (100.64/10) and IPv4-in-IPv6 addresses count as private too, and a webhook's reply body is no longer read.
+- Creating a template that starts a new workspace takes the organization's workspaces.create permission, like POST /workspaces. Deleting a workspace through the template route asks for a recent sign-in, like the workspace route.
+- A live session id must be the caller's own: another person's chat or a document's id is refused (it could put words in someone's chat or open a document's live feed). Asking the workspace agent from a new help session no longer fails.
+- Nobody but an owner can change the role of, or remove, a workspace member whose role has privileges theirs doesn't.
+- Files whose names are in other scripts (or contain quotes) download instead of failing; CSV exports (screens, the platform's billing export, the email destination's attachment) write values that a spreadsheet would run as formulas as text; the email destination's subject fills plain {name} placeholders only.
+- Request bodies sent without a length are held to MAX_REQUEST_MB as they arrive; a knowledge source file is limited like an API source's reply; SFTP files are limited while being written and links can't be made; document and audit lists take at most 500 and 200 a page; the sign-in rate limiter forgets old addresses; the live replay history keeps only recent channels; email intake sender lists match regardless of case.
+- The agent's calculator refuses powers, numbers and lists big enough to stall the worker, and the agent reads a public key given on one line (with \n for its line breaks).
+- Fixes from code scanning: the CI workflow's token is read-only; an API source that can't be reached says so in a plain sentence (the library's error goes to the server log); the development reset no longer returns raw error text; reading times in rules can't be slowed down by a long run of spaces.
+- Connecting a destination through a provider's sign-in now comes back to the destination's page in the main app (PUBLIC_APP_URL), not to the public site.
+- An SFTP channel's page shows where to connect (host, port, username) and its password: once, right after the channel is made (kept only in the tab's memory, no longer in browser storage), and again whenever a new one is set.
+- Plans and credits doesn't offer to buy while an invoice can't be issued: it says why instead (the organization's billing details are missing, or Syruss's own aren't filled in yet). The buttons in an offer wrap instead of spilling out of the card.
+- Buying asks for the organization's billing details before saying Syruss isn't ready, since that is the part the customer can fix.
+- Paid plans renew with an invoice: a week (renewal_lead_days) before the period ends, an invoice for the next period (the plan, or the plan it is moving to, and its add-ons) is issued, due when that period starts. One a period per organization; one that can't be issued because billing details are missing stays a draft for staff. A card the organization kept pays it straight away; if it is declined, the customer is told and pays by hand.
+- Reminders before and after an open invoice's due date (reminder_days: 3 days before, on the day, 3 days after), once each, by email and in the app.
+- A renewal not paid by its due date makes the subscription past due; after the grace period (grace_days) the organization moves to the Free plan (its data stays) and the invoice becomes uncollectible. Paying it late puts the plan and add-ons back.
+- Moving up from one paid plan to a dearer one mid-period charges the new plan for the rest of the period, less the unused part of the current one; moving down is scheduled for the period's end and not invoiced.
+- Credit notes correct an issued invoice by an amount, with their own gapless numbers (SYR-CN-2026-00001), a PDF and an email; they can refund the amount from a payment (through Stripe for a card payment, otherwise recorded as done by staff), and one that covers what is left settles an open invoice. Refunds made in Stripe's dashboard are recorded too. Credit notes and refunds can't be changed or removed.
+- A CSV export of invoices, payments or credit notes between two days, for the accountants.
+- Paying by bank transfer: the customer sends proof for an invoice (the bank slip or transfer confirmation, up to 5 files) with the amount, the day it was paid and the bank reference. Files must really be a PDF or a photo (JPEG, PNG, WebP; the content is checked, not the name), up to 10 MB, and are kept privately as financial records that can't be changed or removed.
+- Syruss's billing address is emailed when a slip arrives. Staff see the payments waiting to be checked, oldest first, with each slip shown safely in the browser and warnings when the amount isn't what is due or the same file or bank reference was sent before.
+- Approving records the payment for what actually arrived (less than was said leaves the invoice open with the balance due; more needs confirming) and the invoice is paid and switched on once covered. Rejecting tells the customer why, by email and in the app; they can send it again. A slip not yet checked can be withdrawn.
+- Staff can attach the receipt they issued (or a scan of the cheque) to a payment they recorded.
+- New setting PUBLIC_ADMIN_URL: where links in emails to Syruss's staff open.
+- Paying by card through Stripe: a new "card" payment method (BILLING_METHODS=...,card), offered only once STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are set. The customer pays an invoice on Stripe's own Checkout page (card details never reach Syruss); an open page is reused rather than a second one made.
+- Stripe's signed events (POST /api/v1/billing/webhooks/stripe) record the payment and pay the invoice. Unsigned or wrongly signed events are refused, each event is handled once, and a payment Stripe reports two ways is counted once.
+- A customer can keep the card while paying, so invoices can be charged to it later without them; Stripe's billing portal changes or removes it, and the customer can stop using it at any time. The organization's activity shows invoices paid by card.
+- Every purchase is now an invoice from Syruss to the organization. Buying a plan, an add-on or credits issues one at once, and what it sells is switched on only once it is paid.
+- Invoices are numbered with no gaps (SYR-2026-00042), carry both parties' details and tax IDs, and are emailed with their PDF. Once issued, the database refuses to change what an invoice says: a mistake is voided.
+- Owners keep the organization's billing details (legal name, billing email, address, country, tax ID, purchase order) at /billing/profile, list their invoices and download each PDF, and the receipt once paid.
+- Platform staff keep Syruss's own billing details (seller, numbering prefix, payment terms), the bank accounts customers pay into and tax rates by the buyer's country (with reverse charge for buyers with a tax ID).
+- Staff draft invoices for custom deals, issue, void or throw away drafts, record payments against an invoice (partial payments leave it open with the balance due), and switch an invoice on before it is paid for an organization they trust. Every action needs a reason and a fresh sign-in, and shows in the organization's activity.
+- Payment methods are adapters (BILLING_METHODS: bank_transfer and staff_recorded by default). They replace the earlier payment providers and billing requests; open requests become draft invoices.
+- Moving from a free plan to a paid one starts a whole new period once it is paid. Moving to a free plan isn't invoiced: it happens when the current period ends.
+- Billing alert emails now link to the main app (PUBLIC_APP_URL) instead of the public site.
+- A limit's refusal reads "The Free plan allows 1 intake channel", not "1 intake channels".
+- Prepaid credits: once the plan's pages for the period are used, documents are read on credits (pages bought in packs), kept in a ledger that only grows. With neither left, new documents are refused with what to do.
+- The catalog now sells credit packs as well as plans and add-ons. Platform staff create drafts, publish them (a published version never changes), make new versions, archive them and move organizations between plan versions.
+- Staff change an organization's plan (now or from its next period), add-ons, custom limits (for the organization or one workspace), trial and credits, and record the payments they receive, which switch on what was paid for. Every change needs a reason and a fresh sign-in, and shows in the organization's activity.
+- Owners see their plan, pages used by each workspace, credits and history at /billing, and ask for a plan, add-on or credits on offer; until a payment provider is connected, the request goes to Syruss staff. Payment providers are adapters (BILLING_PROVIDER, manual by default).
+- The people who manage an organization's billing get an email and an in-app notice at 80% and 100% of the plan's pages, and when credits run low or out, once a period each.
+- A Billing page for platform staff: every organization's plan, pages this period, credits and open requests, and who to follow up with (trials ending, plans not paid this period).
+- Plans and packs: create plans, add-ons and credit packs as drafts with the platform's own limits, put them on sale, make new versions, take them off sale, and move organizations from one plan version to another.
+- One organization's billing: where each limit comes from (plan, add-ons, custom), pages by workspace, credit history and payments, and the changes staff make (record a payment, change the plan, add-ons, credits, a custom limit, a trial), each with a reason.
+- Requests: complete what customers asked for (recording the payment with it) or decline it. The audit log has a Billing filter.
+- Billing in organization settings, for its owners: the plan and period, pages read against the allowance its workspaces share (and by which workspace), prepaid credits, what the plan allows with its add-ons, plans and credit packs on offer to ask for, and the history of payments, requests and credits.
+- A workspace's Plan and usage page shows the organization's plan, this workspace's share of its pages and the workspace's own limits; the workspace home and the organization dashboard count pages this period.
+- Plans belong to the organization: one subscription per organization, and its workspaces share the plan's monthly page allowance. Workspace limits (members, API keys, webhooks, channels, destinations) still apply to each workspace.
+- Every document accepted for reading is charged its pages (a multi-page TIFF counts each page); test-key documents, samples and repeats cost nothing. When the period's pages are used, new documents are refused with when they renew.
+- The plans are now a versioned catalog in the database (plans and add-ons), and every limit a plan can set is registered in code, so only limits the platform enforces can be sold. Overrides set a limit by hand for an organization or one workspace.
+- Existing organizations move onto the highest plan any of their workspaces had, and keep any extra monthly capacity their workspaces had together.
+- Related services now share a folder: intake (file checks, upload, e-mail, SFTP), rules (the rule language, checking records, saving rules) and live (live events for browsers and the platform's live view). Nothing behaves differently.
+- Workspace settings routes are split into one module per area (general, roles, members, invitations, API keys, webhooks); nothing about the API changes
+- Tokens and keys are hashed by one shared helper instead of several copies
+- The agent tool API is split into a package, one module per area (documents, records, conversations, screens, memory, traces, rules and so on). No change to its routes.
+
+### site (0.2.5-rc.1)
+- PDF documents are accepted everywhere a picture is (the app, the API, e-mail, SFTP). Pages are counted from the file (a PDF's pages, a TIFF's frames) and each one is charged; the agent and people in the app can look at every page. A file with more than INTAKE_MAX_PAGES pages (100) or a password-protected PDF is refused.
+- One picture that shows several sheets is counted as that many pages when the agent reports it: the extra pages are charged, capped by PICTURE_MAX_PAGES (10), written to the audit log with what was seen, and refused when they don't fit the plan.
+- Card payments: Stripe is called off the server's main thread with retries and idempotency keys; a disputed payment reaches Syruss's billing address and a lost dispute is recorded as money back; a bank debit that bounces tells the customer; a declined renewal card is tried again when each reminder comes due.
+- Billing in the admin app shows where the money stands for each currency: owed, overdue, received this month and last, invoiced, and what recurs monthly.
+- A deleted workspace's files leave storage with it. An organization its owner closed is emptied CLOSED_ORG_RETENTION_DAYS (30) later; invoices and the activity log are kept. People can delete their own account (Sign-in settings).
+- Platform staff get an Accounts page: find organizations and people, suspend or reactivate an organization, disable or enable an account, each with a reason in the audit log.
+- Working for a person in a chat, the agent changes what the whole workspace knows only when that person may (knowledge.manage), as in the app. Platform lesson proposals are limited to 2 a run and 5 a day per workspace.
+- Production: deploy/prod (compose, Caddy, deploy hook, backup and restore, runbook) and a deploy job for main that runs only once it is switched on.
+- The web apps have no lint errors (www, site, admin), and CI runs eslint on all three.
+- Live updates go only to the channel they were sent to. Every event used to be copied to an organization-wide channel that any member could open, which carried other people's notifications, private chats and workspaces they aren't in. That channel no longer exists.
+- Intake key address allowlists read only the last X-Forwarded-For entry (the one your proxy added) when TRUST_PROXY_HEADERS is on, so a sender can't put an allowed address in front of their own.
+- Sign-in return addresses can't be turned into links to other sites (a tab or line break in the path used to be dropped by the browser and make one), and the app's API proxies refuse "." and ".." in a path, so a request can't step outside /api/v1 (or outside /sysadmin in the admin app).
+- Calls to customers' systems (knowledge sources, destinations, webhooks) check the address again at the moment of connecting, so a name that answers with a public address and then a private one can't reach the private network. Shared (100.64/10) and IPv4-in-IPv6 addresses count as private too, and a webhook's reply body is no longer read.
+- Creating a template that starts a new workspace takes the organization's workspaces.create permission, like POST /workspaces. Deleting a workspace through the template route asks for a recent sign-in, like the workspace route.
+- A live session id must be the caller's own: another person's chat or a document's id is refused (it could put words in someone's chat or open a document's live feed). Asking the workspace agent from a new help session no longer fails.
+- Nobody but an owner can change the role of, or remove, a workspace member whose role has privileges theirs doesn't.
+- Files whose names are in other scripts (or contain quotes) download instead of failing; CSV exports (screens, the platform's billing export, the email destination's attachment) write values that a spreadsheet would run as formulas as text; the email destination's subject fills plain {name} placeholders only.
+- Request bodies sent without a length are held to MAX_REQUEST_MB as they arrive; a knowledge source file is limited like an API source's reply; SFTP files are limited while being written and links can't be made; document and audit lists take at most 500 and 200 a page; the sign-in rate limiter forgets old addresses; the live replay history keeps only recent channels; email intake sender lists match regardless of case.
+- The agent's calculator refuses powers, numbers and lists big enough to stall the worker, and the agent reads a public key given on one line (with \n for its line breaks).
+- When the server can't be reached, signing in and the account pages (continue, onboarding, invitations, confirming a browser) say "Syruss can't be reached right now" with a way to try again, instead of showing the web framework's error. Forms on those pages show the same sentence.
+- When the sign-in service is down, signing in comes back to the front page with that message, signing out still ends the session, and a short outage no longer signs anyone out of the apps.
+- Every app has an error page of its own: a page that fails to load says so plainly and offers Try again.
+- When the browser gets no answer at all (offline), the apps say "Can't reach Syruss. Check your connection and try again."
+
+### www (0.9.0-rc.1)
+- PDF documents are accepted everywhere a picture is (the app, the API, e-mail, SFTP). Pages are counted from the file (a PDF's pages, a TIFF's frames) and each one is charged; the agent and people in the app can look at every page. A file with more than INTAKE_MAX_PAGES pages (100) or a password-protected PDF is refused.
+- One picture that shows several sheets is counted as that many pages when the agent reports it: the extra pages are charged, capped by PICTURE_MAX_PAGES (10), written to the audit log with what was seen, and refused when they don't fit the plan.
+- Card payments: Stripe is called off the server's main thread with retries and idempotency keys; a disputed payment reaches Syruss's billing address and a lost dispute is recorded as money back; a bank debit that bounces tells the customer; a declined renewal card is tried again when each reminder comes due.
+- Billing in the admin app shows where the money stands for each currency: owed, overdue, received this month and last, invoiced, and what recurs monthly.
+- A deleted workspace's files leave storage with it. An organization its owner closed is emptied CLOSED_ORG_RETENTION_DAYS (30) later; invoices and the activity log are kept. People can delete their own account (Sign-in settings).
+- Platform staff get an Accounts page: find organizations and people, suspend or reactivate an organization, disable or enable an account, each with a reason in the audit log.
+- Working for a person in a chat, the agent changes what the whole workspace knows only when that person may (knowledge.manage), as in the app. Platform lesson proposals are limited to 2 a run and 5 a day per workspace.
+- Production: deploy/prod (compose, Caddy, deploy hook, backup and restore, runbook) and a deploy job for main that runs only once it is switched on.
+- The web apps have no lint errors (www, site, admin), and CI runs eslint on all three.
+- Live updates go only to the channel they were sent to. Every event used to be copied to an organization-wide channel that any member could open, which carried other people's notifications, private chats and workspaces they aren't in. That channel no longer exists.
+- Intake key address allowlists read only the last X-Forwarded-For entry (the one your proxy added) when TRUST_PROXY_HEADERS is on, so a sender can't put an allowed address in front of their own.
+- Sign-in return addresses can't be turned into links to other sites (a tab or line break in the path used to be dropped by the browser and make one), and the app's API proxies refuse "." and ".." in a path, so a request can't step outside /api/v1 (or outside /sysadmin in the admin app).
+- Calls to customers' systems (knowledge sources, destinations, webhooks) check the address again at the moment of connecting, so a name that answers with a public address and then a private one can't reach the private network. Shared (100.64/10) and IPv4-in-IPv6 addresses count as private too, and a webhook's reply body is no longer read.
+- Creating a template that starts a new workspace takes the organization's workspaces.create permission, like POST /workspaces. Deleting a workspace through the template route asks for a recent sign-in, like the workspace route.
+- A live session id must be the caller's own: another person's chat or a document's id is refused (it could put words in someone's chat or open a document's live feed). Asking the workspace agent from a new help session no longer fails.
+- Nobody but an owner can change the role of, or remove, a workspace member whose role has privileges theirs doesn't.
+- Files whose names are in other scripts (or contain quotes) download instead of failing; CSV exports (screens, the platform's billing export, the email destination's attachment) write values that a spreadsheet would run as formulas as text; the email destination's subject fills plain {name} placeholders only.
+- Request bodies sent without a length are held to MAX_REQUEST_MB as they arrive; a knowledge source file is limited like an API source's reply; SFTP files are limited while being written and links can't be made; document and audit lists take at most 500 and 200 a page; the sign-in rate limiter forgets old addresses; the live replay history keeps only recent channels; email intake sender lists match regardless of case.
+- The agent's calculator refuses powers, numbers and lists big enough to stall the worker, and the agent reads a public key given on one line (with \n for its line breaks).
+- Fixes from code scanning: the CI workflow's token is read-only; an API source that can't be reached says so in a plain sentence (the library's error goes to the server log); the development reset no longer returns raw error text; reading times in rules can't be slowed down by a long run of spaces.
+- Connecting a destination through a provider's sign-in now comes back to the destination's page in the main app (PUBLIC_APP_URL), not to the public site.
+- An SFTP channel's page shows where to connect (host, port, username) and its password: once, right after the channel is made (kept only in the tab's memory, no longer in browser storage), and again whenever a new one is set.
+- Plans and credits doesn't offer to buy while an invoice can't be issued: it says why instead (the organization's billing details are missing, or Syruss's own aren't filled in yet). The buttons in an offer wrap instead of spilling out of the card.
+- Buying asks for the organization's billing details before saying Syruss isn't ready, since that is the part the customer can fix.
+- Billing has two new pages: Invoices and Billing details.
+- Invoices: every invoice issued to the organization, with its state (waiting, overdue, paid). Each invoice shows its lines, tax and amounts, downloads as a PDF (and its receipt once paid), and says how to pay what is still owed: Syruss's bank account with the invoice number as the reference and a form to send the slip (PDF or photo, the amount, the day and the bank reference), or by card on Stripe's page, optionally keeping the card for renewals. Slips sent show whether they are being checked, confirmed or not (with Syruss's reason), and one being checked can be withdrawn. Credit notes and payments received are listed with it.
+- Billing details: the legal name, billing email, address, country, tax ID and purchase order number invoices are made out to, and the card kept for renewals (change it on Stripe, or stop using it).
+- Buying a plan, an add-on or credits now issues an invoice and opens it; without billing details, it says so and links to them. Plan and usage warns when an invoice is waiting or overdue, or a renewal is past due, with a link to pay it. History links each payment to its invoice and says how it was paid.
+- Files customers uploaded keep the API's protective headers through the app.
+- Plan and add-on descriptions read "1 API key", not "1 API keys" (every limit has a word for exactly one), and pages read "a month".
+- admin: removing a custom limit refreshes the organization's billing page; the payment form no longer keeps a hidden credit-pack quantity when a plan is picked; a free item reads "No charge".
+- When the server can't be reached, signing in and the account pages (continue, onboarding, invitations, confirming a browser) say "Syruss can't be reached right now" with a way to try again, instead of showing the web framework's error. Forms on those pages show the same sentence.
+- When the sign-in service is down, signing in comes back to the front page with that message, signing out still ends the session, and a short outage no longer signs anyone out of the apps.
+- Every app has an error page of its own: a page that fails to load says so plainly and offers Try again.
+- When the browser gets no answer at all (offline), the apps say "Can't reach Syruss. Check your connection and try again."
+- Billing in organization settings, for its owners: the plan and period, pages read against the allowance its workspaces share (and by which workspace), prepaid credits, what the plan allows with its add-ons, plans and credit packs on offer to ask for, and the history of payments, requests and credits.
+- A workspace's Plan and usage page shows the organization's plan, this workspace's share of its pages and the workspace's own limits; the workspace home and the organization dashboard count pages this period.
+- Split the web app's shared types (lib/types) and the chat cards (components/chat/cards) into folders of smaller files by area; nothing changes for anyone using the app
+
 ## [2026-11-06] - Release Candidate (test)
 
 ### admin (0.3.0-rc.1)
