@@ -10,10 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.document import Document, DocumentRole, DocumentStatus
 from app.models.extraction_log import ExtractionLogEntry
 from app.models.review import ReviewTask
+from app.models.template import DocumentTemplate
 from app.models.trace import AgentExecutionTrace
 from app.models.workspace_admin import WorkspaceSettings
 from app.schemas.workspace import WorkspaceSummary
-from app.services.settings_service import PLANS, WorkspaceSettingsData, month_start
+from app.services.billing import service as billing
+from app.services.settings_service import WorkspaceSettingsData, month_start
 
 PERIODS = (7, 30, 90)
 OUTCOMES = ("saved", "review", "failed", "working")
@@ -116,20 +118,20 @@ async def _daily(db: AsyncSession, ids: Sequence[str], first: date, days: int) -
 
 
 async def _this_month(db: AsyncSession, ids: Sequence[str]) -> Dict[str, Dict[str, Any]]:
-    """Documents counted against each workspace's plan this month (test documents aren't), and its agent's runs."""
-    since = month_start()
-    docs = dict((await db.execute(
-        select(Document.template_id, func.count(Document.id)).where(
-            Document.template_id.in_(ids), Document.role == DocumentRole.DOCUMENT, Document.is_test.is_(False), Document.created_at >= since)
-        .group_by(Document.template_id))).all())
-    runs = await _runs(db, ids, since)
+    """
+    Pages each workspace used this period, out of the organization's allowance (which they share; test documents
+    aren't charged), and its agent's runs this month.
+    """
+    tenant_id = (await db.execute(select(DocumentTemplate.tenant_id).where(DocumentTemplate.id == ids[0]))).scalar_one()
+    plan = await billing.standing(db, tenant_id)
+    pages = await billing.pages_by_workspace(db, tenant_id, plan.subscription.period_start)
+    runs = await _runs(db, ids, month_start())
     settings = {t: WorkspaceSettingsData.model_validate(d or {}) for t, d in (await db.execute(
         select(WorkspaceSettings.template_id, WorkspaceSettings.data).where(WorkspaceSettings.template_id.in_(ids)))).all()}
     out = {}
     for i in ids:
         s = settings.get(i) or WorkspaceSettingsData()
-        plan = PLANS[s.plan]
-        out[i] = {"documents": docs.get(i, 0), "documents_limit": plan["documents_per_month"], "plan": plan["name"],
+        out[i] = {"documents": pages.get(i, 0), "documents_limit": plan.limits.get(billing.PAGES), "plan": plan.plan.name,
                   "runs": runs.get(i) or _no_runs(), "budget_usd": s.budget.monthly_cost_usd}
     return out
 

@@ -56,7 +56,7 @@ class S3Adapter(Adapter):
 
     async def _guard(self, config: Dict[str, Any]) -> Optional[str]:
         try:
-            await source_data._check_host(f"{'https' if config.get('secure', True) else 'http'}://{config['endpoint']}")
+            await source_data.check_host(f"{'https' if config.get('secure', True) else 'http'}://{config['endpoint']}")
         except SourceError as exc:
             return str(exc)
         return None

@@ -12,7 +12,7 @@ from app.models.screen import WorkspaceScreen
 from app.services import screen_engine
 from app.services.formula import FUNCTIONS
 from app.services.screen_engine import ScreenDefinition, slug as _slug, validate_definition
-from app.services.ui_events import publish_ui_event
+from app.services.live.ui_events import publish_ui_event
 
 MAX_SCREENS = 50
 RESERVED = {"new", "suggested", "catalogue", "starters", "preview", "edit"}
@@ -106,7 +106,7 @@ async def announce(s: WorkspaceScreen, what: str) -> None:
 
 def starters(schema: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """One ready-made screen per repeating object of the template: every row, every field, and the document's own details first."""
-    from app.services.rule_engine import normalize_schema
+    from app.services.rules.engine import normalize_schema
     out: List[Dict[str, Any]] = []
     objects = normalize_schema(schema)
     for obj, spec in objects.items():

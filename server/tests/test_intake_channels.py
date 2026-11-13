@@ -12,8 +12,8 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.document import Document
 from app.models.intake import IntakeEvent
-from app.services.intake_email import email_receiver
-from app.services.intake_sftp import sftp_receiver
+from app.services.intake.email import email_receiver
+from app.services.intake.sftp import sftp_receiver
 from tests.conftest import business_plan, create_template, png_bytes, ws
 
 API = "/api/v1"

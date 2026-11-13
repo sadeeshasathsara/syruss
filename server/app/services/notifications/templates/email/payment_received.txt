@@ -1,0 +1,11 @@
+Invoice {{ number }} is paid
+
+Thank you: we received {{ amount }} for invoice {{ number }}. The receipt is attached as a PDF.
+{% if done %}
+
+Switched on for {{ organization }}: {{ done }}.
+{% endif %}
+
+Open billing: {{ url }}
+
+You get this because it is the billing address of {{ organization }} on Syruss.

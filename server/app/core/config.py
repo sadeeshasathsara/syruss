@@ -52,6 +52,10 @@ class Settings(BaseSettings):
 
     # Where people open the links in our emails (the public site: invitations land at <site>/invite/<token>)
     PUBLIC_SITE_URL: str = "http://localhost:3100"
+    # The main app, for links to an organization's own pages (billing lands at <app>/<org>/settings/billing)
+    PUBLIC_APP_URL: str = "http://localhost:3000"
+    # The system admin app, for links in emails to Syruss's own staff (a payment slip to check)
+    PUBLIC_ADMIN_URL: str = "http://localhost:3200"
 
     # Email. "smtp" sends through SMTP_*; "console" only logs the message (local work without a mail server);
     # "memory" keeps messages in a list (tests). Locally, Mailpit (bridge/docker-compose.yml) catches everything on 1025.
@@ -123,6 +127,10 @@ class Settings(BaseSettings):
     # Long enough to cover an agent backlog; a token only ever grants one workspace, for one event.
     AGENT_TOKEN_TTL_SECONDS: int = 86400
 
+    # An organization its owner closed keeps its data this long, in case it was a mistake; then its workspaces, documents and
+    # files are removed for good (invoices and the audit trail stay). 0: never removed by itself.
+    CLOSED_ORG_RETENTION_DAYS: int = 30
+
     # Apply database migrations when the API starts. Production deploys run `alembic upgrade head`
     # as their own step and set this to false.
     AUTO_MIGRATE: bool = True
@@ -140,6 +148,15 @@ class Settings(BaseSettings):
     RUN_STEPS_RETENTION_DAYS: int = 90
     # The agent service's Kafka consumer group, whose lag the system admin app shows
     AGENT_CONSUMER_GROUP: str = "workspace-agents"
+    # How invoices can be paid (app/services/billing/methods), comma-separated: bank_transfer (the customer pays to
+    # Syruss's account and sends the slip), staff_recorded (cash or a cheque, which staff record), card (Stripe; needs
+    # the two keys below, and is left out without them).
+    BILLING_METHODS: str = "bank_transfer,staff_recorded"
+    STRIPE_SECRET_KEY: str = ""        # sk_test_... while testing
+    STRIPE_WEBHOOK_SECRET: str = ""    # whsec_...: Stripe signs the events it sends to /api/v1/billing/webhooks/stripe with it
+    # A TrueType font for invoice PDFs, so names in other scripts print. Empty: DejaVu Sans where it is installed (the
+    # server image has it), else ReportLab's own font (Latin only).
+    BILLING_PDF_FONT: str = ""
 
     # Connections: how other systems send documents in and receive approved data out.
     PUBLIC_API_URL: str = "http://localhost:8000"          # what senders are told to call (shown in the Connections pages)
@@ -147,6 +164,10 @@ class Settings(BaseSettings):
     MINIO_PUBLIC_SECURE: bool = False
     TRUST_PROXY_HEADERS: bool = False                      # read the sender's address from X-Forwarded-For (only behind a proxy you control)
     INTAKE_MAX_PIXELS: int = 100_000_000                   # an image larger than this is refused (decompression bombs)
+    INTAKE_MAX_PAGES: int = 100                            # a PDF or TIFF with more pages than this is refused (split it)
+    # One picture can show several sheets (two pages side by side, a stitched scan). The agent says so when it reads one and the
+    # extra pages are charged, up to this many pages a picture. 1 turns it off: a picture is always one page.
+    PICTURE_MAX_PAGES: int = 10
     INTAKE_UPLOAD_MINUTES: int = 15                        # how long a presigned upload link works
     CLAMAV_HOST: str = ""                                  # when set, every intake file is scanned by clamd before it is stored
     CLAMAV_PORT: int = 3310

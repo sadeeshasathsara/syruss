@@ -1,0 +1,11 @@
+A payment to check
+
+{{ organization }} sent proof of a payment for invoice {{ number }}. Check it against the account before approving it.
+
+Invoice: {{ number }}
+Amount sent: {{ amount }}
+Paid by: {{ method }}
+
+Check it: {{ url }}
+
+You get this because it is Syruss's billing address.

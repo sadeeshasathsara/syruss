@@ -4,10 +4,11 @@ import type {
   InviteIssued, LogPage, OrgActivityPage, OrgOverview, OrgPeriod, Organization, Overview, SecurityEventPage, TrustedDevice, Proposal, RecordSet, ReviewTask, Role, RoleCatalogue, Template, TemplateSchema, TemplateVersion, OrgMemberInfo, OrgInvitationInfo, OrgRole, Permission,
   WebhookDeliveryInfo, WebhookInfo, Workspace, WorkspaceEventType, WorkspaceSettingsData, BudgetStatus, ReflectionState,
   IntakeActivityPage, IntakeChannelInfo, IntakeKeyInfo, DeveloperInfo, ChannelConfigPatch, NewIntakeKey,
-  ConnectionsOverview, DeliveryDetail, DeliveryPage, DeliveryStats, DeliveryStatus, DestinationInfo, DestinationKind, MappingPreview, MappingSources, MappingSpec,
+  ConnectionsOverview, DeliveryDetail, DeliveryPage, DeliveryStats, DeliveryStatus, DestinationInfo, DestinationKind, DeliveryPreview, MappingSources, MappingSpec,
   NewDestination, TryResult,
   WorkspaceJobInfo, LiveQuality, GoldenDocument, EvalRunInfo, FlagAnswer, ConversationPage, SystemLesson,
   Rule, RuleCheckResult, RuleDraft, RuleInput, RuleLanguage, ValidationRule,
+  Offers, OrgBilling, PurchaseStarted, BillingDetails, Invoice, SentPayment,
 } from "./types";
 
 /**
@@ -46,15 +47,21 @@ export const setActiveOrg = (slug: string | undefined) => {
 // Work started from a page is not tied to the chat that happens to be open: a chat holds only what was asked in it.
 async function request<T>(path: string, init: RequestInit & { workspaceId?: string } = {}): Promise<T> {
   const { workspaceId, headers, ...rest } = init;
-  const res = await fetch(`${API}${path}`, {
-    ...rest,
-    headers: {
-      ...(rest.body && !(rest.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
-      ...(activeOrg ? { "X-Org-Slug": activeOrg } : {}),
-      ...(workspaceId ? { "X-Template-ID": workspaceId } : {}),
-      ...headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API}${path}`, {
+      ...rest,
+      headers: {
+        ...(rest.body && !(rest.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
+        ...(activeOrg ? { "X-Org-Slug": activeOrg } : {}),
+        ...(workspaceId ? { "X-Template-ID": workspaceId } : {}),
+        ...headers,
+      },
+    });
+  } catch {
+    // No answer at all: this browser is offline, or the app's own server is down.
+    throw new ApiError(0, "Can't reach Syruss. Check your connection and try again.");
+  }
   if (res.status === 401 && typeof window !== "undefined") {
     // Signed out (or the session ended): sign in again and come back to this page.
     const here = window.location.pathname + window.location.search;
@@ -127,12 +134,41 @@ export const api = {
   organization: () => request<Organization>("/organization"),
 
   /** The organization's people. Roles here run the organization; they never open a workspace's data. */
+  /** The organization's plan, pages, credits and buying (its billing managers: owners). */
+  billing: {
+    get: () => request<OrgBilling>("/billing"),
+    offers: () => request<Offers>("/billing/catalog"),
+    buy: (body: { item_id: string; quantity?: number; note?: string }) => request<PurchaseStarted>("/billing/purchases", { method: "POST", body: json(body) }),
+    details: () => request<{ profile: BillingDetails | null; missing: string[] }>("/billing/profile"),
+    saveDetails: (body: BillingDetails) => request<{ profile: BillingDetails; missing: string[] }>("/billing/profile", { method: "PUT", body: json(body) }),
+    invoices: () => request<Invoice[]>("/billing/invoices"),
+    invoice: (id: string) => request<Invoice>(`/billing/invoices/${encodeURIComponent(id)}`),
+    /** Proof of a bank transfer: the slip (PDF or photo), what was paid, when, and the bank's reference. */
+    sendPayment: (id: string, body: { method: string; amount_cents: number; paid_on: string; reference?: string; note?: string; files: File[] }) => {
+      const fd = new FormData();
+      fd.append("method", body.method);
+      fd.append("amount_cents", String(body.amount_cents));
+      fd.append("paid_on", body.paid_on);
+      if (body.reference) fd.append("reference", body.reference);
+      if (body.note) fd.append("note", body.note);
+      body.files.forEach((f) => fd.append("files", f));
+      return request<SentPayment>(`/billing/invoices/${encodeURIComponent(id)}/payments`, { method: "POST", body: fd });
+    },
+    withdraw: (submissionId: string) => request<SentPayment>(`/billing/submissions/${encodeURIComponent(submissionId)}/withdraw`, { method: "POST" }),
+    checkout: (id: string, saveCard: boolean) =>
+      request<{ url: string }>(`/billing/invoices/${encodeURIComponent(id)}/checkout`, { method: "POST", body: json({ save_card: saveCard }) }),
+    cardPortal: () => request<{ url: string }>("/billing/card/portal", { method: "POST" }),
+    forgetCard: () => request<OrgBilling["card"]>("/billing/card/forget", { method: "POST" }),
+    // Files opened in a tab can't carry headers, so the organization rides in the address (the app's proxy reads it).
+    fileUrl: (path: string) => `${API}/billing/${path}${activeOrg ? `?org=${encodeURIComponent(activeOrg)}` : ""}`,
+  },
   org: {
     rename: (name: string) => request<Organization>("/organization", { method: "PATCH", body: json({ name }) }),
     overview: (days: OrgPeriod = 30) => request<OrgOverview>(`/organization/overview?days=${days}`),
     activity: (before?: string | null, limit = 30) =>
       request<OrgActivityPage>(`/organization/activity?limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ""}`),
     close: (confirm: string) => request<void>("/organization", { method: "DELETE", body: json({ confirm }) }),
+    deleteMyAccount: () => request<void>("/me", { method: "DELETE" }),
     members: () => request<OrgMemberInfo[]>("/organization/members"),
     changeRole: (userId: string, role: OrgRole) =>
       request<OrgMemberInfo>(`/organization/members/${encodeURIComponent(userId)}`, { method: "PATCH", body: json({ role }) }),
@@ -452,7 +488,7 @@ export const api = {
     oauthStart: (workspaceId: string, id: string) => request<{ url: string }>(`/destinations/${id}/oauth/start`, { method: "POST", workspaceId }),
     suggestMapping: (workspaceId: string, kind: string) => request<MappingSpec>("/destinations/suggest", { method: "POST", body: json({ kind }), workspaceId }),
     preview: (workspaceId: string, body: { kind: string; mapping: MappingSpec; document_id: string }) =>
-      request<MappingPreview>("/destinations/preview", { method: "POST", body: json(body), workspaceId }),
+      request<DeliveryPreview>("/destinations/preview", { method: "POST", body: json(body), workspaceId }),
   },
   deliveries: {
     list: (workspaceId: string, opts: { status?: DeliveryStatus[]; destinationId?: string; documentId?: string; q?: string; offset?: number; limit?: number } = {}) => {

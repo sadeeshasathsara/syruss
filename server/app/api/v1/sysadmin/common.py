@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, Optional, Set
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.sysadmin.access import Staff
+from app.models.audit import AuditLog
 from app.models.platform import PlatformAccessGrant
 from app.models.tenant import Tenant
 from app.models.trace import AgentExecutionTrace as Run
@@ -19,6 +20,12 @@ async def names(db: AsyncSession, tenant_ids: Iterable[Optional[str]] = (), work
     tenants = (await db.execute(select(Tenant).where(Tenant.id.in_(tids)))).scalars().all() if tids else []
     return {"organizations": {t.id: {"name": t.name, "slug": t.slug, "status": t.status} for t in tenants},
             "workspaces": {w.id: {"name": w.name, "slug": w.slug, "tenant_id": w.tenant_id} for w in workspaces}}
+
+
+def tell_organization(db: AsyncSession, staff: Staff, tenant_id: str, text: str, reason: str, **details) -> None:
+    """Shows in the organization's own activity what Syruss support did and why ("Ana of Syruss support stopped a run …")."""
+    db.add(AuditLog(tenant_id=tenant_id, event_type="PLATFORM_ACTION", entity_type="Organization", entity_id=tenant_id,
+                    actor="platform", details={"staff": staff.name, "text": text, "reason": reason, **details}))
 
 
 async def open_tenants(db: AsyncSession, staff: Staff) -> Set[str]:

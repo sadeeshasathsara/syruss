@@ -24,7 +24,8 @@ router = APIRouter(tags=["Organization"])
 ORG_EVENTS = (
     "ORG_ROLE_CHANGED", "ORG_MEMBER_REMOVED", "ORG_INVITATION_SENT", "ORG_INVITATION_REVOKED", "ORG_INVITATION_ACCEPTED",
     "ORG_RENAMED", "ORG_DELETED", "WORKSPACE_CREATED", "WORKSPACE_DELETED", "ORG_ADMIN_JOINED_WORKSPACE",
-    "PLATFORM_ACCESS_OPENED", "PLATFORM_ACCESS_ENDED", "PLATFORM_ACTION",
+    "PLATFORM_ACCESS_OPENED", "PLATFORM_ACCESS_ENDED", "PLATFORM_ACTION", "BILLING_REQUESTED", "BILLING_INVOICED",
+    "BILLING_DETAILS_CHANGED", "BILLING_PAYMENT_SENT", "BILLING_CARD_PAID", "BILLING_CARD_FORGOTTEN",
 )
 
 
@@ -45,6 +46,14 @@ def describe(event: str, who: str, d: Dict[str, Any], names: Dict[str, str]) -> 
         "WORKSPACE_CREATED": lambda: f"{who} created the workspace {d.get('name', '')}.".replace(" .", "."),
         "WORKSPACE_DELETED": lambda: f"{who} deleted the workspace {d.get('name', '')}.".replace(" .", "."),
         "ORG_ADMIN_JOINED_WORKSPACE": lambda: f"{who} joined a workspace as {d.get('role', 'a member')} to manage it.",
+        "BILLING_REQUESTED": lambda: f"{who} asked Syruss for {d.get('item', 'a change to the plan')}"
+                                     + (f" (× {d['quantity']})" if (d.get('quantity') or 1) > 1 else "") + ".",
+        "BILLING_INVOICED": lambda: f"{who} bought {d.get('item', 'something')}"
+                                    + (f" (× {d['quantity']})" if (d.get('quantity') or 1) > 1 else "") + f": invoice {d.get('invoice', '')}.",
+        "BILLING_DETAILS_CHANGED": lambda: f"{who} changed the organization's billing details.",
+        "BILLING_PAYMENT_SENT": lambda: f"{who} sent proof of a payment for invoice {d.get('invoice', '')} for Syruss to check.",
+        "BILLING_CARD_PAID": lambda: f"Invoice {d.get('invoice', '')} was paid by card.",
+        "BILLING_CARD_FORGOTTEN": lambda: f"{who} stopped paying renewals with the kept card.",
         # Syruss's own staff, from the system admin app (see api/v1/sysadmin)
         "PLATFORM_ACCESS_OPENED": lambda: f"{d.get('staff', 'Syruss support')} of Syruss support opened the organization's content "
                                           f"until {d.get('until', 'later')}, because: {d.get('reason', '')}",
@@ -143,8 +152,9 @@ class CloseIn(BaseModel):
 @router.delete("/organization", status_code=204, dependencies=[Depends(require_recent_login)])
 async def close_organization(body: CloseIn, auth: AuthContext = Depends(get_current_auth), db: AsyncSession = Depends(get_db_session)):
     """
-    Closes the organization for everyone. Only an owner may, and only by typing its name. Nothing is erased here: the
-    organization stops opening, and its data can be removed later by the platform.
+    Closes the organization for everyone. Only an owner may, and only by typing its name. Nothing is erased at once: the
+    organization stops opening, and CLOSED_ORG_RETENTION_DAYS later its workspaces, documents and files are removed for
+    good (services/data_lifecycle.py). Invoices and the activity log are kept.
     """
     if auth.org_role != "owner":
         raise HTTPException(status_code=403, detail="Only an owner can close the organization.")

@@ -12,7 +12,8 @@ import { clearSession, readSession, writeSession } from "@/lib/auth/session";
 
 const API = (process.env.API_ORIGIN ?? "http://localhost:8000").replace(/\/$/, "");
 const FORWARD = ["content-type", "accept"];
-const PASS_BACK = ["content-type", "content-disposition", "cache-control", "retry-after"];
+// The last two keep a file someone uploaded (a payment slip) from being read as anything else, or running anything.
+const PASS_BACK = ["content-type", "content-disposition", "cache-control", "retry-after", "x-content-type-options", "content-security-policy"];
 
 function problem(status: number, detail: unknown) {
   return NextResponse.json({ detail }, { status });
@@ -20,7 +21,8 @@ function problem(status: number, detail: unknown) {
 
 async function proxy(request: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
-  if (path[0] !== "sysadmin") return problem(404, "Not found.");
+  // "." and ".." would be resolved by fetch and step outside /api/v1/sysadmin (the path arrives decoded, so %2e%2e is one too)
+  if (path[0] !== "sysadmin" || path.some((p) => p === "" || p === "." || p === "..")) return problem(404, "Not found.");
   const unsafe = !["GET", "HEAD"].includes(request.method);
   if (unsafe && request.headers.get("origin") !== authConfig().appOrigin) {
     return problem(403, { code: "bad_origin", message: "This request didn't come from the admin app." });
@@ -31,6 +33,7 @@ async function proxy(request: NextRequest, ctx: { params: Promise<{ path: string
   let renewed = false;
   if (needsRefresh(session)) {
     const fresh = await refresh(session);
+    if (fresh === "unreachable") return problem(502, "The server can't be reached right now.");
     if (!fresh) {
       await clearSession();
       return problem(401, { code: "signed_out", message: "Your session ended. Sign in again." });
@@ -47,7 +50,7 @@ async function proxy(request: NextRequest, ctx: { params: Promise<{ path: string
     if (value) headers.set(name, value);
   }
   // For the platform audit log: the address the staff member's browser came from, as the edge saw it.
-  const client = (request.headers.get("x-forwarded-for") ?? "").split(",")[0].trim();
+  const client = (request.headers.get("x-forwarded-for") ?? "").split(",").pop()?.trim() ?? ""; // the entry our proxy added
   if (client) headers.set("X-Forwarded-For", client);
 
   const init: RequestInit & { duplex?: "half" } = { method: request.method, headers, redirect: "manual", cache: "no-store" };

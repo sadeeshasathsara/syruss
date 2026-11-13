@@ -11,6 +11,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# What every job's token may do: read the code and the pull request (the paths filter needs it). Nothing more.
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   verify-changeset:
     name: Verify Changelog Fragment
@@ -98,6 +103,7 @@ jobs:
           cd www
           npm ci || npm install
           npx tsc --noEmit
+          npx eslint src   # errors fail the check; warnings are shown
 
       - name: Build www
         if: needs.detect-changes.outputs.www == 'true'
@@ -111,6 +117,7 @@ jobs:
           cd site
           npm ci || npm install
           npx tsc --noEmit
+          npx eslint src   # errors fail the check; warnings are shown
 
       - name: Typecheck admin
         if: needs.detect-changes.outputs.admin == 'true'
@@ -118,6 +125,7 @@ jobs:
           cd admin
           npm ci || npm install
           npx tsc --noEmit
+          npx eslint src   # errors fail the check; warnings are shown
 
       - name: Build admin
         if: needs.detect-changes.outputs.admin == 'true'

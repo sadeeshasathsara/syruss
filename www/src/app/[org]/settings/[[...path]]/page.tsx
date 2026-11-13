@@ -3,12 +3,15 @@
 import { useParams, useRouter } from "next/navigation";
 import { type ComponentType, useEffect } from "react";
 import { ORG_SETTINGS, orgSettingsHref } from "@/components/org/sections";
+import { BillingBuy, BillingHistory, BillingPlan } from "@/components/org/billing";
+import { BillingDetailsPage, BillingInvoices } from "@/components/org/invoices";
 import { ProfileDetails } from "@/components/org/profile";
 import { Appearance, CloseOrganization, NotificationPreferences, OrganizationGeneral, SecurityActivity, SignInSettings, TrustedDevices } from "@/components/org/settings";
 import { OrgFrame } from "@/components/shell/OrgFrame";
 
 const PAGES: Record<string, Record<string, ComponentType>> = {
   organization: { general: OrganizationGeneral, danger: CloseOrganization },
+  billing: { plan: BillingPlan, buy: BillingBuy, invoices: BillingInvoices, details: BillingDetailsPage, history: BillingHistory },
   profile: { details: ProfileDetails },
   security: { "sign-in": SignInSettings, devices: TrustedDevices, activity: SecurityActivity },
   preferences: { notifications: NotificationPreferences, appearance: Appearance },

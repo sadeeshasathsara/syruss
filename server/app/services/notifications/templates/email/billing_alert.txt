@@ -1,0 +1,7 @@
+{{ title }}
+
+{{ body }}
+
+Open billing: {{ url }}
+
+You get this because you manage billing for {{ organization }} on Syruss.

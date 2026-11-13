@@ -12,7 +12,9 @@ import { clearSession, readSession, writeSession } from "@/lib/auth/session";
 
 const API = (process.env.API_ORIGIN ?? "http://localhost:8000").replace(/\/$/, "");
 const FORWARD = ["content-type", "accept", "x-org-slug", "x-template-id", "x-conversation-id", "last-event-id"];
-const PASS_BACK = ["content-type", "content-disposition", "cache-control", "etag", "retry-after", "x-accel-buffering", "location"];
+// The last two keep a file someone uploaded (a payment slip) from being read as anything else, or running anything.
+const PASS_BACK = ["content-type", "content-disposition", "cache-control", "etag", "retry-after", "x-accel-buffering", "location",
+  "x-content-type-options", "content-security-policy"];
 
 function problem(status: number, detail: unknown) {
   return NextResponse.json({ detail }, { status });
@@ -29,6 +31,7 @@ async function proxy(request: NextRequest, ctx: { params: Promise<{ path: string
   let renewed = false;
   if (needsRefresh(session)) {
     const fresh = await refresh(session);
+    if (fresh === "unreachable") return problem(502, "The server can't be reached right now.");
     if (!fresh) {
       await clearSession();
       return problem(401, { code: "signed_out", message: "Your session ended. Sign in again." });
@@ -38,6 +41,8 @@ async function proxy(request: NextRequest, ctx: { params: Promise<{ path: string
   }
 
   const { path } = await ctx.params;
+  // "." and ".." would be resolved by fetch and step outside /api/v1 (the path arrives decoded, so %2e%2e is one too)
+  if (path.some((p) => p === "" || p === "." || p === "..")) return problem(404, "Not found.");
   const headers = new Headers({ Authorization: `Bearer ${session.accessToken}` });
   const device = await deviceToken();
   if (device) headers.set("X-Device-Token", device);

@@ -1,0 +1,13 @@
+Invoice {{ number }}
+
+Syruss has issued an invoice to {{ organization }} for {{ items }}. The invoice is attached as a PDF.
+
+Invoice: {{ number }}
+Total: {{ total }}
+Due by: {{ due_on }}
+
+It's switched on as soon as the invoice is paid. Pay by bank transfer and send the slip from the invoice page, quoting {{ number }} as the reference.
+
+View and pay: {{ url }}
+
+You get this because it is the billing address of {{ organization }} on Syruss.

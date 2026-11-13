@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { ProposalCard } from "@/components/chat/cards";
 import { useAgentChat } from "@/components/chat/ChatProvider";
-import { PageViewer } from "@/components/documents/PageViewer";
+import { DocumentViewer } from "@/components/documents/PageViewer";
 import { Bar, Empty, ErrorNote, PageHeader, PickOne } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Field";
@@ -33,12 +33,12 @@ function useDocumentNames() {
 
 /** The documents an item is about: the first one to look at, the rest as links. */
 function Documents({ ids }: { ids: string[] }) {
-  const { workspace, href } = useWorkspace();
+  const { href } = useWorkspace();
   const nameOf = useDocumentNames();
   if (!ids.length) return null;
   return (
     <div className="flex flex-col gap-2">
-      <PageViewer src={api.documents.fileUrl(workspace.id, ids[0])} alt="Scanned page" className="h-[50dvh] @5xl:h-[calc(100dvh-220px)]" />
+      <DocumentViewer documentId={ids[0]} className="h-[50dvh] @5xl:h-[calc(100dvh-220px)]" />
       <ul className="flex flex-wrap gap-x-4 gap-y-1">
         {ids.map((id) => (
           <li key={id}><Link href={href(`documents/${id}`)} className="text-body text-muted hover:text-ink hover:underline">{nameOf(id)}</Link></li>

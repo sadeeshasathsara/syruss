@@ -100,7 +100,7 @@ You do **not** need different commit formats for each branch. The GitHub Actions
 ### On `main` branch:
 - When `test` is verified and merged into `main`, CI promotes the release candidate to **Stable**:
   - Example: `v1.2.0`
-  - Generates release notes in `_changelog/<branch>.md` (one generated file per environment; never edited by hand).
+  - Generates release notes in `_changelog/<branch>.md` (one generated file per environment; never edited by hand). Each file opens with a table of every service's current version there, the day it was released, and a link to its notes further down.
   - Creates the official GitHub Release with artifacts.
   - Promotes the tested `:v1.2.0-rc.N` container to `:latest` and `:v1.2.0`.
 
