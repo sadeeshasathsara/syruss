@@ -86,4 +86,120 @@ DEVICE_ADDED = Kind(
     ),
 )
 
-KINDS: Dict[str, Kind] = {k.key: k for k in (INVITATION, EMAIL_CODE, DEVICE_CODE, DEVICE_ADDED)}
+BILLING_ALERT = Kind(
+    key="billing_alert",
+    variables=("organization", "title", "body", "url", "alert"),
+    email=EmailSpec("billing_alert", "{{ title }} ({{ organization }})"),
+    in_app=InAppSpec(
+        type="billing.usage",
+        title="{{ title }}",
+        body="{{ body }}",
+        link="{{ url }}",
+        severity="warning",
+        scope="tenant",
+        keep=("alert",),
+        replace_by="alert",
+    ),
+)
+
+INVOICE_ISSUED = Kind(
+    key="invoice_issued",
+    variables=("organization", "number", "total", "due_on", "items", "url", "invoice"),
+    email=EmailSpec("invoice_issued", "Invoice {{ number }} from Syruss ({{ total }})"),
+    in_app=InAppSpec(
+        type="billing.invoice",
+        title="Invoice {{ number }}: {{ total }} due by {{ due_on }}",
+        body="For {{ items }}. It's switched on as soon as the invoice is paid.",
+        link="{{ url }}",
+        scope="tenant",
+        keep=("invoice",),
+        replace_by="invoice",
+    ),
+)
+
+PAYMENT_RECEIVED = Kind(
+    key="payment_received",
+    variables=("organization", "number", "amount", "url", "invoice"),
+    optional=("done",),
+    email=EmailSpec("payment_received", "Invoice {{ number }} is paid"),
+    in_app=InAppSpec(
+        type="billing.invoice",
+        title="Invoice {{ number }} is paid",
+        body="{{ 'Switched on: ' ~ done ~ '.' if done else 'Thank you.' }}",
+        link="{{ url }}",
+        severity="success",
+        scope="tenant",
+        keep=("invoice",),
+        replace_by="invoice",
+    ),
+)
+
+PAYMENT_SUBMITTED = Kind(
+    key="payment_submitted",
+    variables=("organization", "number", "amount", "method", "url"),
+    email=EmailSpec("payment_submitted", "{{ organization }} sent a payment for invoice {{ number }}"),
+)
+
+STAFF_ATTENTION = Kind(
+    key="staff_attention",
+    variables=("title", "body", "organization", "url"),
+    email=EmailSpec("staff_attention", "{{ title }}"),
+)
+
+PAYMENT_REJECTED = Kind(
+    key="payment_rejected",
+    variables=("organization", "number", "amount", "reason", "url", "invoice"),
+    email=EmailSpec("payment_rejected", "We couldn't confirm the payment for invoice {{ number }}"),
+    in_app=InAppSpec(
+        type="billing.invoice",
+        title="We couldn't confirm the payment for invoice {{ number }}",
+        body="{{ reason }}",
+        link="{{ url }}",
+        severity="warning",
+        scope="tenant",
+        keep=("invoice",),
+        replace_by="invoice",
+    ),
+)
+
+INVOICE_REMINDER = Kind(
+    key="invoice_reminder",
+    variables=("organization", "number", "due", "due_on", "headline", "body", "url", "invoice"),
+    email=EmailSpec("invoice_reminder", "{{ headline }} ({{ organization }})"),
+    in_app=InAppSpec(
+        type="billing.invoice",
+        title="{{ headline }}",
+        body="{{ body }}",
+        link="{{ url }}",
+        severity="warning",
+        scope="tenant",
+        keep=("invoice",),
+        replace_by="invoice",
+    ),
+)
+
+PLAN_LAPSED = Kind(
+    key="plan_lapsed",
+    variables=("organization", "number", "plan", "url", "invoice"),
+    email=EmailSpec("plan_lapsed", "{{ organization }} is on the Free plan now"),
+    in_app=InAppSpec(
+        type="billing.invoice",
+        title="{{ organization }} is on the Free plan now",
+        body="Invoice {{ number }} for the {{ plan }} plan wasn't paid. Paying it puts the plan back.",
+        link="{{ url }}",
+        severity="error",
+        scope="tenant",
+        keep=("invoice",),
+        replace_by="invoice",
+    ),
+)
+
+CREDIT_NOTE_ISSUED = Kind(
+    key="credit_note_issued",
+    variables=("organization", "number", "invoice_number", "amount", "reason", "url"),
+    optional=("refunded",),
+    email=EmailSpec("credit_note_issued", "Credit note {{ number }} for invoice {{ invoice_number }}"),
+)
+
+KINDS: Dict[str, Kind] = {k.key: k for k in (INVITATION, EMAIL_CODE, DEVICE_CODE, DEVICE_ADDED, BILLING_ALERT, INVOICE_ISSUED, PAYMENT_RECEIVED,
+                                             PAYMENT_SUBMITTED, PAYMENT_REJECTED, INVOICE_REMINDER, PLAN_LAPSED, CREDIT_NOTE_ISSUED, STAFF_ATTENTION)}

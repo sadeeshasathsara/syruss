@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
 from app.models.extraction_log import ExtractionLogEntry
 from app.services.document_key import labels_for
-from app.services.ui_events import publish_ui_event
+from app.services.live.ui_events import publish_ui_event
 
 logger = logging.getLogger("core.extraction_log")
 

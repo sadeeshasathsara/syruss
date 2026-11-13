@@ -40,7 +40,7 @@ def _forbidden(code: str, message: str) -> HTTPException:
 
 def _ip(request: Request) -> Optional[str]:
     """The address the admin app reports for the browser (it forwards it), else the caller's own: for the record only."""
-    forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[-1].strip()
     ip = forwarded or (request.client.host if request.client else "")
     return ip[:64] or None
 

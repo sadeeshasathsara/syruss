@@ -1,8 +1,7 @@
 """
 The organization: its people and invitations. Organization roles decide who runs the organization;
-they never open a workspace's data (that takes a workspace role, see api/v1/settings.py).
+they never open a workspace's data (that takes a workspace role, see api/v1/settings/).
 """
-import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
@@ -15,6 +14,7 @@ from app.core.auth import AuthContext, Identity, get_current_auth, get_identity,
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.core.org_permissions import ORG_GRANTS, ORG_PERMISSIONS, ORG_ROLE_DESCRIPTIONS, ORG_ROLES
+from app.core.secrets import token_hash
 from app.models.audit import AuditLog
 from app.models.identity import OrgInvitation, OrgMember, User
 from app.models.tenant import Tenant
@@ -24,10 +24,6 @@ from app.services import email_verification, identity_service, invitation_mail
 router = APIRouter(tags=["Organization"])
 
 OrgRole = Literal["owner", "admin", "member"]
-
-
-def _hash(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
 
 
 async def _members(db: AsyncSession, tenant_id: str) -> List[tuple]:
@@ -165,7 +161,7 @@ def _issued(i: OrgInvitation, token: str) -> Dict[str, Any]:
 
 def _new_token(i: OrgInvitation) -> str:
     token = secrets.token_urlsafe(24)
-    i.token_hash = _hash(token)
+    i.token_hash = token_hash(token)
     i.expires_at = datetime.now(timezone.utc) + timedelta(days=settings.INVITE_DAYS)
     return token
 
@@ -250,7 +246,7 @@ async def revoke_org_invitation(invitation_id: str, db: AsyncSession = Depends(g
 
 
 async def _by_token(db: AsyncSession, token: str) -> OrgInvitation:
-    i = (await db.execute(select(OrgInvitation).where(OrgInvitation.token_hash == _hash(token)))).scalar_one_or_none()
+    i = (await db.execute(select(OrgInvitation).where(OrgInvitation.token_hash == token_hash(token)))).scalar_one_or_none()
     if i is None:
         raise HTTPException(status_code=404, detail="This invite link isn't valid. Ask for a new one.")
     return i

@@ -22,7 +22,7 @@ from app.models.document import DocumentStatus
 from app.services.formula import Blank, Compiled, FUNCTIONS, FormulaError, compile_formula
 from app.services.graph_service import rows_of
 from app.services.record_query import MAX_RECORDS, Condition, _context, _matches, saved_records
-from app.services.rule_engine import normalize_schema, parse_number
+from app.services.rules.engine import normalize_schema, parse_number
 
 MAX_COLUMNS = 30
 MAX_FILTERS = 20
@@ -491,14 +491,16 @@ def to_csv(result: Dict[str, Any]) -> str:
     """The page of rows (and totals) as CSV text, for people who want it in a spreadsheet."""
     import csv
     import io
+    from app.core.downloads import csv_row
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow([c["label"] for c in result["columns"]])
+    # Values come from the documents people sent in: a cell that looks like a formula is written as text
+    w.writerow(csv_row([c["label"] for c in result["columns"]]))
     for r in result["rows"]:
-        w.writerow(["" if r["cells"].get(c["id"]) is None else r["cells"][c["id"]] for c in result["columns"]])
+        w.writerow(csv_row(["" if r["cells"].get(c["id"]) is None else r["cells"][c["id"]] for c in result["columns"]]))
     if result.get("totals"):
         row = ["" if result["totals"].get(c["id"]) is None else result["totals"][c["id"]] for c in result["columns"]]
         if not result["columns"][0].get("aggregate"):
             row[0] = "Total"  # the first column says what the row is
-        w.writerow(row)
+        w.writerow(csv_row(row))
     return out.getvalue()

@@ -1,4 +1,6 @@
 import type {
+  BankAccountInfo, BillingPayment, BillingSettingsPage, BillingSetup, CatalogDraft, CatalogItem, CatalogKind, CreditNoteInfo, FollowUp, MoneySummary, OrganizationAccount, PersonAccount,
+  Invoice, OrgBilling, OrgBillingRow, PaymentFileInfo, SellerSettings, Submission, TaxRateInfo,
   Grant, GrantList, Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
   StaffActionPage, StaffList, StaffMe, StaffMember, StaffRole,
 } from "./types";
@@ -23,10 +25,16 @@ function messageFrom(detail: unknown, fallback: string): string {
 const here = () => window.location.pathname + window.location.search;
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API}${path}`, {
-    ...init,
-    headers: { ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API}${path}`, {
+      ...init,
+      headers: { ...(typeof init.body === "string" ? { "Content-Type": "application/json" } : {}), ...init.headers },
+    });
+  } catch {
+    // No answer at all: this browser is offline, or the admin app's own server is down.
+    throw new ApiError(0, "Can't reach Syruss. Check your connection and try again.");
+  }
   if (res.status === 401 && typeof window !== "undefined") {
     // Signed out, or the session ended: sign in again (with the one-time code) and come back to this page.
     window.location.assign(`/api/auth/login?returnTo=${encodeURIComponent(here())}`);
@@ -92,6 +100,82 @@ export const api = {
     list: () => request<GrantList>("/access"),
     open: (body: { tenant_id: string; reason: string; minutes: number }) => request<Grant>("/access", { method: "POST", body: json(body) }),
     end: (id: string) => request<void>(`/access/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  },
+  accounts: {
+    organizations: (q?: string) => request<OrganizationAccount[]>(`/organizations${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+    suspend: (id: string, reason: string) =>
+      request<OrganizationAccount>(`/organizations/${encodeURIComponent(id)}/suspend`, { method: "POST", body: json({ reason }) }),
+    reactivate: (id: string, reason: string) =>
+      request<OrganizationAccount>(`/organizations/${encodeURIComponent(id)}/reactivate`, { method: "POST", body: json({ reason }) }),
+    people: (q: string) => request<PersonAccount[]>(`/people?q=${encodeURIComponent(q)}`),
+    disable: (id: string, reason: string) => request<PersonAccount>(`/people/${encodeURIComponent(id)}/disable`, { method: "POST", body: json({ reason }) }),
+    enable: (id: string, reason: string) => request<PersonAccount>(`/people/${encodeURIComponent(id)}/enable`, { method: "POST", body: json({ reason }) }),
+  },
+
+  billing: {
+    setup: () => request<BillingSetup>("/billing/limits"),
+    catalog: (kind?: CatalogKind) => request<CatalogItem[]>(`/billing/catalog${kind ? `?kind=${kind}` : ""}`),
+    create: (body: CatalogDraft) => request<CatalogItem>("/billing/catalog", { method: "POST", body: json(body) }),
+    update: (id: string, body: CatalogDraft) => request<CatalogItem>(`/billing/catalog/${encodeURIComponent(id)}`, { method: "PATCH", body: json(body) }),
+    newVersion: (id: string, body: CatalogDraft) =>
+      request<CatalogItem>(`/billing/catalog/${encodeURIComponent(id)}/versions`, { method: "POST", body: json(body) }),
+    publish: (id: string, reason: string) => request<CatalogItem>(`/billing/catalog/${encodeURIComponent(id)}/publish`, { method: "POST", body: json({ reason }) }),
+    archive: (id: string, reason: string) => request<CatalogItem>(`/billing/catalog/${encodeURIComponent(id)}/archive`, { method: "POST", body: json({ reason }) }),
+    move: (id: string, body: { to_id: string; at_period_end: boolean; reason: string }) =>
+      request<{ moved: number }>(`/billing/catalog/${encodeURIComponent(id)}/move`, { method: "POST", body: json(body) }),
+    organizations: (q?: string) => request<OrgBillingRow[]>(`/billing/organizations${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+    organization: (id: string) => request<OrgBilling>(`/billing/organizations/${encodeURIComponent(id)}`),
+    /** One of the changes staff make to an organization's billing: plan, addons, overrides, trial, credits. */
+    change: (id: string, what: "plan" | "addons" | "overrides" | "trial" | "credits", body: Record<string, unknown>) =>
+      request<{ done: string }>(`/billing/organizations/${encodeURIComponent(id)}/${what}`, { method: "POST", body: json(body) }),
+    removeOverride: (id: string, overrideId: string, reason: string) =>
+      request<{ done: string }>(`/billing/organizations/${encodeURIComponent(id)}/overrides/${encodeURIComponent(overrideId)}/remove`, { method: "POST", body: json({ reason }) }),
+    followUps: (days = 7) => request<FollowUp[]>(`/billing/expiring?days=${days}`),
+    summary: () => request<MoneySummary[]>("/billing/summary"),
+
+    settings: () => request<BillingSettingsPage>("/billing/settings"),
+    saveSettings: (body: Omit<SellerSettings, "updated_at" | "missing"> & { reason: string }) =>
+      request<SellerSettings>("/billing/settings", { method: "PUT", body: json(body) }),
+    addBankAccount: (body: Omit<BankAccountInfo, "id" | "active"> & { reason: string }) =>
+      request<BankAccountInfo>("/billing/bank-accounts", { method: "POST", body: json(body) }),
+    setBankAccountActive: (id: string, active: boolean, reason: string) =>
+      request<BankAccountInfo>(`/billing/bank-accounts/${encodeURIComponent(id)}/active`, { method: "POST", body: json({ active, reason }) }),
+    addTaxRate: (body: { country: string; name: string; rate_bp: number; reverse_charge_with_tax_id: boolean; reason: string }) =>
+      request<TaxRateInfo>("/billing/tax-rates", { method: "POST", body: json(body) }),
+    setTaxRateActive: (id: string, active: boolean, reason: string) =>
+      request<TaxRateInfo>(`/billing/tax-rates/${encodeURIComponent(id)}/active`, { method: "POST", body: json({ active, reason }) }),
+
+    invoices: (params: Record<string, string | undefined> = {}) => request<Invoice[]>(`/billing/invoices?${query(params)}`),
+    invoice: (id: string) => request<Invoice>(`/billing/invoices/${encodeURIComponent(id)}`),
+    createInvoice: (body: { tenant_id: string; lines: { item_id?: string; description?: string; unit_cents?: number; quantity: number }[];
+      currency?: string; note?: string; issue: boolean; reason: string }) => request<Invoice>("/billing/invoices", { method: "POST", body: json(body) }),
+    /** An action on one invoice that only needs a reason: issue, discard, void, switch-on. */
+    invoiceAction: (id: string, action: "issue" | "discard" | "void" | "switch-on", reason: string) =>
+      request<Invoice & { done?: string }>(`/billing/invoices/${encodeURIComponent(id)}/${action}`, { method: "POST", body: json({ reason }) }),
+    recordPayment: (id: string, body: { method: string; amount_cents: number; received_on?: string; reference?: string; note?: string; reason: string }) =>
+      request<BillingPayment & { invoice_status: string; done: string }>(`/billing/invoices/${encodeURIComponent(id)}/payments`, { method: "POST", body: json(body) }),
+    creditNote: (id: string, body: { amount_cents: number; reason: string; refund_payment_id?: string; refund_reference?: string }) =>
+      request<CreditNoteInfo>(`/billing/invoices/${encodeURIComponent(id)}/credit-notes`, { method: "POST", body: json(body) }),
+    attachFiles: (paymentId: string, files: File[], reason: string) => {
+      const fd = new FormData();
+      files.forEach((f) => fd.append("files", f));
+      fd.append("reason", reason);
+      return request<PaymentFileInfo[]>(`/billing/payments/${encodeURIComponent(paymentId)}/files`, { method: "POST", body: fd });
+    },
+
+    submissions: (status = "submitted") => request<Submission[]>(`/billing/submissions?status=${status}`),
+    approve: (id: string, body: { amount_cents?: number; received_on?: string; overpaid_ok?: boolean; reason: string }) =>
+      request<{ status: string; invoice_status: string; done: string }>(`/billing/submissions/${encodeURIComponent(id)}/approve`, { method: "POST", body: json(body) }),
+    reject: (id: string, reason: string) =>
+      request<{ status: string }>(`/billing/submissions/${encodeURIComponent(id)}/reject`, { method: "POST", body: json({ reason }) }),
+
+    /** Files shown in <img>, <iframe> or opened in a tab (through this app's proxy, which signs them in). */
+    invoicePdfUrl: (id: string, which: "pdf" | "receipt" = "pdf") => `${API}/billing/invoices/${encodeURIComponent(id)}/${which}`,
+    creditNotePdfUrl: (id: string) => `${API}/billing/credit-notes/${encodeURIComponent(id)}/pdf`,
+    submissionFileUrl: (id: string, fileId: string) => `${API}/billing/submissions/${encodeURIComponent(id)}/files/${encodeURIComponent(fileId)}`,
+    paymentFileUrl: (id: string, fileId: string) => `${API}/billing/payments/${encodeURIComponent(id)}/files/${encodeURIComponent(fileId)}`,
+    exportUrl: (what: "invoices" | "payments" | "credit_notes", from?: string, to?: string) =>
+      `${API}/billing/export?${query({ what, date_from: from, date_to: to })}`,
   },
   /** The live view's address (an EventSource can't set headers; the proxy signs it in). */
   liveUrl: (params: Record<string, string | undefined>) => `${API}/live?${query(params)}`,

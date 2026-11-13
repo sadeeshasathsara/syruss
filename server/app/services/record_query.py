@@ -27,7 +27,7 @@ from app.models.extraction import ExtractionResult
 from app.models.template import DocumentTemplate
 from app.services.document_key import identification_key
 from app.services.graph_service import rows_of
-from app.services.rule_engine import normalize_schema
+from app.services.rules.engine import normalize_schema
 
 MAX_RECORDS = 5000
 OPS = ("eq", "ne", "contains", "in", "gte", "lte", "empty", "not_empty")

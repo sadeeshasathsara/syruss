@@ -280,3 +280,354 @@ export interface LiveFact {
   data?: Record<string, unknown>;
   [key: string]: unknown;
 }
+
+// ---- Billing (/sysadmin/billing) ----
+
+export type CatalogKind = "plan" | "addon" | "credits";
+export type Limits = Record<string, number | null>;
+
+export interface LimitInfo {
+  key: string;
+  label: string;
+  noun: string;
+  /** The noun for exactly one: "API key". */
+  one: string;
+  scope: "workspace" | "organization";
+  metered: boolean;
+}
+
+/** A way invoices can be paid here. */
+export interface PaymentMethod {
+  key: string;
+  label: string;
+  customer_can_use: boolean;
+  needs_proof: boolean;
+  online: boolean;
+}
+
+export interface BillingSetup {
+  limits: LimitInfo[];
+  methods: PaymentMethod[];
+}
+
+/** One version of a plan, an add-on or a credit pack. A published one never changes. */
+export interface CatalogItem {
+  id: string;
+  kind: CatalogKind;
+  key: string;
+  version: number;
+  name: string;
+  description: string | null;
+  status: "draft" | "published" | "archived";
+  price_cents: number;
+  currency: string;
+  interval: "month" | "once";
+  public: boolean;
+  sort: number;
+  limits: Limits;
+  pages: number | null;
+  created_by: string;
+  created_at: string;
+  published_at: string | null;
+  archived_at: string | null;
+  organizations: number;
+}
+
+export interface CatalogDraft {
+  kind?: CatalogKind;
+  key?: string;
+  name?: string;
+  description?: string | null;
+  price_cents?: number;
+  currency?: string;
+  public?: boolean;
+  sort?: number;
+  limits?: Limits;
+  pages?: number | null;
+  reason: string;
+}
+
+export interface OrgBillingRow {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  plan: string;
+  plan_key: string;
+  subscription_status: SubscriptionStatus;
+  trial_ends_at: string | null;
+  paid_until: string | null;
+  pages_used: number;
+  pages_limit: number | null;
+  credits: number;
+  period_end: string;
+  invoices_waiting: number;
+  invoices_overdue: number;
+  drafts: number;
+}
+
+export type SubscriptionStatus = "trialing" | "active" | "past_due" | "canceled";
+export type InvoiceStatus = "draft" | "open" | "paid" | "void" | "uncollectible";
+type OrgRef = { name: string; slug: string; status: string };
+
+export interface PaymentFileInfo {
+  id: string;
+  filename: string;
+  content_type: string;
+  size: number;
+  created_at: string;
+}
+
+export interface BillingPayment {
+  id: string;
+  invoice_id: string | null;
+  invoice?: string | null;
+  method: string;
+  amount_cents: number;
+  currency: string;
+  item_id?: string | null;
+  quantity?: number;
+  received_on: string | null;
+  reference: string | null;
+  note?: string | null;
+  recorded_by_name: string;
+  created_at: string;
+  files?: PaymentFileInfo[];
+}
+
+export interface InvoiceLine {
+  id: string;
+  kind: "plan" | "addon" | "credits" | "proration" | "custom";
+  item_id: string | null;
+  description: string;
+  quantity: number;
+  unit_cents: number;
+  amount_cents: number;
+  tax_rate_bp: number;
+  period_start: string | null;
+  period_end: string | null;
+}
+
+export interface Party {
+  legal_name?: string;
+  email?: string;
+  address?: string;
+  address_line1?: string;
+  address_line2?: string | null;
+  city?: string;
+  region?: string | null;
+  postal_code?: string | null;
+  country?: string;
+  tax_id?: string | null;
+  po_number?: string | null;
+}
+
+export interface Submission {
+  id: string;
+  invoice_id: string;
+  tenant_id: string;
+  method: string;
+  amount_cents: number;
+  currency: string;
+  paid_on: string;
+  reference: string | null;
+  note: string | null;
+  status: "submitted" | "approved" | "rejected" | "withdrawn";
+  submitted_by_name: string;
+  reviewed_by_name: string | null;
+  reviewed_at: string | null;
+  rejection_reason: string | null;
+  payment_id: string | null;
+  created_at: string;
+  files: PaymentFileInfo[];
+  /** In the staff queue: the invoice, the organization and what to look at twice. */
+  invoice?: Invoice;
+  organization?: OrgRef;
+  warnings?: string[];
+}
+
+export interface CreditNoteInfo {
+  id: string;
+  number: string;
+  invoice_id: string;
+  amount_cents: number;
+  currency: string;
+  reason: string;
+  created_by_name: string;
+  created_at: string;
+  has_pdf: boolean;
+  refunds: { amount_cents: number; method: string; reference: string | null; created_at: string }[];
+}
+
+export interface Invoice {
+  id: string;
+  number: string | null;
+  tenant_id: string;
+  kind: "purchase" | "renewal" | "upgrade" | "manual";
+  status: InvoiceStatus;
+  currency: string;
+  subtotal_cents: number;
+  tax_cents: number;
+  total_cents: number;
+  amount_paid_cents: number;
+  amount_credited_cents: number;
+  amount_refunded_cents: number;
+  amount_due_cents: number;
+  issued_at: string | null;
+  due_at: string | null;
+  paid_at: string | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  overdue: boolean;
+  seller: Party;
+  buyer: Party;
+  tax_lines: { name: string; rate_bp: number; taxable_cents: number; tax_cents: number; note: string | null }[];
+  note: string | null;
+  switched_on: boolean;
+  switched_on_early_by: string | null;
+  switched_on_early_reason: string | null;
+  has_pdf: boolean;
+  has_receipt: boolean;
+  created_at: string;
+  organization?: OrgRef;
+  lines?: InvoiceLine[];
+  payments?: BillingPayment[];
+  submissions?: Submission[];
+  credit_notes?: CreditNoteInfo[];
+  billing_details_missing?: string[];
+}
+
+export interface SellerSettings {
+  legal_name: string;
+  address: string;
+  country: string;
+  tax_id: string | null;
+  email: string;
+  footer: string | null;
+  invoice_prefix: string;
+  payment_terms_days: number;
+  renewal_lead_days: number;
+  grace_days: number;
+  reminder_days: number[];
+  updated_at: string;
+  missing: string[];
+}
+
+export interface BankAccountInfo {
+  id: string;
+  bank: string;
+  account_name: string;
+  account_number: string;
+  branch: string | null;
+  swift: string | null;
+  currency: string;
+  instructions: string | null;
+  active: boolean;
+}
+
+export interface TaxRateInfo {
+  id: string;
+  country: string;
+  name: string;
+  rate_bp: number;
+  reverse_charge_with_tax_id: boolean;
+  active: boolean;
+  created_at: string;
+}
+
+export interface BillingSettingsPage {
+  seller: SellerSettings;
+  bank_accounts: BankAccountInfo[];
+  tax_rates: TaxRateInfo[];
+  methods: PaymentMethod[];
+}
+
+export interface LimitOverride {
+  id: string;
+  key: string;
+  value: number | null;
+  template_id: string | null;
+  workspace: string | null;
+  reason: string;
+  set_by: string;
+  created_at: string;
+  expires_at: string | null;
+}
+
+export interface OrgBilling {
+  organization: { id: string; name: string; slug: string; status: string };
+  workspaces: { id: string; name: string }[];
+  subscription: {
+    plan: CatalogItem;
+    pending_plan: CatalogItem | null;
+    status: SubscriptionStatus;
+    period_start: string;
+    period_end: string;
+    anchor_day: number;
+    trial_ends_at: string | null;
+    paid_until: string | null;
+  };
+  limits: {
+    plan: Limits;
+    effective: Limits;
+    addons: { id: string; addon: CatalogItem; quantity: number; added_at: string }[];
+    overrides: LimitOverride[];
+  };
+  usage: { pages_used: number; pages_limit: number | null; by_workspace: { id: string; name: string | null; pages: number }[] };
+  credits: { balance: number; history: { id: string; delta: number; kind: string; reason: string | null; ref: string | null; created_by: string; created_at: string }[] };
+  payments: BillingPayment[];
+  invoices: Invoice[];
+  billing_details: Party | null;
+  billing_details_missing: string[];
+}
+
+/** An organization as staff find it: whether it opens, and how big it is. Never its content. */
+export interface OrganizationAccount {
+  id: string;
+  name: string;
+  slug: string;
+  status: "active" | "suspended" | "closed";
+  status_reason: string | null;
+  status_changed_at: string | null;
+  purged_at: string | null;
+  created_at: string;
+  members: number;
+  workspaces: number;
+}
+
+export interface PersonAccount {
+  id: string;
+  name: string;
+  email: string;
+  status: "active" | "disabled" | "deleted";
+  last_seen_at: string | null;
+  created_at: string;
+  organizations: { id: string; name: string; role: string }[];
+  is_staff: boolean;
+}
+
+/** Where the money stands in one currency (owed, overdue, received, recurring). */
+export interface MoneySummary {
+  currency: string;
+  owed_cents: number;
+  owed_invoices: number;
+  overdue_cents: number;
+  overdue_invoices: number;
+  invoiced_this_month_cents: number;
+  received_this_month_cents: number;
+  received_last_month_cents: number;
+  monthly_recurring_cents: number;
+  paying_organizations: number;
+}
+
+export interface FollowUp {
+  tenant_id: string;
+  organization?: { name: string; slug: string };
+  plan: string;
+  status: string;
+  trial_ends_at: string | null;
+  paid_until: string | null;
+  period_end: string;
+}

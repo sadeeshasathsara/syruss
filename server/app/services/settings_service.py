@@ -1,10 +1,11 @@
 """
-Workspace settings, plans and usage.
+Workspace settings and usage.
 
 Settings are typed and validated here; anything not stored takes its default, so adding a
 setting never needs a migration. Several settings are enforced by the server, not only shown:
-intake limits on upload, the agent's commit threshold and what it may learn on its own, its
-monthly budget (app.services.budget_service), and the plan's monthly document limit.
+intake limits on upload, the agent's commit threshold and what it may learn on its own, and its
+monthly budget (app.services.budget_service). The plan belongs to the organization
+(app.services.billing).
 """
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
@@ -15,9 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.document import Document, DocumentRole
 from app.models.knowledge import Entity
 from app.models.trace import AgentExecutionTrace
-from app.models.workspace_admin import ApiKey, Webhook, WorkspaceMember, WorkspaceSettings
+from app.models.workspace_admin import ApiKey, WorkspaceMember, WorkspaceSettings
 
-IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/tiff"]
+IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/tiff", "application/pdf"]
 
 
 class GeneralPrefs(BaseModel):
@@ -58,14 +59,6 @@ class WorkspaceSettingsData(BaseModel):
     agent: AgentPrefs = Field(default_factory=AgentPrefs)
     documents: DocumentPrefs = Field(default_factory=DocumentPrefs)
     budget: BudgetPrefs = Field(default_factory=BudgetPrefs)
-    plan: Literal["free", "team", "business"] = "free"
-
-
-PLANS: Dict[str, Dict[str, Any]] = {
-    "free": {"name": "Free", "price_per_month": 0, "documents_per_month": 200, "members": 3, "api_keys": 1, "webhooks": 1, "channels": 1, "destinations": 1},
-    "team": {"name": "Team", "price_per_month": 49, "documents_per_month": 2000, "members": 15, "api_keys": 10, "webhooks": 5, "channels": 5, "destinations": 5},
-    "business": {"name": "Business", "price_per_month": 199, "documents_per_month": 20000, "members": 100, "api_keys": 50, "webhooks": 20, "channels": 25, "destinations": 25},
-}
 
 
 async def get_settings(db: AsyncSession, template_id: str) -> WorkspaceSettingsData:
@@ -74,7 +67,7 @@ async def get_settings(db: AsyncSession, template_id: str) -> WorkspaceSettingsD
 
 
 async def update_settings(db: AsyncSession, template_id: str, patch: Dict[str, Any], user_id: str) -> WorkspaceSettingsData:
-    """Merges a partial update section by section; the plan is not changed here."""
+    """Merges a partial update section by section."""
     current = (await get_settings(db, template_id)).model_dump()
     for section in ("general", "agent", "documents", "budget"):
         if isinstance(patch.get(section), dict):
@@ -131,24 +124,3 @@ async def agent_spend(db: AsyncSession, template_id: str) -> Dict[str, Any]:
     return {"agent_input_tokens_this_month": int(row[0]), "agent_output_tokens_this_month": int(row[1]),
             "agent_cost_usd_this_month": float(row[2]) if row[2] is not None else None,
             "agent_runs_without_price": int(row[3])}
-
-
-async def check_limit(db: AsyncSession, template_id: str, resource: str, adding: int = 1) -> None:
-    """Refuses an action that would take the workspace past its plan's limit."""
-    plan_key = (await get_settings(db, template_id)).plan
-    plan = PLANS[plan_key]
-    used = await usage(db, template_id)
-    current = {"documents_per_month": used["documents_this_month"], "members": used["members"], "api_keys": used["api_keys"]}.get(resource)
-    if resource == "webhooks":
-        current = (await db.execute(select(func.count(Webhook.id)).where(Webhook.template_id == template_id))).scalar() or 0
-    if resource == "channels":
-        from app.models.intake import IntakeChannel
-        current = (await db.execute(select(func.count(IntakeChannel.id)).where(IntakeChannel.template_id == template_id))).scalar() or 0
-    if resource == "destinations":
-        from app.models.delivery import Destination
-        current = (await db.execute(select(func.count(Destination.id)).where(Destination.template_id == template_id))).scalar() or 0
-    limit = plan[resource]
-    if current is not None and current + adding > limit:
-        what = {"documents_per_month": "documents this month", "members": "members", "api_keys": "API keys", "webhooks": "webhooks",
-                "channels": "intake channels", "destinations": "destinations"}[resource]
-        raise HTTPException(status_code=402, detail=f"The {plan['name']} plan allows {limit} {what}; this would make {current + adding}.")

@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from app.core.auth import AuthContext, get_current_auth
 from app.core.database import AsyncSessionLocal
 from app.services import channels
-from app.services.event_broadcaster import broadcaster
+from app.services.live.broadcaster import broadcaster
 
 router = APIRouter(prefix="/live", tags=["Live updates"])
 

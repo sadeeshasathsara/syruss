@@ -1,0 +1,51 @@
+# TLS and routing for production: one domain, one subdomain per service. Caddy gets and renews the certificates itself.
+# Set SYRUSS_DOMAIN in Caddy's environment (for example /etc/default/caddy: SYRUSS_DOMAIN=syruss.com), then reload Caddy.
+# Every response gets the same security headers; each app adds its own content security policy.
+(secure) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	encode zstd gzip
+}
+
+{$SYRUSS_DOMAIN} {
+	import secure
+	reverse_proxy 127.0.0.1:3100
+}
+
+app.{$SYRUSS_DOMAIN} {
+	import secure
+	reverse_proxy 127.0.0.1:3000
+}
+
+admin.{$SYRUSS_DOMAIN} {
+	import secure
+	reverse_proxy 127.0.0.1:3200
+}
+
+api.{$SYRUSS_DOMAIN} {
+	import secure
+	# Large intake files go straight to storage (files.), so the API itself takes no more than its own limit
+	request_body {
+		max_size 64MB
+	}
+	reverse_proxy 127.0.0.1:8000
+}
+
+auth.{$SYRUSS_DOMAIN} {
+	import secure
+	# Keycloak's admin console is not reachable from the internet; use an SSH tunnel to 127.0.0.1:8080 for it.
+	@admin path /admin /admin/*
+	respond @admin 404
+	reverse_proxy 127.0.0.1:8080
+}
+
+files.{$SYRUSS_DOMAIN} {
+	import secure
+	reverse_proxy 127.0.0.1:9000
+}
+
+deploy.{$SYRUSS_DOMAIN} {
+	reverse_proxy 127.0.0.1:9100
+}

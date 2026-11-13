@@ -1,5 +1,5 @@
 """
-The platform's live view over Server-Sent Events, through the admin app's signed-in proxy (services/platform_feed).
+The platform's live view over Server-Sent Events, through the admin app's signed-in proxy (services/live/platform_feed).
 
   scope=ops                       facts from every organization (filter with tenant_id, workspace_id, kinds)
   scope=run&id=<run>              one run; with content open, everything it thinks and does as it happens
@@ -24,7 +24,7 @@ from app.core.platform_permissions import PLATFORM_GRANTS
 from app.models.document import Document
 from app.models.identity import User
 from app.models.trace import AgentExecutionTrace as Run
-from app.services import platform_feed
+from app.services.live import platform_feed
 
 router = APIRouter()
 

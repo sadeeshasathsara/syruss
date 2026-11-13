@@ -25,7 +25,7 @@ class DocumentTemplate(Base):
         ],
     Objects with an identity are real, recurring things (the entities the agent recognizes);
     objects without one are the facts a document records, pointing at things via resolves_to.
-        "validation_rules": [ ...see app/services/rule_engine.py... ]
+        "validation_rules": [ ...see app/services/rules/engine.py... ]
       }
     """
     __tablename__ = "document_templates"

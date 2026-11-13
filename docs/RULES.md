@@ -7,10 +7,11 @@ changing one does not need a new version.
 
 | Where | What |
 |---|---|
-| `server/app/services/rule_lang.py` | the language: compiler (type checks against the template) and interpreter |
-| `server/app/services/rule_service.py` | saving, dry runs on saved records, recheck after a template change |
+| `server/app/services/rules/engine.py` | checks a record against the template and its rules |
+| `server/app/services/rules/lang.py` | the language: compiler (type checks against the template) and interpreter |
+| `server/app/services/rules/service.py` | saving, dry runs on saved records, recheck after a template change |
 | `server/app/api/v1/rules.py` | the people's API (`/api/v1/rules`) |
-| `server/app/api/internal/agent_tools.py` | the agent's API (`/rules`, `/rules/check`, `/rules/suggest`) |
+| `server/app/api/internal/agent_tools/rules.py` | the agent's API (`/rules`, `/rules/check`, `/rules/suggest`) |
 | `agentic_framework/agent/tools/rules.py`, `agent/guides/rules.md` | the agent's tools and guide |
 | `www/src/app/[org]/w/[ws]/template/rules/` | Rules tab, new rule (plain English or custom), edit |
 
@@ -21,7 +22,7 @@ changing one does not need a new version.
   `mode: "rules"`). A suggestion does nothing until someone with `template.publish` adds it.
 - **Compiled** against the active template before it is saved. A rule that doesn't compile is refused with the problem,
   the column where it is, an explanation and a hint.
-- **Run** on every record (`rule_engine.validate_record(..., rules)`): an `error` rule that fails makes the record invalid,
+- **Run** on every record (`validate_record(..., rules)` in `services/rules/engine.py`): an `error` rule that fails makes the record invalid,
   so a COMMIT is refused and the document goes to review; a `warning` is stored on the record's validation and shown.
 - **Stopped** (`broken`) when a new template version is activated and the rule no longer compiles; it is not run, people
   with `template.publish` are notified (`rule.broken`), and it comes back on its own if a later version fits again.
@@ -55,7 +56,7 @@ or a "restricted" Python) is not safe: in-process Python sandboxes have always b
 check. A home-made grammar would be safe but would need its own parser and error messages, for no security gain.
 
 So a rule is **parsed** by Python's own parser (`ast.parse(mode="eval")`, which only builds a tree and runs nothing) and
-**interpreted** by `rule_lang.py`:
+**interpreted** by `rules/lang.py`:
 
 - Only listed node types are accepted: constants, names that are template objects or fields, `Object.field` /
   `ref.field` paths, arithmetic, comparisons, `and/or/not`, `if/else`, literal lists for `in`, and calls to the listed

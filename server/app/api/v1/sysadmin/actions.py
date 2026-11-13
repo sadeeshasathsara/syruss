@@ -10,13 +10,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.sysadmin.access import Staff, record, require_staff
+from app.api.v1.sysadmin.common import tell_organization
 from app.core.database import get_db_session
-from app.models.audit import AuditLog
 from app.models.document import Document, DocumentStatus
 from app.models.outbox import AgentEventOutbox
 from app.models.template import DocumentTemplate
 from app.models.trace import AgentExecutionTrace as Run
-from app.services import extraction_log, platform_feed
+from app.services import extraction_log
+from app.services.live import platform_feed
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
 from app.services.document_key import document_label
 
@@ -25,11 +26,6 @@ router = APIRouter()
 
 class Reason(BaseModel):
     reason: str = Field(..., min_length=5, max_length=1000)
-
-
-def _tell_organization(db: AsyncSession, staff: Staff, tenant_id: str, text: str, reason: str, **details) -> None:
-    db.add(AuditLog(tenant_id=tenant_id, event_type="PLATFORM_ACTION", entity_type="Organization", entity_id=tenant_id,
-                    actor="platform", details={"staff": staff.name, "text": text, "reason": reason, **details}))
 
 
 @router.post("/runs/{trace_id}/stop")
@@ -47,7 +43,7 @@ async def stop_run(trace_id: str, body: Reason, staff: Staff = Depends(require_s
     if event.cancelled_at is None:
         event.cancelled_at, event.cancelled_by = datetime.now(timezone.utc), f"platform:{staff.user_id}"
     record(db, staff, "run.stopped", "run", r.id, tenant_id=r.tenant_id, reason=body.reason, details={"trigger": r.profile, "event_id": r.event_id})
-    _tell_organization(db, staff, r.tenant_id, f"stopped a run of the agent ({r.profile})", body.reason, run_id=r.id)
+    tell_organization(db, staff, r.tenant_id, f"stopped a run of the agent ({r.profile})", body.reason, run_id=r.id)
     await db.commit()
     await platform_feed.publish_fact("run.stop_asked", tenant_id=r.tenant_id, template_id=r.template_id, run_id=r.run_id, trace_id=r.id)
     return {"stopping": True}
@@ -76,7 +72,7 @@ async def retry_document(document_id: str, body: Reason, staff: Staff = Depends(
     await db.flush()
     record(db, staff, "document.retried", "document", d.id, tenant_id=d.tenant_id, reason=body.reason,
            details={"from": previous, "event_id": event.id})
-    _tell_organization(db, staff, d.tenant_id, "sent a document to the agent to be read again", body.reason, document_id=d.id)
+    tell_organization(db, staff, d.tenant_id, "sent a document to the agent to be read again", body.reason, document_id=d.id)
     name = document_label(d)
     await db.commit()
     agent_event_relay.notify()
@@ -104,7 +100,7 @@ async def resend_event(event_id: str, body: Reason, staff: Staff = Depends(requi
     e.published_at, e.attempts, e.last_error = None, 0, None
     record(db, staff, "event.resent", "event", e.id, tenant_id=e.tenant_id, reason=body.reason,
            details={"type": e.event_type, "was_sent": bool(was["published_at"]), "attempts": was["attempts"]})
-    _tell_organization(db, staff, e.tenant_id, f"sent a piece of waiting work ({e.event_type}) to the agent again", body.reason, event_id=e.id)
+    tell_organization(db, staff, e.tenant_id, f"sent a piece of waiting work ({e.event_type}) to the agent again", body.reason, event_id=e.id)
     await db.commit()
     agent_event_relay.notify()
     return {"resent": True}

@@ -16,7 +16,8 @@ from sqlalchemy import String, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.trace import AgentExecutionTrace as Run
-from app.services import extraction_log, platform_feed
+from app.services import extraction_log
+from app.services.live import platform_feed
 from app.services.document_key import labels_for
 
 logger = logging.getLogger("core.run_watch")

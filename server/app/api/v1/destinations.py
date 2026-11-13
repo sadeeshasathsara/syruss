@@ -20,9 +20,10 @@ from app.models.delivery import Delivery, Destination
 from app.models.document import Document, DocumentRole, DocumentStatus
 from app.models.tenant import Tenant
 from app.models.workspace import Workspace
-from app.services import delivery_service, formula, mapping_service, settings_service
+from app.services import delivery_service, formula, mapping_service
 from app.services.destinations import ADAPTERS, http, oauth
-from app.services.source_data import SourceError, _check_host
+from app.services.source_data import SourceError, check_host
+from app.services.billing import service as billing
 
 router = APIRouter(prefix="/destinations", tags=["Connections: publish"])
 
@@ -58,7 +59,7 @@ async def _check_addresses(adapter, config: Dict[str, Any]) -> None:
     for f in adapter.fields:
         if f.kind == "url" and config.get(f.key):
             try:
-                await _check_host(config[f.key])
+                await check_host(config[f.key])
             except SourceError as exc:
                 raise HTTPException(status_code=422, detail=f"{f.label}: {exc}")
 
@@ -182,7 +183,7 @@ async def get_destination(dest_id: str, access: Access = Depends(require("integr
 async def create_destination(body: DestinationIn, access: Access = Depends(require("integrations.manage")), db: AsyncSession = Depends(get_db_session)):
     """Connects a system. A webhook's signing secret is returned once, here."""
     adapter = _adapter(body.kind)
-    await settings_service.check_limit(db, access.scope.template_id, "destinations")
+    await billing.check_limit(db, "destinations_per_workspace", template_id=access.scope.template_id)
     config = adapter.normalise(body.config)
     stored = {k: v for k, v in body.secrets.items() if v not in (None, "")}
     if adapter.kind == "webhook":
@@ -373,10 +374,10 @@ async def oauth_callback(code: Optional[str] = None, state: str = "", realmId: O
     claim = oauth.read_state(state)
     d = await db.get(Destination, claim["d"]) if claim else None
     if d is None or d.tenant_id != claim["t"]:
-        return RedirectResponse(f"{settings.PUBLIC_SITE_URL.rstrip('/')}/", status_code=303)
+        return RedirectResponse(f"{settings.PUBLIC_APP_URL.rstrip('/')}/", status_code=303)
     stored = unseal(d.secrets)
     tenant, workspace = await db.get(Tenant, d.tenant_id), await db.get(Workspace, d.template_id)
-    back = f"{settings.PUBLIC_SITE_URL.rstrip('/')}/{tenant.slug if tenant else ''}/w/{workspace.slug if workspace else ''}/connections/publish/{d.id}"
+    back = f"{settings.PUBLIC_APP_URL.rstrip('/')}/{tenant.slug if tenant else ''}/w/{workspace.slug if workspace else ''}/connections/publish/{d.id}"
 
     def leave(message: str):
         from urllib.parse import quote

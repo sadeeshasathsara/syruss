@@ -19,6 +19,8 @@ class Tenant(Base):
     status: Mapped[str] = mapped_column(String(16), default="active", server_default="active", nullable=False)
     status_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When a closed organization's workspaces, documents and files were removed (see services/data_lifecycle.py)
+    purged_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

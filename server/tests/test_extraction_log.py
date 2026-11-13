@@ -4,7 +4,7 @@ all, and pushed live on the workspace channel.
 """
 import copy
 from app.services import extraction_log
-from app.services.event_broadcaster import broadcaster
+from app.services.live.broadcaster import broadcaster
 from tests.conftest import AsyncSessionLocal, VALID_RECORD, agent, create_template, join, person, upload, ws
 
 API = "/api/v1"
