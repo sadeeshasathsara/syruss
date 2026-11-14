@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { SITE_URL } from "@/lib/access";
 import { ApiError, api, setActiveOrg } from "@/lib/api";
 import { NotificationsProvider } from "@/lib/notifications";
+import { loadPage } from "@/lib/browser";
 
 function codeOf(error: unknown): string | undefined {
   if (!(error instanceof ApiError)) return undefined;
@@ -35,7 +36,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
 
   const code = codeOf(organization.error);
   useEffect(() => {
-    if (code === "onboarding_required") window.location.assign(`${SITE_URL}/onboarding`);
+    if (code === "onboarding_required") loadPage(`${SITE_URL}/onboarding`);
   }, [code]);
 
   if (organization.error instanceof ApiError && organization.error.status === 403) {
