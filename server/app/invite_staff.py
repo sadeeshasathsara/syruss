@@ -74,7 +74,9 @@ async def main(email: str, role: str = "owner", reason: Optional[str] = None, ke
                 except KeycloakAdminError:
                     pass
             print(f"Nothing was added. {exc}", file=sys.stderr)
-            if "execute-actions-email" in str(exc):
+            if "Invalid redirect uri" in str(exc):
+                print("Keycloak doesn't let its link return to the invitation yet: run python bridge/keycloak/harden.py.", file=sys.stderr)
+            elif "execute-actions-email" in str(exc):
                 print("Keycloak couldn't send its email: give it the mail server first (python bridge/keycloak/harden.py --smtp).", file=sys.stderr)
             return 1
 
