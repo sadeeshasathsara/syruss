@@ -36,6 +36,11 @@ def _key() -> str:
     return settings.STRIPE_SECRET_KEY
 
 
+def _plain(obj: Any) -> Dict[str, Any]:
+    """A Stripe answer as a plain dict, nested objects included (from stripe-python 13 its objects aren't dicts: no .get)."""
+    return obj.to_dict() if hasattr(obj, "to_dict") else dict(obj)
+
+
 def create_checkout(*, amount_cents: int, currency: str, name: str, invoice_id: str, tenant_id: str, customer: Optional[str],
                     email: Optional[str], save_card: bool, success_url: str, cancel_url: str) -> Dict[str, Any]:
     """A Checkout page for one amount. Returns {"id", "url", "expires_at"} (a timestamp)."""
@@ -60,7 +65,7 @@ def create_checkout(*, amount_cents: int, currency: str, name: str, invoice_id: 
 
 def get_checkout(session_id: str) -> Dict[str, Any]:
     """A Checkout page as Stripe has it now: {"status": open|complete|expired, "payment_status", "amount_total", "payment_intent", "customer"}."""
-    s = stripe.checkout.Session.retrieve(session_id, api_key=_key())
+    s = _plain(stripe.checkout.Session.retrieve(session_id, api_key=_key()))
     intent = s.get("payment_intent")
     return {"status": s.get("status"), "payment_status": s.get("payment_status"), "amount_total": s.get("amount_total") or 0,
             "payment_intent": intent if isinstance(intent, str) or intent is None else intent.get("id"), "customer": s.get("customer")}
@@ -68,7 +73,7 @@ def get_checkout(session_id: str) -> Dict[str, Any]:
 
 def card_of(payment_intent_id: str) -> Dict[str, Optional[str]]:
     """The customer and card a payment was made with: {"customer", "payment_method", "label"}."""
-    intent = stripe.PaymentIntent.retrieve(payment_intent_id, api_key=_key(), expand=["payment_method"])
+    intent = _plain(stripe.PaymentIntent.retrieve(payment_intent_id, api_key=_key(), expand=["payment_method"]))
     method = intent.get("payment_method") or {}
     card = method.get("card") or {}
     label = f"{str(card.get('brand', 'card')).title()} ending {card.get('last4')}" if card.get("last4") else None
@@ -80,10 +85,10 @@ def charge(*, amount_cents: int, currency: str, customer: str, payment_method: s
     Charges a kept card without the customer present. Returns {"id", "status", "amount_received"}; a declined card raises.
     `attempt` names the try (a day): asking twice for the same try charges once.
     """
-    intent = stripe.PaymentIntent.create(api_key=_key(), amount=amount_cents, currency=currency.lower(), customer=customer,
-                                         payment_method=payment_method, off_session=True, confirm=True,
-                                         metadata={"invoice_id": invoice_id, "tenant_id": tenant_id, "via": "saved_card"},
-                                         idempotency_key=f"renewal:{invoice_id}:{amount_cents}:{attempt}")
+    intent = _plain(stripe.PaymentIntent.create(api_key=_key(), amount=amount_cents, currency=currency.lower(), customer=customer,
+                                                payment_method=payment_method, off_session=True, confirm=True,
+                                                metadata={"invoice_id": invoice_id, "tenant_id": tenant_id, "via": "saved_card"},
+                                                idempotency_key=f"renewal:{invoice_id}:{amount_cents}:{attempt}"))
     return {"id": intent["id"], "status": intent["status"], "amount_received": intent.get("amount_received") or 0}
 
 
