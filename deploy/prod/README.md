@@ -26,9 +26,13 @@ nothing is built on it. The folder holds everything the server needs besides its
 5. Harden the Keycloak realm on the server itself (Caddy keeps `/admin` closed from outside):
    `KEYCLOAK_URL=http://127.0.0.1:8080 KEYCLOAK_ADMIN=... KEYCLOAK_ADMIN_PASSWORD=... python3 harden.py` (from `bridge/keycloak`).
    Run it again after upgrading: it also makes staff sign-ins report their one-time code, which the server requires.
-6. Invite the first platform owner: `docker compose --env-file env/stack.env exec server python -m app.invite_staff you@company.com`.
-   The invitation is emailed (and its link printed). Use an address with no Syruss customer account: a staff account only
-   opens the admin app. Everyone else on the staff is then invited from the admin app's Staff page.
+6. Give Keycloak the mail server (it emails new staff their set-up link): `python3 harden.py --smtp` as in step 5, with
+   `SMTP_*` in `server.env`. Then add the first platform owner, with the Keycloak admin login for this one command:
+   `docker compose --env-file env/stack.env exec -e KEYCLOAK_URL=http://keycloak:8080 -e KEYCLOAK_ADMIN=... -e KEYCLOAK_ADMIN_PASSWORD=... server python -m app.invite_staff you@company.com`.
+   It makes their sign-in (Keycloak emails a link to choose a password and set up the one-time code) and emails the
+   invitation (its link is printed too). Use an address with no Syruss customer account: a staff account only opens the
+   admin app. Everyone on the staff is added this way (add `support`, `billing`, ... after the address for another role):
+   the admin app adds nobody, and its sign-in page creates no accounts.
 7. In the admin app, fill in Syruss's billing details, a bank account and the tax rates. Invoices can't be issued before.
 8. The deploy hook: run `hook.py` as a systemd service with `HOOK_SECRET` (a long random value) and
    `DEPLOY_DIR=~/syruss-deploy`. In GitHub, set the `PROD_DEPLOY_URL` (`https://deploy.<domain>/deploy`) and

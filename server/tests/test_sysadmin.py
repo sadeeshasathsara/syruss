@@ -32,12 +32,13 @@ async def test_owners_manage_the_staff_and_every_change_is_recorded(client, mail
     viewer = staff_headers("usr_sys_viewer", "Vic Viewer")
     await make_staff(client, viewer, "viewer", reason="On call")
     assert any(m.to == "usr_sys_viewer@example.com" and "invited you" in m.subject for m in mailbox)
-    again = await client.post(f"{API}/staff/invitations", headers=ADMIN_APP, json={"email": "usr_sys_viewer@example.com", "role": "viewer", "reason": "Twice"})
-    assert again.status_code == 409   # already on the staff
+    # Nobody is added from the admin app: only from the server.
+    added = await client.post(f"{API}/staff/invitations", headers=ADMIN_APP, json={"email": "new@example.com", "role": "viewer", "reason": "From the app"})
+    assert added.status_code == 405
 
     # A viewer sees the platform but changes nothing.
     assert (await client.get(f"{API}/stats", headers=viewer)).status_code == 200
-    denied = await client.post(f"{API}/staff/invitations", headers=viewer, json={"email": "dev@syruss.test", "role": "viewer", "reason": "Help me"})
+    denied = await client.put(f"{API}/staff/policy", headers=viewer, json={"inactive_days": 0, "warn_days": 0, "review_days": 0, "reason": "Help me"})
     assert denied.status_code == 403 and denied.json()["detail"]["code"] == "platform_permission_denied"
 
     # Staff changes need a fresh sign-in.

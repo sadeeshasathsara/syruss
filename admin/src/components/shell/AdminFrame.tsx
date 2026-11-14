@@ -12,6 +12,7 @@ import { Button, IconButton } from "@/components/ui/Button";
 import { APPROVAL_EVENT, ApiError, api } from "@/lib/api";
 import { cn } from "@/lib/format";
 import type { StaffMe } from "@/lib/types";
+import { loadPage } from "@/lib/navigate";
 
 const StaffContext = createContext<StaffMe | null>(null);
 
@@ -98,7 +99,7 @@ const REFUSALS: Record<string, { title: string; body: string }> = {
 };
 
 function signInAgain() {
-  window.location.assign(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+  loadPage(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
 }
 
 function Gate({ children }: { children: (me: StaffMe) => React.ReactNode }) {
