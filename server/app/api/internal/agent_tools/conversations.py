@@ -9,7 +9,7 @@ from sqlalchemy import select, func
 from app.models.conversation import Conversation, ChatMessage
 from app.models.outbox import AgentEventOutbox
 from app.models.question import AgentQuestion, AgentQuestionStatus
-from app.services import memory_service, workspace_events
+from app.services import agent_output_guard, memory_service, workspace_events
 from app.services.display_names import name_documents
 from app.services.live.ui_events import publish_ui_event
 from app.api.internal.agent_tools.scope import Workspace, get_workspace
@@ -53,6 +53,14 @@ class QuestionBody(BaseModel):
     channel_id: Optional[str] = Field(None, description="Also show the question on this live channel")
 
 
+async def for_people(ws: Workspace, text: str, where: str) -> str:
+    """What the agent wrote, as a person may read it: documents named, then the output guard (services/agent_output_guard)."""
+    clean, removed = agent_output_guard.screen(await name_documents(ws.db, ws.template_id, text))
+    if removed:  # the kinds only: never what was taken out
+        audit(ws, "AGENT_OUTPUT_GUARDED", "Workspace", ws.template_id, {"where": where, "removed": removed})
+    return clean
+
+
 @router.post("/questions", status_code=201)
 async def flag(body: QuestionBody, ws: Workspace = Depends(get_workspace)):
     """A flag: one quick decision for a person. Choices always come with "Other" (their own answer)."""
@@ -69,8 +77,8 @@ async def flag(body: QuestionBody, ws: Workspace = Depends(get_workspace)):
     if duplicate:
         return {**question_dict(duplicate), "duplicate": True}
     # People read both: documents by their names, not ids or file names.
-    body.question = await name_documents(ws.db, ws.template_id, body.question.strip())
-    body.context = await name_documents(ws.db, ws.template_id, body.context)
+    body.question = await for_people(ws, body.question.strip(), "flag")
+    body.context = await for_people(ws, body.context, "flag")
     q = AgentQuestion(
         tenant_id=ws.tenant_id, template_id=ws.template_id, question=body.question, context=body.context,
         options=body.options, answer_type=body.answer_type, evidence_document_ids=body.evidence_document_ids,
@@ -162,7 +170,8 @@ async def open_conversation(body: OpenConversationBody, ws: Workspace = Depends(
     if same:
         return {**conversation_dict(same), "already_open": True,
                 "note": "You already have an open conversation about this; continue it with reply_to_user."}
-    body.message = await name_documents(ws.db, ws.template_id, body.message)
+    body.title = await for_people(ws, body.title, "conversation")
+    body.message = await for_people(ws, body.message, "conversation")
     conv = Conversation(
         tenant_id=ws.tenant_id, template_id=ws.template_id, user_id="agent", kind="agent", status="open",
         audience=body.audience, title=body.title.strip(),
@@ -236,7 +245,7 @@ async def resolve_conversation(conversation_id: str, body: ResolveBody, ws: Work
     if await _waking_conversation(ws) == conv.id and not await _replied_in(ws, conv):
         raise HTTPException(status_code=409, detail=(
             "Reply to them in this conversation first (reply_to_user: what you did with their answer), then resolve it."))
-    body.resolution = await name_documents(ws.db, ws.template_id, body.resolution)
+    body.resolution = await for_people(ws, body.resolution, "conversation")
     conv.status, conv.resolution, conv.resolved_at = "resolved", body.resolution, datetime.now(timezone.utc)
     conv.agent_state = None
     ws.db.add(ChatMessage(conversation_id=conv.id, tenant_id=ws.tenant_id, role="system",
@@ -275,7 +284,7 @@ async def reply_in_chat(conversation_id: str, body: ChatReplyBody, ws: Workspace
     if event is not None and await _waking_conversation(ws) != conv.id:
         raise HTTPException(status_code=403, detail=(
             "Nobody wrote to you in that conversation in this run. You can only reply where a person wrote to you."))
-    body.content = await name_documents(ws.db, ws.template_id, body.content)
+    body.content = await for_people(ws, body.content, "chat")
     msg = ChatMessage(
         conversation_id=conv.id, tenant_id=ws.tenant_id, role="assistant", content=body.content,
         evidence_citations=body.evidence_citations, confidence=body.confidence,

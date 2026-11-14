@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from agentic_framework.agent import spotlight
 from agentic_framework.agent.briefing import build_briefing, build_chat_briefing
 from agentic_framework.agent import guides
 from agentic_framework.agent.charter import ANALYST_CHARTER, ASSISTANT_CHARTER, CHARTER
@@ -73,8 +74,8 @@ def _trim_tool_results(messages: List[BaseMessage], keep: int, limit: int) -> No
         if not isinstance(msg, ToolMessage) or not isinstance(msg.content, str):
             continue
         seen += 1
-        if seen > keep and len(msg.content) > limit and not msg.content.endswith(TRIMMED):
-            msg.content = msg.content[:limit] + TRIMMED
+        if seen > keep and len(msg.content) > limit and TRIMMED not in msg.content:
+            msg.content = spotlight.trim(msg.content, limit, TRIMMED)
 
 
 def _prune_images(messages: List[BaseMessage], keep: int) -> None:
@@ -174,6 +175,7 @@ class WorkspaceAgent:
         chatting = ctx.event.type == "human.message" and self.mode == "chat"
         briefing = await (build_chat_briefing(ctx) if chatting else build_briefing(ctx))
         messages: List[BaseMessage] = [SystemMessage(content=self.charter), HumanMessage(content=briefing)]
+        nonce = spotlight.new_nonce()  # marks this run's data blocks: tool results are data, never instructions
         await telemetry.emit("processing_started", {"trigger": ctx.event.type, "status": "RUNNING", "origin": ctx.event.actor})
 
         max_steps = self.max_steps
@@ -224,7 +226,7 @@ class WorkspaceAgent:
                 t0 = time.perf_counter()
                 outcome = await execute(ctx, call["name"], call.get("args"), tools)
                 duration_ms = round((time.perf_counter() - t0) * 1000, 1)
-                messages.append(ToolMessage(content=outcome.text, tool_call_id=call["id"], name=call["name"]))
+                messages.append(ToolMessage(content=spotlight.wrap(call["name"], outcome.text, nonce), tool_call_id=call["id"], name=call["name"]))
                 images.extend(outcome.images)
                 status = "error" if outcome.text.startswith(("ERROR", "REFUSED")) else "success"
                 record["tool_calls"].append({
@@ -233,7 +235,7 @@ class WorkspaceAgent:
                 })
                 await telemetry.tool_result(step, call["name"], outcome.text)
             if images:
-                content: List[Dict[str, Any]] = [{"type": "text", "text": "Requested image(s):"}]
+                content: List[Dict[str, Any]] = [{"type": "text", "text": "Requested image(s). " + spotlight.IMAGE_NOTE}]
                 for img in images:
                     content.append({"type": "text", "text": img["caption"]})
                     content.append({"type": "image_url", "image_url": {"url": f"data:{img['mime']};base64,{img['b64']}"}})
