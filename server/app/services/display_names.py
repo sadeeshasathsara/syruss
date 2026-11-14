@@ -14,9 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.document import Document
 from app.services.document_key import document_label
 
-# An id or a file name on its own (optionally in backticks), not part of a path or a longer word.
+# An id or a file name on its own (optionally in backticks), not part of a path or a longer word. A file name is at most
+# 200 characters (as stored), so a long run of dots or dashes in a message can't make the search slow (polynomial backtracking).
 _ID = re.compile(r"(?<![\w/-])`?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`?(?![\w-])")
-_FILE = re.compile(r"(?<![\w/.-])[`'\"]?([\w.-]+\.(?:jpe?g|png|gif|webp|tiff?|bmp|heic|pdf))[`'\"]?(?![\w.-])", re.I)
+_FILE = re.compile(r"(?<![\w/.-])[`'\"]?([\w.-]{1,200}\.(?:jpe?g|png|gif|webp|tiff?|bmp|heic|pdf))[`'\"]?(?![\w.-])", re.I)
 
 
 async def name_documents(db: AsyncSession, template_id: str, text: str) -> str:
