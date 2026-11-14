@@ -51,7 +51,8 @@ def parse_bytes(content: bytes, *, filename: str = "", content_type: str = "") -
     try:
         return json.loads(text)
     except json.JSONDecodeError as exc:
-        raise SourceError(f"The data is not valid JSON ({exc.msg}, line {exc.lineno}).") from exc
+        # Our own sentence: nothing of the parser's exception text goes back to the caller
+        raise SourceError("The data is not valid JSON. Check that the file or the API's answer is complete JSON.") from exc
 
 
 def flatten(row: Any, prefix: str = "") -> Dict[str, Any]:
