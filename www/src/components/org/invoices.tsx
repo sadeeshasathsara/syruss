@@ -10,6 +10,7 @@ import { ErrorNote } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
+import { FileDrop } from "./FileDrop";
 import { api } from "@/lib/api";
 import { dateTime } from "@/lib/format";
 import type { BillingDetails, Invoice, SentPayment } from "@/lib/types";
@@ -202,15 +203,16 @@ function SendSlip({ i }: { i: Invoice }) {
       <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-3">
         <Field label={`Amount paid (${i.currency})`}>{(id) => <MoneyField id={id} cents={cents} onChange={setCents} />}</Field>
         <Field label="Paid on">{(id) => <Input id={id} type="date" value={paidOn} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setPaidOn(e.target.value)} />}</Field>
-        <Field label="Bank reference (optional)">{(id) => <Input id={id} value={reference} maxLength={200} onChange={(e) => setReference(e.target.value)} />}</Field>
+        <Field label="Transfer reference (optional)" help="The reference or transaction number on your bank's confirmation. It helps Syruss find your transfer.">
+          {(id) => <Input id={id} value={reference} maxLength={200} placeholder="e.g. FT2611140042" onChange={(e) => setReference(e.target.value)} />}
+        </Field>
       </div>
-      <Field label="The slip or transfer confirmation" help="A PDF or a photo (JPEG, PNG or WebP), up to 10 MB each, up to 5 files.">
-        {(id) => <input id={id} type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp" className="text-body text-ink"
-          onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, 5))} />}
-      </Field>
+      <FileDrop label="The slip or transfer confirmation" help="A PDF or a photo (JPEG, PNG or WebP), up to 10 MB each, up to 5 files."
+        accept={["application/pdf", "image/jpeg", "image/png", "image/webp"]} maxFiles={5} maxBytes={10 * 1024 * 1024} files={files} onChange={setFiles} />
       <Field label="Note for Syruss (optional)">{(id) => <Input id={id} value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} />}</Field>
       {send.error && <p className="text-body text-negative">{send.error.message}</p>}
-      <div><Button type="submit" variant="primary" disabled={send.isPending || !files.length || cents <= 0}>{send.isPending ? "Sending…" : "Send it to Syruss"}</Button></div>
+      <div><Button type="submit" variant="primary" disabled={send.isPending || !files.length || cents <= 0}>{send.isPending ? "Sending…" : "Send it to Syruss"}</Button>
+        {!files.length && <span className="ml-3 text-meta text-muted">Add the slip first.</span>}</div>
     </form>
   );
 }
