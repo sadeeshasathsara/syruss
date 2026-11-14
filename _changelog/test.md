@@ -16,9 +16,14 @@
 | :--- | :--- | :--- | :--- |
 | **admin** | `0.6.0-rc.1` | 2026-11-13 | [What changed](#admin-060-rc1) |
 | **agent** | `0.7.0-rc.1` | 2026-11-13 | [What changed](#agent-070-rc1) |
-| **server** | `0.13.0-rc.1` | 2026-11-13 | [What changed](#server-0130-rc1) |
+| **server** | `0.13.1-rc.1` | 2026-11-14 | [What changed](#server-0131-rc1) |
 | **site** | `0.2.5-rc.1` | 2026-11-13 | [What changed](#site-025-rc1) |
 | **www** | `0.9.0-rc.1` | 2026-11-13 | [What changed](#www-090-rc1) |
+
+## [2026-11-14] - Release Candidate (test)
+
+### server (0.13.1-rc.1)
+- Fixes from code scanning: naming documents in messages can't be slowed down by a long run of dots or dashes (file names are matched up to 200 characters), and a knowledge source that isn't valid JSON is told so in a plain sentence without the parser's own error text.
 
 ## [2026-11-13] - Release Candidate (test)
 
