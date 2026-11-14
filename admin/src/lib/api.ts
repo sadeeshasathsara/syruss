@@ -3,7 +3,7 @@ import type {
   Announcement, AtRisk, BusinessMetrics, OrgNote, OrganizationProfile, PersonProfile, PlatformControls, SearchResults, SecurityView, Severity, SwitchName,
   Invoice, OrgBilling, OrgBillingRow, PaymentFileInfo, SellerSettings, Submission, TaxRateInfo,
   Grant, GrantList, Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
-  StaffActionPage, StaffList, StaffMe, StaffMember, StaffRole,
+  StaffActionPage, StaffInvitation, StaffList, StaffMe, StaffMember, StaffRole, JoinView, SystemLesson,
 } from "./types";
 
 /** Typed client for the platform tools (/api/v1/sysadmin), through this app's own proxy. */
@@ -66,7 +66,18 @@ export const api = {
   health: () => request<PlatformHealth>("/health"),
   staff: {
     list: () => request<StaffList>("/staff"),
-    add: (body: { email: string; role: StaffRole; reason?: string }) => request<StaffMember>("/staff", { method: "POST", body: json(body) }),
+    invitations: () => request<StaffInvitation[]>("/staff/invitations"),
+    invite: (body: { email: string; role: StaffRole; reason: string }) =>
+      request<StaffInvitation & { email_sent: boolean; link: string }>("/staff/invitations", { method: "POST", body: json(body) }),
+    resendInvitation: (id: string) =>
+      request<StaffInvitation & { email_sent: boolean; link: string }>(`/staff/invitations/${encodeURIComponent(id)}/resend`, { method: "POST" }),
+    revokeInvitation: (id: string) => request<void>(`/staff/invitations/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    viewJoin: (token: string) => request<JoinView>(`/staff/join/${encodeURIComponent(token)}`),
+    sendJoinCode: (token: string) => request<unknown>(`/staff/join/${encodeURIComponent(token)}/verify/send`, { method: "POST" }),
+    confirmJoinCode: (token: string, code: string) =>
+      request<unknown>(`/staff/join/${encodeURIComponent(token)}/verify`, { method: "POST", body: json({ code }) }),
+    acceptJoin: (token: string, deleteCustomerAccount: boolean) =>
+      request<{ role: StaffRole }>(`/staff/join/${encodeURIComponent(token)}`, { method: "POST", body: json({ delete_customer_account: deleteCustomerAccount }) }),
     changeRole: (userId: string, body: { role: StaffRole; reason?: string }) =>
       request<StaffMember>(`/staff/${encodeURIComponent(userId)}`, { method: "PATCH", body: json(body) }),
     remove: (userId: string, reason?: string) =>
@@ -102,6 +113,12 @@ export const api = {
     open: (body: { tenant_id: string; reason: string; minutes: number }) => request<Grant>("/access", { method: "POST", body: json(body) }),
     end: (id: string) => request<void>(`/access/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
+  lessons: {
+    list: () => request<{ items: SystemLesson[] }>("/lessons"),
+    add: (content: string) => request<SystemLesson>("/lessons", { method: "POST", body: json({ content }) }),
+    set: (id: string, status: SystemLesson["status"]) => request<SystemLesson>(`/lessons/${encodeURIComponent(id)}`, { method: "PATCH", body: json({ status }) }),
+  },
+
   console: {
     metrics: () => request<BusinessMetrics>("/metrics"),
     atRisk: () => request<AtRisk[]>("/organizations/at-risk"),

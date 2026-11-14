@@ -28,6 +28,21 @@ export async function ensureDeviceToken(): Promise<string> {
   return token;
 }
 
+/**
+ * Right after sign-in: the admin app's address when this sign-in is a Syruss staff account (which works only there),
+ * else null. Asked before anything else, so a staff account never opens a customer page.
+ */
+export async function adminHomeFor(session: Session): Promise<string | null> {
+  try {
+    const response = await fetch(`${API()}/api/v1/me/kind`, { headers: { Authorization: `Bearer ${session.accessToken}` }, cache: "no-store" });
+    if (!response.ok) return null;
+    const kind = (await response.json()) as { staff?: boolean; admin_url?: string };
+    return kind.staff && kind.admin_url ? kind.admin_url.replace(/\/$/, "") : null;
+  } catch {
+    return null; // the API is unreachable: its own checks still refuse a staff account everywhere a customer goes
+  }
+}
+
 /** Right after sign-in: does the API know this browser? A new one is emailed a code and has to be confirmed. */
 export async function checkDevice(session: Session, token: string, userAgent: string, ip: string): Promise<"trusted" | "challenge" | "unknown"> {
   try {

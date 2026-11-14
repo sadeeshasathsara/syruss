@@ -1,0 +1,10 @@
+{#- A change to someone's place on the platform staff. Variables: title, body; optional: url -#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+{% block preheader %}{{ title }}{% endblock %}
+{% block heading %}{{ title }}{% endblock %}
+{% block content %}
+{{ ui.paragraph(body) }}
+{% if url %}{{ ui.button("Open the admin app", url) }}{% endif %}
+{% endblock %}
+{% block footer %}You get this because you are, or were, on the Syruss platform staff. If this looks wrong, tell a platform owner at once.{% endblock %}

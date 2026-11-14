@@ -115,6 +115,9 @@ async def _organization_gate(request: HTTPConnection, identity: Identity) -> Aut
             raise _forbidden("onboarding_required", "Finish setting up your account to continue.")
         if user is not None and user.status != "active":
             raise _forbidden("account_disabled", "This account is disabled.")
+        from app.services.staff_service import is_staff, refuse_staff
+        if await is_staff(db, identity.user_id):
+            raise refuse_staff()  # staff accounts work only in the admin app, never inside an organization
         if not slug:
             raise HTTPException(status_code=400, detail="Name the organization (X-Org-Slug header).")
         tenant = (await db.execute(select(Tenant).where(Tenant.slug == slug))).scalar_one_or_none()

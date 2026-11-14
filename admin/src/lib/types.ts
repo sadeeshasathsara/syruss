@@ -698,3 +698,24 @@ export interface SecurityView {
   open_access: { staff_name: string; organization: string; tenant_id: string; reason: string; expires_at: string }[];
   staff_review: { user_id: string; name: string; email: string; role: string; status: string; last_seen_at: string | null; last_action_at: string | null; stale: boolean }[];
 }
+
+// ---- joining the staff ---------------------------------------------------------------------------
+
+export interface StaffInvitation {
+  id: string; email: string; role: StaffRole; status: "pending" | "expired" | "accepted" | "revoked";
+  expires_at: string; invited_by_name: string; reason: string | null; email_sent_at: string | null; created_at: string; accepted_at: string | null;
+}
+
+export interface JoinView {
+  invitation: StaffInvitation;
+  role_description: string;
+  signed_in_as: string | null;
+  problem: { code: string; message: string } | null;
+  already_staff: boolean;
+  customer_account: { organizations: { id: string; name: string; role: string; status: string; outcome: "closed" | "left" }[]; workspaces: number } | null;
+}
+
+export interface SystemLesson {
+  id: string; content: string; status: "active" | "proposed" | "retired"; importance: number; source: string;
+  why?: string | null; times_proposed?: number; created_at: string;
+}

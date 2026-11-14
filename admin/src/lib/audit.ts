@@ -10,6 +10,22 @@ export function describeAction(a: StaffAction): string {
       return `added ${who} to the staff as ${role(d.role)}`;
     case "staff.role_changed":
       return `changed ${who}'s staff role from ${role(d.from)} to ${role(d.to)}`;
+    case "staff.invited":
+      return `invited ${d.email ?? "someone"} to the staff as ${role(d.role)}`;
+    case "staff.invitation_resent":
+      return `sent the staff invitation to ${d.email ?? "someone"} again`;
+    case "staff.invitation_revoked":
+      return `withdrew the staff invitation to ${d.email ?? "someone"}`;
+    case "staff.joined":
+      return `joined the staff as ${role(d.role)}${d.customer_account_deleted ? " (their customer account was deleted)" : ""}`;
+    case "lesson.added":
+      return "added a platform lesson for the agent";
+    case "lesson.active":
+      return "approved a platform lesson for the agent";
+    case "lesson.retired":
+      return "retired a platform lesson";
+    case "lesson.edited":
+      return "edited a platform lesson";
     case "staff.removed":
       return `removed ${who} from the staff (was ${role(d.role)})`;
     case "access.opened":

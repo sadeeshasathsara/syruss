@@ -45,6 +45,8 @@ export function proxy(request: NextRequest) {
   // Staff sign in here, through this app's own client (password and a one-time code), not through the site.
   const login = new URL("/api/auth/login", request.url);
   login.searchParams.set("returnTo", request.nextUrl.pathname + request.nextUrl.search);
+  // A staff invitation is often opened by someone with no sign-in yet: start them on creating one (it links to signing in)
+  if (request.nextUrl.pathname.startsWith("/join/")) login.searchParams.set("mode", "signup");
   return NextResponse.redirect(login);
 }
 

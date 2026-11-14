@@ -77,6 +77,9 @@ export async function api<T>(session: Session, path: string, opts: Options = {})
 
 export type Context = {
   onboarded: boolean;
+  /** A Syruss staff account: it works only in the admin app, at admin_url. */
+  staff?: boolean;
+  admin_url?: string;
   identity: { email: string | null; email_verified: boolean; given_name: string | null; family_name: string | null; picture: string | null };
   user: { id: string; email: string; first_name: string; last_name: string; name: string; phone: string | null; timezone: string; avatar_url: string | null } | null;
   organizations: { id: string; slug: string; name: string; role: string; role_label: string; permissions: string[] }[];

@@ -114,3 +114,27 @@ class OrganizationNote(Base):
     author_id: Mapped[str] = mapped_column(String(100), nullable=False)
     author_name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class PlatformStaffInvitation(Base):
+    """
+    An invitation to join the platform staff, sent by email. Whoever accepts must sign in with that address; accepting
+    makes their sign-in a staff account (a customer account under the same sign-in is deleted first, once they confirm).
+    """
+    __tablename__ = "platform_staff_invitations"
+    __table_args__ = (Index("ix_platform_staff_invitations_email", "email"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)  # pending | accepted | revoked
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    invited_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    invited_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    invited_by_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    accepted_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    email_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)

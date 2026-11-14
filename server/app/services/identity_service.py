@@ -16,6 +16,7 @@ from app.models.identity import OrgMember, User, WorkspaceRole
 from app.models.tenant import Tenant
 from app.models.workspace import Workspace
 from app.models.workspace_admin import WorkspaceMember
+from app.core.config import settings
 from app.services import email_verification
 
 PHONE = re.compile(r"^\+?[0-9 ()\-.]{6,24}$")
@@ -85,6 +86,11 @@ async def sync_user(db: AsyncSession, user: User, identity: Identity) -> None:
         await db.flush()
 
 
+async def _is_staff(db: AsyncSession, user_id: str) -> bool:
+    from app.services.staff_service import is_staff
+    return await is_staff(db, user_id)
+
+
 async def context_for(db: AsyncSession, identity: Identity) -> Dict[str, Any]:
     """Who this is, which organizations and workspaces they belong to, and what their roles allow."""
     user = await db.get(User, identity.user_id)
@@ -92,6 +98,7 @@ async def context_for(db: AsyncSession, identity: Identity) -> Dict[str, Any]:
         "identity": {"email": identity.email, "email_verified": await email_verification.is_verified(db, identity),
                      "given_name": identity.given_name, "family_name": identity.family_name, "picture": clean_photo(identity.picture)},
         "onboarded": user is not None, "user": None, "organizations": [], "workspaces": [],
+        "staff": await _is_staff(db, identity.user_id), "admin_url": settings.PUBLIC_ADMIN_URL.rstrip("/"),
     }
     if user is None:
         return base
@@ -137,6 +144,12 @@ async def slug_is_free(db: AsyncSession, slug: str) -> bool:
     return (await db.execute(select(Tenant.id).where(Tenant.slug == slug))).first() is None
 
 
+async def _not_staff(db: AsyncSession, identity: Identity) -> None:
+    from app.services.staff_service import is_staff, refuse_staff
+    if await is_staff(db, identity.user_id):
+        raise refuse_staff()
+
+
 async def _signups_open() -> None:
     from app.services import platform_controls
     if not (await platform_controls.current()).signups:
@@ -149,6 +162,7 @@ async def create_organization(db: AsyncSession, identity: Identity, *, name: str
     user = await db.get(User, identity.user_id)
     if user is None:
         raise HTTPException(status_code=403, detail={"code": "onboarding_required", "message": "Finish setting up your account first."})
+    await _not_staff(db, identity)
     await _signups_open()
     name = name.strip()
     if not name:
@@ -172,6 +186,7 @@ async def onboard(db: AsyncSession, identity: Identity, *, first_name: str, last
     Creates the person's account from their verified identity: who they are, nothing about organizations
     (they create or join one next). Safe to repeat: an existing account is returned as is.
     """
+    await _not_staff(db, identity)
     if await db.get(User, identity.user_id):
         return await context_for(db, identity)
     await _signups_open()

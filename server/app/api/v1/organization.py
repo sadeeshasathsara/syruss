@@ -19,7 +19,7 @@ from app.models.audit import AuditLog
 from app.models.identity import OrgInvitation, OrgMember, User
 from app.models.tenant import Tenant
 from app.models.workspace_admin import WorkspaceMember
-from app.services import email_verification, identity_service, invitation_mail
+from app.services import email_verification, identity_service, invitation_mail, staff_service
 
 router = APIRouter(tags=["Organization"])
 
@@ -178,6 +178,8 @@ async def invite_to_organization(body: OrgInviteIn, background: BackgroundTasks,
                                  auth: AuthContext = Depends(require_org_permission("org.members.manage"))):
     ratelimit.limit(f"org-invite:{auth.tenant_id}", 60, 3600)
     email = body.email.strip().lower()
+    if await staff_service.staff_email(db, email):
+        raise HTTPException(status_code=409, detail=f"{email} is a Syruss staff account, which can't join an organization. Invite another address.")
     members = await _members(db, auth.tenant_id)
     if any(u.email.lower() == email for _, u in members):
         raise HTTPException(status_code=409, detail=f"{email} is already a member.")
@@ -266,6 +268,8 @@ async def view_org_invitation(token: str, request: Request, db: AsyncSession = D
 
 @router.post("/org-invitations/{token}/accept")
 async def accept_org_invitation(token: str, db: AsyncSession = Depends(get_db_session), identity: Identity = Depends(get_identity)):
+    if await staff_service.is_staff(db, identity.user_id):
+        raise staff_service.refuse_staff()
     user = await db.get(User, identity.user_id)
     if user is None:
         raise HTTPException(status_code=403, detail={"code": "onboarding_required", "message": "Finish setting up your account first."})
