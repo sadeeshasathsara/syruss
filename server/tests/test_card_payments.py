@@ -25,7 +25,8 @@ def stripe_on(monkeypatch):
     monkeypatch.setattr(settings, "STRIPE_SECRET_KEY", "sk_test_x")
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_SECRET", SECRET)
     monkeypatch.setattr(settings, "BILLING_METHODS", "bank_transfer,staff_recorded,card")
-    asked = {"checkouts": [], "sessions": [], "charges": []}
+    # stripe_says: what Stripe answers about a Checkout page later (open unless a test says it finished or expired)
+    asked = {"checkouts": [], "sessions": [], "charges": [], "stripe_says": {}}
 
     def create_checkout(**kw):
         asked["checkouts"].append(kw)
@@ -37,7 +38,12 @@ def stripe_on(monkeypatch):
         asked["charges"].append(kw)
         return {"id": "pi_renewal_1", "status": "succeeded", "amount_received": kw["amount_cents"]}
 
+    def get_checkout(session_id):
+        return {"status": "open", "payment_status": "unpaid", "amount_total": 0, "payment_intent": None, "customer": None,
+                **asked["stripe_says"].get(session_id, {})}
+
     monkeypatch.setattr(card_api, "create_checkout", create_checkout)
+    monkeypatch.setattr(card_api, "get_checkout", get_checkout)
     monkeypatch.setattr(card_api, "card_of", lambda pi: {"customer": "cus_123", "payment_method": "pm_card_visa", "label": "Visa ending 4242"})
     monkeypatch.setattr(card_api, "charge", charge)
     monkeypatch.setattr(card_api, "portal", lambda customer, return_url: f"https://billing.stripe.test/p/{customer}")
@@ -141,3 +147,35 @@ async def test_a_kept_card_pays_an_invoice_by_itself_and_stripes_report_of_it_is
         from app.models.billing import Invoice
         with pytest.raises(ValueError, match="No card is kept"):
             await cards.charge_saved_card(db, await db.get(Invoice, third["id"]))
+
+
+async def test_a_card_payment_whose_webhook_never_came_is_found_instead_of_reopening_a_finished_page(client, stripe_on, mailbox):
+    """Stripe finished the payment but its webhook went elsewhere: paying again must not hand out Stripe's finished page."""
+    org, tenant, invoice = await bought(client, "lostwebhook", "pages-500-lost")
+    first = (await client.post(f"{API}/billing/invoices/{invoice['id']}/checkout", headers=org, json={})).json()
+    session = stripe_on["sessions"][0]
+    stripe_on["stripe_says"][session] = {"status": "complete", "payment_status": "paid", "amount_total": invoice["total_cents"],
+                                         "payment_intent": "pi_lost_1", "customer": "cus_9"}
+    again = (await client.post(f"{API}/billing/invoices/{invoice['id']}/checkout", headers=org, json={})).json()
+    assert again["already_paid"] is True and again["url"].endswith(f"invoice={invoice['id']}&paid=card") and again["url"] != first["url"]
+    assert len(stripe_on["checkouts"]) == 1 and await balance(tenant) == 500
+    shown = (await client.get(f"{API}/billing/invoices/{invoice['id']}", headers=org)).json()
+    assert shown["status"] == "paid" and [p["reference"] for p in shown["payments"]] == ["pi_lost_1"]
+    assert len([m for m in mailbox if m.subject == f"Invoice {invoice['number']} is paid"]) == 1
+    # The webhook arriving late changes nothing
+    payload, headers = signed(completed("evt_late", session, invoice, invoice["total_cents"], pi="pi_lost_1"))
+    assert (await client.post(f"{API}/billing/webhooks/stripe", content=payload, headers=headers)).status_code == 200
+    assert await balance(tenant) == 500
+
+
+async def test_an_expired_page_is_replaced_and_opening_the_invoice_catches_up_a_missed_payment(client, stripe_on):
+    org, tenant, invoice = await bought(client, "expiredpage", "pages-500-expired")
+    await client.post(f"{API}/billing/invoices/{invoice['id']}/checkout", headers=org, json={})
+    stripe_on["stripe_says"][stripe_on["sessions"][0]] = {"status": "expired"}
+    second = (await client.post(f"{API}/billing/invoices/{invoice['id']}/checkout", headers=org, json={})).json()
+    assert len(stripe_on["checkouts"]) == 2 and second["url"].endswith(stripe_on["sessions"][1])   # a new page, not the dead one
+    # Paid on Stripe, webhook lost, the customer just opens the invoice: it shows paid
+    stripe_on["stripe_says"][stripe_on["sessions"][1]] = {"status": "complete", "payment_status": "paid", "amount_total": invoice["total_cents"],
+                                                          "payment_intent": "pi_lost_2"}
+    shown = (await client.get(f"{API}/billing/invoices/{invoice['id']}", headers=org)).json()
+    assert shown["status"] == "paid" and await balance(tenant) == 500

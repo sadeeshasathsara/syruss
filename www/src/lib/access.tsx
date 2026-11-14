@@ -7,9 +7,6 @@ import type { OrgPermission, Permission } from "./types";
 /** The site (landing, onboarding, invitations): where people join and where signed-out people go. */
 export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3100").replace(/\/$/, "");
 
-/** Where people manage their password and two-step verification: Keycloak's own account page. */
-export const ACCOUNT_URL = (process.env.NEXT_PUBLIC_ACCOUNT_URL ?? "http://localhost:8080/realms/syruss/account").replace(/\/$/, "");
-
 /** You, and what your role in the organization allows. Roles here run the organization, not a workspace's data. */
 export function useMe() {
   const me = useQuery({ queryKey: ["me"], queryFn: api.me.get, staleTime: 5 * 60_000 });
