@@ -58,6 +58,14 @@ def create_checkout(*, amount_cents: int, currency: str, name: str, invoice_id: 
     return {"id": session["id"], "url": session["url"], "expires_at": session["expires_at"]}
 
 
+def get_checkout(session_id: str) -> Dict[str, Any]:
+    """A Checkout page as Stripe has it now: {"status": open|complete|expired, "payment_status", "amount_total", "payment_intent", "customer"}."""
+    s = stripe.checkout.Session.retrieve(session_id, api_key=_key())
+    intent = s.get("payment_intent")
+    return {"status": s.get("status"), "payment_status": s.get("payment_status"), "amount_total": s.get("amount_total") or 0,
+            "payment_intent": intent if isinstance(intent, str) or intent is None else intent.get("id"), "customer": s.get("customer")}
+
+
 def card_of(payment_intent_id: str) -> Dict[str, Optional[str]]:
     """The customer and card a payment was made with: {"customer", "payment_method", "label"}."""
     intent = stripe.PaymentIntent.retrieve(payment_intent_id, api_key=_key(), expand=["payment_method"])

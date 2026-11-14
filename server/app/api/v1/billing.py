@@ -159,6 +159,9 @@ async def list_invoices(auth: AuthContext = BILLING, db: AsyncSession = Depends(
 async def get_invoice(invoice_id: str, auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
     """One invoice, its lines and payments, and how it can be paid while it is waiting."""
     invoice = await _invoice(db, auth, invoice_id)
+    if await cards.has_open_checkout(db, invoice.id):  # a card payment whose webhook never came shows as paid here
+        await _catch_up_card(db, invoice)
+        await db.refresh(invoice)
     out = invoices.describe(invoice, await invoices.lines_of(db, invoice.id), await invoices.payments_of(db, invoice.id))
     out["how_to_pay"] = [{**m.describe(), "instructions": m.instructions(invoice)} for m in enabled()
                          if m.customer_can_use] if invoice.status in invoices.PAYABLE else []
@@ -278,11 +281,28 @@ class CheckoutIn(BaseModel):
     save_card: bool = Field(False, description="Keep the card to pay renewals by themselves")
 
 
+async def _catch_up_card(db: AsyncSession, invoice: Invoice) -> None:
+    """A card payment Stripe finished while its webhook never reached us is recorded now, and told as the webhook would."""
+    if not METHODS["card"].available() or invoice.status not in invoices.PAYABLE:
+        return
+    paid = await cards.reconcile(db, invoice)
+    if paid:
+        db.add(AuditLog(tenant_id=paid[0].tenant_id, template_id=None, event_type="BILLING_CARD_PAID", entity_type="Organization",
+                        entity_id=paid[0].tenant_id, actor="stripe", details={"invoice": paid[0].number}))
+    await db.commit()
+    if paid:
+        await notices.invoice_paid(paid[0].id, paid[1])
+
+
 @router.post("/invoices/{invoice_id}/checkout")
 async def card_checkout(invoice_id: str, body: CheckoutIn, auth: AuthContext = BILLING, db: AsyncSession = Depends(get_db_session)):
-    """The address of Stripe's page to pay what is due on the invoice by card."""
+    """The address of Stripe's page to pay what is due on the invoice by card (or of the invoice, if it turns out paid)."""
     invoice = await _invoice(db, auth, invoice_id)
     tenant = await db.get(Tenant, auth.tenant_id)
+    await _catch_up_card(db, invoice)
+    await db.refresh(invoice)
+    if invoice.status not in invoices.PAYABLE:  # paid by card already: Stripe only said so now
+        return {"url": cards.invoice_url(tenant.slug, invoice.id, True), "already_paid": True}
     try:
         url = await cards.checkout(db, invoice, slug=tenant.slug, save_card=body.save_card)
     except ValueError as exc:
