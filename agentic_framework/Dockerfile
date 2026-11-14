@@ -30,6 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends libpq5 \
     && useradd --system --uid 10001 --gid syruss --home-dir /home/syruss --create-home --shell /usr/sbin/nologin syruss
 
 COPY --from=build /opt/venv /opt/venv
+# Nothing installs packages at runtime: no pip, in the image or the environment
+RUN /opt/venv/bin/python -m pip uninstall -y -q pip && /usr/local/bin/python -m pip uninstall -y -q pip
 
 WORKDIR /app
 # Application source, owned by root: the worker can read its code but not change it
