@@ -143,6 +143,7 @@ PAYMENT_SUBMITTED = Kind(
 STAFF_INVITATION = Kind(
     key="staff_invitation",
     variables=("inviter", "role", "role_description", "url", "expires_on"),
+    optional=("new_signin",),
     email=EmailSpec("staff_invitation", "{{ inviter }} invited you to the Syruss platform staff"),
 )
 

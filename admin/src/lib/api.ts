@@ -86,10 +86,6 @@ export const api = {
   staff: {
     list: () => request<StaffList>("/staff"),
     invitations: () => request<StaffInvitation[]>("/staff/invitations"),
-    invite: (body: { email: string; role: StaffRole; reason: string }) =>
-      request<StaffInvitation & { email_sent: boolean; link: string }>("/staff/invitations", { method: "POST", body: json(body) }),
-    resendInvitation: (id: string) =>
-      request<StaffInvitation & { email_sent: boolean; link: string }>(`/staff/invitations/${encodeURIComponent(id)}/resend`, { method: "POST" }),
     revokeInvitation: (id: string) => request<void>(`/staff/invitations/${encodeURIComponent(id)}`, { method: "DELETE" }),
     viewJoin: (token: string) => request<JoinView>(`/staff/join/${encodeURIComponent(token)}`),
     sendJoinCode: (token: string) => request<unknown>(`/staff/join/${encodeURIComponent(token)}/verify/send`, { method: "POST" }),

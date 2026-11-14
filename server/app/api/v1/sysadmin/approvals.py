@@ -37,7 +37,7 @@ SETTING = "approvals"
 CATEGORIES: Dict[str, str] = {
     "organization.suspend": "Suspending an organization",
     "account.disable": "Disabling someone's account",
-    "staff.owners": "Adding or removing a platform owner",
+    "staff.owners": "Making someone a platform owner, or removing an owner",
     "billing.corrections": "Credit notes and refunds, and voiding an invoice",
     "billing.giveaways": "Prepaid pages, plan changes and switching on an unpaid invoice by hand",
 }

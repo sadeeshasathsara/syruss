@@ -208,12 +208,20 @@ async def pages_allowance(pages, tenant_id: str = TENANT) -> None:
         await db.commit()
 
 
+async def invite_staff(email: str, role: str, reason: str = "Joins the staff") -> str:
+    """An invitation as the server command makes it (python -m app.invite_staff, without its Keycloak step). Returns the link token."""
+    from app.services import staff_service
+    async with AsyncSessionLocal() as db:
+        row, plain = await staff_service.invite(db, email=email, role=role, by_id="deployment", by_name="The Syruss deployment", reason=reason)
+        await db.commit()
+        invitation_id = row.id
+    await staff_service.send(invitation_id, plain)
+    return plain
+
+
 async def make_staff(client, headers: dict, role: str, reason: str = "Joins the staff") -> None:
-    """Invites a person to the platform staff (as the test owner) and accepts it as them, in the admin app."""
-    owner = {"X-Client-ID": "syruss-admin", "X-User-ID": "usr_platform_owner", "X-Username": "Pat Platform", "X-Email": "owner@syruss.test"}
-    res = await client.post("/api/v1/sysadmin/staff/invitations", headers=owner, json={"email": headers["X-Email"], "role": role, "reason": reason})
-    assert res.status_code == 201, res.text
-    token = res.json()["link"].rsplit("/", 1)[1]
+    """Invites a person to the platform staff (from the server) and accepts it as them, in the admin app."""
+    token = await invite_staff(headers["X-Email"], role, reason)
     # (the mock sign-in vouches for the address; in the app they confirm it with an emailed code)
     accepted = await client.post(f"/api/v1/sysadmin/staff/join/{token}", headers={**headers, "X-Client-ID": "syruss-admin"},
                                  json={"delete_customer_account": True})
