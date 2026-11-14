@@ -1,0 +1,2 @@
+# Scripts that run inside Linux containers keep Unix line endings on every checkout (a CR breaks the #! line)
+*.sh text eol=lf

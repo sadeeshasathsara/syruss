@@ -9,10 +9,26 @@ name: syruss-prod
 x-app: &app
   restart: unless-stopped
   pull_policy: missing  # updates come from the explicit `docker compose pull` the deploy hook runs
+  # Every container: no Linux capabilities (root powers) unless a service adds back the few it needs, no gaining privileges
+  # through setuid programs, and a cap on processes (a fork bomb or a runaway thread pool stops there).
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 1024
+
+# Database images start as root only to fix their data folder's owner, then switch to their own user: these are the
+# powers that takes, and nothing more.
+x-switches-user: &switches-user
+  cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+
+# Syruss's own services run as an unprivileged user and can't change their files: the filesystem is read-only except
+# for scratch space in memory.
+x-read-only: &read-only
+  read_only: true
 
 services:
   postgres:
-    <<: *app
+    <<: [*app, *switches-user]
+    networks: [data]
     # Postgres 16 with pgvector and Apache AGE, built by CI from bridge/postgres
     image: ghcr.io/sadeeshasathsara/syruss/postgres:latest
     environment:
@@ -30,7 +46,8 @@ services:
       retries: 10
 
   minio:
-    <<: *app
+    <<: [*app, *switches-user]
+    networks: [data, files]
     image: ghcr.io/sadeeshasathsara/syruss/minio:latest
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -43,6 +60,7 @@ services:
 
   kafka:
     <<: *app
+    networks: [data]
     # Single-node KRaft broker built by CI from bridge/kafka (settings baked in)
     image: ghcr.io/sadeeshasathsara/syruss/kafka:latest
     environment:
@@ -58,7 +76,8 @@ services:
       start_period: 60s
 
   keycloak-db:
-    <<: *app
+    <<: [*app, *switches-user]
+    networks: [auth]
     image: ghcr.io/sadeeshasathsara/syruss/keycloak-db:latest
     environment:
       POSTGRES_USER: ${KEYCLOAK_DB_USER}
@@ -75,6 +94,7 @@ services:
 
   keycloak:
     <<: *app
+    networks: [auth, public]
     # Production-mode build with the realm and theme inside, made by CI from bridge/keycloak
     image: ghcr.io/sadeeshasathsara/syruss/keycloak:latest
     depends_on:
@@ -111,7 +131,9 @@ services:
       start_period: 90s
 
   server:
-    <<: *app
+    <<: [*app, *read-only]
+    tmpfs: ["/tmp:size=256m,mode=1777", "/home/syruss:size=16m,mode=1777"]
+    networks: [data, public]
     image: ghcr.io/sadeeshasathsara/syruss/server:latest
     env_file: env/server.env
     environment:
@@ -129,14 +151,16 @@ services:
     mem_limit: 1g
     healthcheck:
       # The image's own check allows 5 seconds, which a busy small server misses even while /health answers
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      test: ["CMD", "python", "-c", "import sys, urllib.request; sys.exit(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=20).status != 200)"]
       interval: 30s
       timeout: 25s
       retries: 5
       start_period: 120s
 
   agent:
-    <<: *app
+    <<: [*app, *read-only]
+    tmpfs: ["/tmp:size=128m,mode=1777", "/home/syruss:size=64m,mode=1777"]
+    networks: [data, agent-egress]
     image: ghcr.io/sadeeshasathsara/syruss/agent:latest
     env_file: env/agent.env
     depends_on:
@@ -145,7 +169,9 @@ services:
     mem_limit: 768m
 
   www:
-    <<: *app
+    <<: [*app, *read-only]
+    tmpfs: ["/tmp:size=64m,mode=1777", "/app/.next/cache:size=128m,mode=1777"]
+    networks: [public]
     image: ghcr.io/sadeeshasathsara/syruss/www:latest
     env_file: env/www.env
     environment:
@@ -155,7 +181,9 @@ services:
     mem_limit: 512m
 
   site:
-    <<: *app
+    <<: [*app, *read-only]
+    tmpfs: ["/tmp:size=64m,mode=1777", "/app/.next/cache:size=64m,mode=1777"]
+    networks: [public]
     image: ghcr.io/sadeeshasathsara/syruss/site:latest
     env_file: env/site.env
     environment:
@@ -166,7 +194,9 @@ services:
 
   # The system admin app (platform staff only). Its settings are optional until the server has env/admin.env.
   admin:
-    <<: *app
+    <<: [*app, *read-only]
+    tmpfs: ["/tmp:size=64m,mode=1777", "/app/.next/cache:size=64m,mode=1777"]
+    networks: [public]
     image: ghcr.io/sadeeshasathsara/syruss/admin:latest
     env_file:
       - path: env/admin.env
@@ -176,6 +206,15 @@ services:
     ports:
       - "127.0.0.1:3200:3200"
     mem_limit: 384m
+
+# Who can reach whom. The web apps reach the API and Keycloak, never a database; the databases, Kafka and object storage
+# can't reach the internet. A container is on only the networks it needs.
+networks:
+  public: {}                 # web apps, the API, Keycloak (and the internet through it)
+  data: {internal: true}     # the API, the agent, Postgres, Kafka, object storage
+  auth: {internal: true}     # Keycloak and its database
+  files: {}                  # object storage's published port (presigned downloads through Caddy)
+  agent-egress: {}           # the agent's way out to the model provider
 
 volumes:
   postgres_data:

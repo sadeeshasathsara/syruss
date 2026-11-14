@@ -101,7 +101,7 @@ jobs:
         if: needs.detect-changes.outputs.www == 'true'
         run: |
           cd www
-          npm ci || npm install
+          npm ci
           npx tsc --noEmit
           npx eslint src   # errors fail the check; warnings are shown
 
@@ -115,7 +115,7 @@ jobs:
         if: needs.detect-changes.outputs.site == 'true'
         run: |
           cd site
-          npm ci || npm install
+          npm ci
           npx tsc --noEmit
           npx eslint src   # errors fail the check; warnings are shown
 
@@ -123,7 +123,7 @@ jobs:
         if: needs.detect-changes.outputs.admin == 'true'
         run: |
           cd admin
-          npm ci || npm install
+          npm ci
           npx tsc --noEmit
           npx eslint src   # errors fail the check; warnings are shown
 
