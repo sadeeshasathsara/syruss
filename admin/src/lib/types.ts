@@ -12,6 +12,50 @@ export interface StaffMe {
   from_config: boolean;
   roles: Record<StaffRole, string>;
   permission_names: Record<string, string>;
+  /** The admin app signs out after idle_minutes without use; the sign-in itself ends at ends_at. */
+  session: { idle_minutes: number; ends_at: string };
+}
+
+export type ApprovalStatus = "pending" | "expired" | "done" | "rejected" | "cancelled" | "failed";
+
+export interface Approval {
+  id: string;
+  action: string;
+  category: string | null;
+  summary: string;
+  reason: string | null;
+  target_type: string;
+  target_id: string;
+  tenant_id: string | null;
+  requested_by: string;
+  requested_by_name: string;
+  status: ApprovalStatus;
+  created_at: string;
+  expires_at: string;
+  decided_by_name: string | null;
+  decided_at: string | null;
+  note: string | null;
+}
+
+export interface ApprovalList {
+  items: Approval[];
+  /** Waiting and not expired. */
+  waiting: number;
+}
+
+export interface ApprovalRule {
+  on: boolean;
+  categories: string[];
+  all_categories: Record<string, string>;
+  /** Owners who can approve (the rule needs two). */
+  approvers: number;
+  hours: number;
+}
+
+export interface StaffPolicy {
+  inactive_days: number;
+  warn_days: number;
+  review_days: number;
 }
 
 export interface PlatformStats {
@@ -41,11 +85,19 @@ export interface StaffMember {
   added_at: string | null;
   last_seen_at: string | null;
   status: string;
+  /** Their use of the admin app and what follows from it; null for the deployment's own owners. */
+  last_active_at?: string | null;
+  reviewed_at?: string | null;
+  reviewed_by_name?: string | null;
+  review_due_at?: string | null;
+  review_due?: boolean;
+  removal_at?: string | null;
 }
 
 export interface StaffList {
   items: StaffMember[];
   roles: Record<StaffRole, string>;
+  policy: StaffPolicy;
 }
 
 export interface StaffAction {

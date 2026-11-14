@@ -93,6 +93,13 @@ class Settings(BaseSettings):
     REQUIRE_RECENT_LOGIN: bool = True
     RECENT_LOGIN_MINUTES: int = 15
 
+    # Platform staff (the admin app): their sign-in must have included a one-time code (the token's amr says "otp"; the
+    # realm reports it once bridge/keycloak/harden.py has run), lasts STAFF_SESSION_HOURS from when they typed their
+    # password, and the admin app signs them out after STAFF_IDLE_MINUTES without using it
+    STAFF_REQUIRE_TWO_STEP: bool = True
+    STAFF_SESSION_HOURS: int = 8
+    STAFF_IDLE_MINUTES: int = 30
+
     # Browser origins allowed to call the API directly (comma-separated). Never "*": requests carry credentials.
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3100"
 

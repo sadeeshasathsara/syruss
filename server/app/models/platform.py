@@ -26,6 +26,43 @@ class PlatformStaff(Base):
     added_by: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
+    # When they last used the admin app (kept to the nearest few minutes): unused access is taken away (offboarding)
+    last_active_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When they were told their access ends soon for lack of use (it counts again once they use it)
+    offboard_warned_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The last access review: an owner confirmed they still need it
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+
+class PlatformApproval(Base):
+    """
+    A risky staff action waiting for a second owner (when the platform's approval rule covers it). It is carried out
+    as the person who asked, once another owner approves, and only if they may still do it then. It never changes
+    after a decision.
+    """
+    __tablename__ = "platform_approvals"
+    __table_args__ = (Index("ix_platform_approvals_status", "status", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    target_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    tenant_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requested_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    requested_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    requested_by_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # pending | done | rejected | cancelled | failed (one left pending past expires_at has expired and can't be approved)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    decided_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    decided_by_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class PlatformAuditEntry(Base):
@@ -69,6 +106,8 @@ class PlatformAccessGrant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Who ended it early: the staff member, or someone in the organization (who may end it at any time)
+    ended_by_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
 
 class PlatformSetting(Base):

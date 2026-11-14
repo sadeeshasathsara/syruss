@@ -4,6 +4,7 @@ import type {
   Invoice, OrgBilling, OrgBillingRow, PaymentFileInfo, SellerSettings, Submission, TaxRateInfo,
   Grant, GrantList, Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
   StaffActionPage, StaffInvitation, StaffList, StaffMe, StaffMember, StaffRole, JoinView, SystemLesson,
+  Approval, ApprovalList, ApprovalRule, StaffPolicy,
 } from "./types";
 
 /** Typed client for the platform tools (/api/v1/sysadmin), through this app's own proxy. */
@@ -15,6 +16,16 @@ export class ApiError extends Error {
     super(message);
   }
 }
+
+/** A risky action the platform's rule holds for a second owner: nothing changed yet. */
+export class ApprovalPending extends ApiError {
+  constructor(message: string, public approval: Approval) {
+    super(202, message, "approval_pending");
+  }
+}
+
+/** Pages listening for held actions (the Approvals count) hear of each one. */
+export const APPROVAL_EVENT = "syruss:approval-requested";
 
 function messageFrom(detail: unknown, fallback: string): string {
   if (typeof detail === "string") return detail;
@@ -39,6 +50,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (res.status === 401 && typeof window !== "undefined") {
     // Signed out, or the session ended: sign in again (with the one-time code) and come back to this page.
     window.location.assign(`/api/auth/login?returnTo=${encodeURIComponent(here())}`);
+  }
+  if (res.status === 202) {
+    const body = (await res.json().catch(() => ({}))) as { approval?: Approval; message?: string };
+    if (body.approval) {
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(APPROVAL_EVENT));
+      throw new ApprovalPending(body.message ?? "Sent to another platform owner to approve.", body.approval);
+    }
+    return body as T;
   }
   if (!res.ok) {
     let detail: unknown;
@@ -82,6 +101,19 @@ export const api = {
       request<StaffMember>(`/staff/${encodeURIComponent(userId)}`, { method: "PATCH", body: json(body) }),
     remove: (userId: string, reason?: string) =>
       request<void>(`/staff/${encodeURIComponent(userId)}${reason ? `?reason=${encodeURIComponent(reason)}` : ""}`, { method: "DELETE" }),
+    review: (userId: string, note?: string) =>
+      request<StaffMember>(`/staff/${encodeURIComponent(userId)}/review`, { method: "POST", body: json({ note: note || null }) }),
+    setPolicy: (body: StaffPolicy & { reason: string }) => request<StaffPolicy>("/staff/policy", { method: "PUT", body: json(body) }),
+  },
+  approvals: {
+    list: (status: "pending" | "done" | "rejected" | "cancelled" | "failed" | "all" = "pending") => request<ApprovalList>(`/approvals?status=${status}`),
+    approve: (id: string, note?: string) =>
+      request<{ approval: Approval }>(`/approvals/${encodeURIComponent(id)}/approve`, { method: "POST", body: json({ note: note || null }) }),
+    reject: (id: string, note: string) => request<Approval>(`/approvals/${encodeURIComponent(id)}/reject`, { method: "POST", body: json({ note }) }),
+    cancel: (id: string) => request<Approval>(`/approvals/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
+    rule: () => request<ApprovalRule>("/platform/approvals"),
+    setRule: (body: { on: boolean; categories: string[]; reason: string }) =>
+      request<{ on: boolean; categories: string[] }>("/platform/approvals", { method: "PUT", body: json(body) }),
   },
   audit: (params: { before?: string | null; action?: string; limit?: number } = {}) => {
     const q = new URLSearchParams();

@@ -1,14 +1,15 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { Bot, Building2, CreditCard, FileText, LayoutDashboard, Layers, LockKeyhole, LogOut, Moon, Radio, ScrollText, ShieldCheck, SlidersHorizontal, Sun, UsersRound } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bot, Building2, CreditCard, FileText, Hourglass, LayoutDashboard, Layers, LockKeyhole, LogOut, Moon, Radio, ScrollText, ShieldCheck, SlidersHorizontal, Sun, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { createContext, useContext, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
 import { BrandMark } from "@/components/shell/Brand";
+import { IdleSignOut } from "@/components/shell/IdleSignOut";
 import { GlobalSearch } from "@/components/shell/Search";
 import { Button, IconButton } from "@/components/ui/Button";
-import { ApiError, api } from "@/lib/api";
+import { APPROVAL_EVENT, ApiError, api } from "@/lib/api";
 import { cn } from "@/lib/format";
 import type { StaffMe } from "@/lib/types";
 
@@ -32,8 +33,21 @@ const NAV = [
   { href: "/platform", label: "Platform controls", icon: SlidersHorizontal },
   { href: "/security", label: "Security", icon: LockKeyhole },
   { href: "/staff", label: "Staff", icon: UsersRound },
+  { href: "/approvals", label: "Approvals", icon: Hourglass },
   { href: "/audit", label: "Audit log", icon: ScrollText },
 ];
+
+/** How many risky actions wait for a second owner (kept fresh, and at once when this browser asks for one). */
+function useWaitingApprovals(): number {
+  const queryClient = useQueryClient();
+  const waiting = useQuery({ queryKey: ["approvals", "pending"], queryFn: () => api.approvals.list("pending"), refetchInterval: 60_000 });
+  useEffect(() => {
+    const refresh = () => queryClient.invalidateQueries({ queryKey: ["approvals"] });
+    window.addEventListener(APPROVAL_EVENT, refresh);
+    return () => window.removeEventListener(APPROVAL_EVENT, refresh);
+  }, [queryClient]);
+  return waiting.data?.waiting ?? 0;
+}
 
 // Signing out ends the session on this app's server and at Keycloak, so it is a real form post, not a fetch.
 function signOut() {
@@ -80,7 +94,12 @@ const REFUSALS: Record<string, { title: string; body: string }> = {
   account_disabled: { title: "This account is disabled", body: "A disabled account can't use the platform tools." },
   admin_app_required: { title: "Sign in again", body: "Your session came from another Syruss app. Sign in to the admin app itself." },
   device_unverified: { title: "Confirm this browser first", body: "Sign in to the Syruss app once from this browser to confirm it with the emailed code, then come back here." },
+  two_step_required: { title: "Sign in with your one-time code", body: "The platform tools need a sign-in with a password and a one-time code from your authenticator app." },
 };
+
+function signInAgain() {
+  window.location.assign(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+}
 
 function Gate({ children }: { children: (me: StaffMe) => React.ReactNode }) {
   const me = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 5 * 60_000, retry: false });
@@ -99,7 +118,8 @@ function Gate({ children }: { children: (me: StaffMe) => React.ReactNode }) {
             <p className="text-body text-muted">{refusal?.body ?? (me.error as Error | null)?.message ?? "Try again in a moment."}</p>
             <div className="mt-2 flex gap-2">
               {!refusal && <Button onClick={() => me.refetch()}>Try again</Button>}
-              <Button variant={refusal ? "primary" : "secondary"} onClick={signOut}>Sign out</Button>
+              {code === "two_step_required" && <Button variant="primary" onClick={signInAgain}>Sign in again</Button>}
+              <Button variant={refusal && code !== "two_step_required" ? "primary" : "secondary"} onClick={signOut}>Sign out</Button>
             </div>
           </>
         )}
@@ -113,11 +133,22 @@ function Gate({ children }: { children: (me: StaffMe) => React.ReactNode }) {
  * API confirms you're on the platform staff; every call is checked again on the server.
  */
 export function AdminFrame({ children }: { children: React.ReactNode }) {
-  const path = usePathname();
   return (
     <Gate>
       {(me) => (
         <StaffContext.Provider value={me}>
+          <IdleSignOut minutes={me.session?.idle_minutes ?? 30} onSignOut={signOut} />
+          <Frame me={me}>{children}</Frame>
+        </StaffContext.Provider>
+      )}
+    </Gate>
+  );
+}
+
+function Frame({ me, children }: { me: StaffMe; children: React.ReactNode }) {
+  const path = usePathname();
+  const waiting = useWaitingApprovals();
+  return (
           <div className="flex h-dvh flex-col overflow-hidden bg-frame lg:flex-row">
             <aside className="flex flex-none flex-col gap-1 border-b border-border px-3 py-2 lg:w-[228px] lg:border-b-0 lg:pt-3">
               <div className="flex items-center gap-2 px-1 pb-1 lg:pb-3">
@@ -141,6 +172,10 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
                           )}
                         >
                           <Icon className="size-4" aria-hidden /> {label}
+                          {href === "/approvals" && waiting > 0 && (
+                            <span className="num ml-auto rounded-chip bg-[var(--pill-warning-bg)] px-1.5 text-meta font-medium text-[var(--pill-warning-ink)]"
+                                  aria-label={`${waiting} waiting`}>{waiting}</span>
+                          )}
                         </Link>
                       </li>
                     );
@@ -170,8 +205,5 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
               </main>
             </div>
           </div>
-        </StaffContext.Provider>
-      )}
-    </Gate>
   );
 }

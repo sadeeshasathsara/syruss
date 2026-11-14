@@ -5,6 +5,7 @@ import { useState } from "react";
 import { field } from "@/components/ops/Bits";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/format";
+import { Problem } from "@/components/ui/Problem";
 
 /**
  * A billing change staff make: its own fields, then why (kept in the platform audit log and shown in the organization's
@@ -33,7 +34,7 @@ export function StaffForm({ title, submit, busy, onRun, onDone, children, ready 
           {run.isPending ? busy : submit}
         </Button>
         {onDone && <Button size="sm" onClick={onDone}>Cancel</Button>}
-        {run.error && <p className="text-meta text-negative">{run.error.message}</p>}
+        {run.error && <Problem error={run.error} />}
       </div>
     </form>
   );
