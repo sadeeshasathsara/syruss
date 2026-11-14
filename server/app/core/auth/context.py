@@ -14,6 +14,8 @@ class Identity(BaseModel):
     picture: Optional[str] = None
     # When they last typed their credentials (epoch seconds, the token's auth_time); None if the token doesn't say
     auth_time: Optional[int] = None
+    # The app the token was issued to (the token's authorized party, `azp`)
+    client_id: Optional[str] = None
 
 
 class AuthContext(BaseModel):

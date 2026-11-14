@@ -1,4 +1,4 @@
-import { Building2, ShieldCheck, SlidersHorizontal, UserRound } from "lucide-react";
+import { Building2, CreditCard, ShieldCheck, SlidersHorizontal, UserRound } from "lucide-react";
 import type { ComponentType } from "react";
 
 export interface OrgSettingsSection {
@@ -9,13 +9,20 @@ export interface OrgSettingsSection {
 }
 
 /**
- * Settings, organized by what they are about: the organization, you (profile), how you sign in (account and security),
- * and how the app behaves for you here (preferences).
+ * Settings, organized by what they are about: the organization, its billing (the plan its workspaces share), you
+ * (profile), how you sign in (account and security), and how the app behaves for you here (preferences).
  */
 export const ORG_SETTINGS: OrgSettingsSection[] = [
   { key: "organization", label: "Organization", icon: Building2, subs: [
     { key: "general", label: "General" },
     { key: "danger", label: "Close the organization" },
+  ] },
+  { key: "billing", label: "Billing", icon: CreditCard, subs: [
+    { key: "plan", label: "Plan and usage" },
+    { key: "buy", label: "Plans and credits" },
+    { key: "invoices", label: "Invoices" },
+    { key: "details", label: "Billing details" },
+    { key: "history", label: "History" },
   ] },
   { key: "profile", label: "Your profile", icon: UserRound, subs: [{ key: "details", label: "Details" }] },
   { key: "security", label: "Account and security", icon: ShieldCheck, subs: [

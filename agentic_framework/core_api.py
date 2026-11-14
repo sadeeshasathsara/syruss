@@ -66,9 +66,11 @@ class CoreAPI:
     async def delete(self, path: str) -> None:
         await self._request("DELETE", path)
 
-    async def get_image(self, document_id: str, region: Optional[str] = None) -> Tuple[bytes, Optional[Dict[str, Any]]]:
-        """The page as JPEG, and the page budget left after looking at it (if the platform reports one)."""
-        params = {"region": region} if region else {}
+    async def get_image(self, document_id: str, region: Optional[str] = None, page: int = 1) -> Tuple[bytes, Optional[Dict[str, Any]]]:
+        """A page as JPEG, and the page budget left after looking at it (if the platform reports one)."""
+        params: Dict[str, Any] = {"region": region} if region else {}
+        if page > 1:
+            params["page"] = page
         resp = await self._request("GET", f"/documents/{document_id}/image", params=params)
         try:
             budget = json.loads(resp.headers.get("X-Page-Budget") or "null")

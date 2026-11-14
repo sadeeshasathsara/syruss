@@ -25,6 +25,15 @@ build the theme into your image or mount it the same way. The pages are dark in 
 
 - Clients `syruss-site` and `syruss-app`: confidential, authorization code + PKCE S256, exact redirect
   URIs (no wildcards), no implicit or password grant.
+- Client `syruss-admin` (the system admin app, platform staff only): the same, with shorter sessions (30 min idle,
+  8 h at most). `harden.py` gives it its own sign-in flow, `syruss admin browser`: no riding on a session from the other
+  apps, no redirect to another provider, and a one-time code on every sign-in (someone without one sets it up first).
+  The import creates the client but not the flow, so run `python bridge/keycloak/harden.py` once on every Keycloak.
+  The theme shows the admin app's pages without "Create account" or other providers, and its sign-up page only says
+  that staff are added by an owner. Signing up is a realm setting Keycloak can't turn off per app, and an account made
+  some other way is an ordinary Syruss account: only a platform owner makes someone staff. Known gap: with Google
+  turned on, a hand-made address could still sign in to the admin client through Google without the code; keep Google
+  off, or give it a post-login flow that asks for the code, before relying on the admin app in production.
 - Access tokens carry `aud=syruss-api` (the core API checks it). They carry identity only: no tenant or
   role claims.
 - Access token 5 min, SSO idle 30 min, SSO max 10 h, refresh-token rotation, brute-force lockout,

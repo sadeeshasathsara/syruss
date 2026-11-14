@@ -12,6 +12,7 @@ from app.core.scope import TemplateScope, get_template_scope
 from app.models.document import Document, DocumentRole, DocumentStatus
 from app.models.review import ReviewTask
 from app.services import settings_service
+from app.services.billing import service as billing
 
 router = APIRouter(prefix="/overview", tags=["Workspace overview"])
 
@@ -60,13 +61,16 @@ async def overview(days: int = Query(14, ge=7, le=60), db: AsyncSession = Depend
     last = (await db.execute(select(func.max(Document.updated_at)).where(*real))).scalar()
 
     usage = await settings_service.usage(db, scope.template_id)
-    plan = settings_service.PLANS[(await settings_service.get_settings(db, scope.template_id)).plan]
+    plan = await billing.standing(db, scope.tenant_id, scope.template_id)
+    pages = await billing.pages_by_workspace(db, scope.tenant_id, plan.subscription.period_start)
     return {
         "days": [{"date": d.isoformat(), **v, "received": sum(v.values())} for d, v in sorted(series.items())],
         "totals": totals,
         "hands_free_rate": round(hands_free / saved_recent, 3) if saved_recent else None,
         "avg_seconds_to_save": round(float(avg_seconds), 1) if avg_seconds is not None and saved_recent else None,
         "last_activity_at": last,
-        "usage": {"documents_this_month": usage["documents_this_month"], "documents_limit": plan["documents_per_month"],
-                  "members": usage["members"], "members_limit": plan["members"], "plan": plan["name"]},
+        # The page allowance is the organization's, shared by its workspaces: this one's pages out of all of them.
+        "usage": {"documents_this_month": usage["documents_this_month"], "pages_this_period": pages.get(scope.template_id, 0),
+                  "documents_limit": plan.limits.get(billing.PAGES), "members": usage["members"],
+                  "members_limit": plan.limits.get("members_per_workspace"), "plan": plan.plan.name},
     }

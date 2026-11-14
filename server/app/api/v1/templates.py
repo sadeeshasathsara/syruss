@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.auth import AuthContext, get_current_auth
+from app.core.auth import AuthContext, get_current_auth, require_recent_login
 from app.core.database import get_db_session
 from app.core.scope import TemplateScope, get_template_scope, resolve_template_scope
 from app.models.audit import AuditLog
@@ -24,6 +24,7 @@ from app.schemas.conversation import ChatMessageCreate
 from app.schemas.template import (
     GoldenDatasetItemCreate,
     GoldenDatasetItemResponse,
+    IdentificationUpdate,
     TemplateBenchmarkResponse,
     TemplateChatRequest,
     TemplateChatResponse,
@@ -39,10 +40,17 @@ from app.schemas.template import (
 from app.services.benchmark_service import run_benchmark
 from app.services.conversation_service import conversation_service
 from app.services.template_service import template_service
+from app.services import data_lifecycle, workspace_events
 from app.core.permissions import Access, require
 from app.core.permissions import check_permission
 
 router = APIRouter(prefix="/templates", tags=["Templates"])
+
+
+def _may_create_workspaces(auth: AuthContext) -> None:
+    """A new template is a new workspace: the same organization permission as POST /workspaces (API keys have none)."""
+    if not auth.can_org("workspaces.create"):
+        raise HTTPException(status_code=403, detail={"code": "org_permission_denied", "message": "Your organization role can't create workspaces."})
 
 
 # ==============================================================================
@@ -68,6 +76,8 @@ async def discover_template_from_samples(
         scope = await resolve_template_scope(db, auth, template_id)
         await check_permission(db, scope, auth, "template.publish")
         template = scope.template
+    else:
+        _may_create_workspaces(auth)  # no template named: this starts a new workspace
     conversation_id = None
     if template is not None:
         conversation_id = await conversation_service.linked_conversation(db, scope, session_id)
@@ -178,6 +188,7 @@ async def create_template(
         if ws:
             ws.name = payload.name
     else:
+        _may_create_workspaces(auth)
         template = await template_service.create_template(
             db, tenant_id=auth.tenant_id, user_id=auth.user_id, name=payload.name,
             document_type=payload.document_type, description=payload.description,
@@ -237,7 +248,35 @@ async def update_template(
     return _with_slug(template, await db.get(Workspace, template.id))
 
 
-@router.delete("/{template_id}", status_code=204)
+@router.put("/{template_id}/identification", response_model=TemplateResponse)
+async def set_document_identification(
+    payload: IdentificationUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    scope: TemplateScope = Depends(get_template_scope),
+    _access: Access = Depends(require("template.publish")),
+):
+    """Changes which values name a document (its identification key). Every document is renamed at once; records are untouched."""
+    template = scope.template
+    if not template.active_version_id:
+        raise HTTPException(status_code=409, detail="The template has no active version yet.")
+    schema = {k: v for k, v in (template.schema_definition or {}).items() if k != "identification"}
+    if payload.parts:
+        schema["identification"] = {"parts": [p.model_dump() for p in payload.parts], "separator": payload.separator}
+    await template_service.add_version(
+        db, template, schema, change_summary="Changed how documents are identified",
+        created_by=scope.user_id, activate=True, approved_by=scope.user_id,
+    )
+    db.add(AuditLog(
+        tenant_id=scope.tenant_id, template_id=template.id, event_type="TEMPLATE_IDENTIFICATION_CHANGED",
+        entity_type="DocumentTemplate", entity_id=template.id, actor=scope.user_id,
+        details={"parts": [f"{p.object}.{p.field}" for p in payload.parts], "separator": payload.separator},
+    ))
+    await db.commit()
+    await db.refresh(template)
+    return _with_slug(template, await db.get(Workspace, template.id))
+
+
+@router.delete("/{template_id}", status_code=204, dependencies=[Depends(require_recent_login)])
 async def delete_template(db: AsyncSession = Depends(get_db_session), scope: TemplateScope = Depends(get_template_scope), _access: Access = Depends(require("workspace.delete"))):
     """Deletes the template workspace and everything in it."""
     ws = await db.get(Workspace, scope.template_id)
@@ -245,6 +284,7 @@ async def delete_template(db: AsyncSession = Depends(get_db_session), scope: Tem
         await db.delete(ws)
     await db.delete(scope.template)
     await db.commit()
+    await data_lifecycle.workspace_files_removed(scope.tenant_id, scope.template_id)
 
 
 # ==============================================================================
@@ -316,6 +356,7 @@ async def promote_template_version(
         details={"status": target.value, "approval_notes": payload.approval_notes},
     ))
     await db.commit()
+    await workspace_events.dispatch(db)  # rules that broke with the new version are announced
     await db.refresh(version)
     return version
 

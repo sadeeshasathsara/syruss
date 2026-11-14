@@ -6,9 +6,9 @@ import pytest
 from app.core.agent_token import mint_agent_token
 from app.core.auth import auth_for
 from app.services import channels
-from app.services.event_broadcaster import broadcaster
-from app.services.kafka_ws_bridge import kafka_ws_bridge
-from app.services.ui_events import publish_ui_event
+from app.services.live.broadcaster import broadcaster
+from app.services.live.bridge import kafka_ws_bridge
+from app.services.live.ui_events import publish_ui_event
 from tests.conftest import (AsyncSessionLocal, TENANT, create_template, join, outbox_events, person, png_bytes, register, upload, ws)
 
 API = "/api/v1"

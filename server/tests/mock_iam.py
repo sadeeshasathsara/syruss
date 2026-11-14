@@ -21,4 +21,6 @@ class MockIAMProvider(BaseIAMProvider):
             email_verified=request.headers.get("X-Email-Verified", "true") != "false",
             picture=request.headers.get("X-Picture"),
             auth_time=int(request.headers["X-Auth-Time"]) if "X-Auth-Time" in request.headers else int(time.time()),
+            # The app the token came from: the everyday app unless a test says otherwise (the admin app sends syruss-admin)
+            client_id=request.headers.get("X-Client-ID", "syruss-app"),
         )

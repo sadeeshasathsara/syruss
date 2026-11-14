@@ -30,6 +30,9 @@ export const STATUS: Record<string, { label: string; tone: Tone }> = {
   BUDGET_EXCEEDED: { label: "Ran out of steps", tone: "warning" },
   FAILED: { label: "Failed", tone: "negative" },
   DEAD_LETTERED: { label: "Gave up", tone: "negative" },
+  RUNNING: { label: "Running", tone: "info" },
+  CANCELLED: { label: "Stopped", tone: "neutral" },
+  LOST: { label: "Lost", tone: "negative" },
 };
 
 const all = (label: string) => ({ value: "all", label });

@@ -2,17 +2,21 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { orgSettingsHref } from "@/components/org/sections";
 import { Bar } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Textarea } from "@/components/ui/Field";
+import { Meter } from "@/components/ui/Figures";
 import { Pill } from "@/components/ui/Pill";
 import { Select } from "@/components/ui/Select";
 import { Dialog } from "@/components/ui/Sheet";
+import { useMe } from "@/lib/access";
 import { api } from "@/lib/api";
-import { cn, dateTime, fileSize } from "@/lib/format";
-import type { Plan, WorkspaceSettingsData } from "@/lib/types";
+import { dateTime, fileSize } from "@/lib/format";
+import type { WorkspaceSettingsData } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 import { NoAccess, SavedNote, Section, SettingsHeader, useWorkspaceSettings } from "./kit";
 
@@ -117,55 +121,33 @@ export function ProfileSettings() {
   );
 }
 
-/** A limit as a bar at its true ratio, with both ends labelled. */
-function Meter({ label, used, limit, format = (n: number) => n.toLocaleString() }: { label: string; used: number; limit: number; format?: (n: number) => string }) {
-  const ratio = Math.min(1, limit ? used / limit : 0);
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-body text-ink">{label}</span>
-        <span className="num text-body text-muted">
-          <span className={cn(ratio >= 1 ? "text-negative" : "text-ink")}>{format(used)}</span> of {format(limit)}
-        </span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-active">
-        <div
-          className={cn("h-full rounded-full transition-[width] duration-500", ratio >= 1 ? "bg-negative" : ratio >= 0.8 ? "bg-[var(--pill-warning-ink)]" : "bg-accent")}
-          style={{ width: `${ratio * 100}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
+/** The plan is the organization's: this workspace's share of its pages, and the limits each workspace has. */
 export function BillingSettings() {
-  const { workspace } = useWorkspace();
-  const { access } = useWorkspaceSettings();
+  const { workspace, org } = useWorkspace();
+  const { canOrg } = useMe();
   const billing = useQuery({ queryKey: ["billing", workspace.id], queryFn: () => api.settings.billing(workspace.id) });
-  const [comparing, setComparing] = useState(false);
   const b = billing.data;
-  const plan: Plan | undefined = b ? b.plans[b.plan] : undefined;
 
   return (
     <div className="flex flex-col">
-      <SettingsHeader title="Plan and billing" description="What this workspace's plan allows, what it has used this month, and how it's paid for." />
-      {!b || !plan ? (
+      <SettingsHeader title="Plan and usage" description="The organization's plan, shared by all its workspaces, and what this workspace has used."
+        actions={canOrg("billing.manage") ? <Button variant="secondary" asChild><Link href={orgSettingsHref(org, "billing")}>Organization billing</Link></Button> : undefined} />
+      {!b ? (
         <div className="flex flex-col gap-3 pt-6">{[0, 1, 2].map((i) => <Bar key={i} className="h-10 w-full" />)}</div>
       ) : (
         <>
-          <Section title="Current plan" description={`Usage resets on the first of each month. This month started ${dateTime(b.usage.period_start)}.`}>
+          <Section title="Plan" description={`Pages renew on ${new Date(b.pages.period_end).toLocaleDateString(undefined, { day: "numeric", month: "long" })}. This period started ${dateTime(b.pages.period_start)}.`}>
             <div className="flex flex-col gap-5 rounded-card border border-border bg-card p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="flex items-center gap-2 text-section font-semibold text-ink">{plan.name} <Pill tone="accent">Current</Pill></p>
-                  <p className="num text-body text-muted">{plan.price_per_month ? `$${plan.price_per_month} per month` : "Free"}</p>
-                </div>
-                <Button variant="secondary" onClick={() => setComparing(true)}>Compare plans</Button>
-              </div>
-              <Meter label="Documents this month" used={b.usage.documents_this_month} limit={plan.documents_per_month} />
-              <Meter label="Members" used={b.usage.members} limit={plan.members} />
-              <Meter label="API keys" used={b.usage.api_keys} limit={plan.api_keys} />
+              <p className="flex items-center gap-2 text-section font-semibold text-ink">{b.pages.plan} <Pill tone="accent">The organization&apos;s plan</Pill></p>
+              <Meter label="Pages read this period, all workspaces" used={b.pages.pages_used} limit={b.pages.pages_limit} />
+              <p className="text-body text-muted">
+                This workspace read {b.workspace_pages.toLocaleString()} of them.
+                {b.pages.credits > 0 && ` ${b.pages.credits.toLocaleString()} prepaid pages are left for when the plan's run out.`}
+              </p>
+              <Meter label="Members in this workspace" used={b.usage.members} limit={b.limits.members_per_workspace ?? null} />
+              <Meter label="API keys in this workspace" used={b.usage.api_keys} limit={b.limits.api_keys_per_workspace ?? null} />
             </div>
+            {!canOrg("billing.manage") && <p className="mt-2 text-meta text-muted">The organization&apos;s owners manage the plan and billing.</p>}
           </Section>
 
           <Section title="Usage" description="Counted from this workspace's own records.">
@@ -191,56 +173,8 @@ export function BillingSettings() {
               ))}
             </dl>
           </Section>
-
-          <Section title="Payment method" description="Charged at the start of each month for paid plans.">
-            <p className="rounded-card border border-dashed border-control px-4 py-3 text-body text-muted">
-              No payment method on file. {b.payments_enabled ? "" : "Online payments aren't set up for this workspace yet."}
-            </p>
-            {!access?.permissions.includes("billing.manage") && access && (
-              <p className="mt-2 text-meta text-muted">Only an owner can manage billing.</p>
-            )}
-          </Section>
-
-          <Section title="Invoices">
-            <p className="text-body text-muted">No invoices yet.</p>
-          </Section>
         </>
       )}
-
-      <Dialog open={comparing} onOpenChange={setComparing} title="Plans" description="Limits are per workspace.">
-        {b && (
-          <div className="flex flex-col gap-4">
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-body">
-                <thead>
-                  <tr className="text-left text-meta text-muted">
-                    <th className="py-2 pr-3 font-normal" />
-                    {Object.entries(b.plans).map(([k, p]) => <th key={k} className="py-2 pr-3 font-medium text-ink">{p.name}{k === b.plan ? " (current)" : ""}</th>)}
-                  </tr>
-                </thead>
-                <tbody className="num">
-                  {([
-                    ["Price per month", (p: Plan) => (p.price_per_month ? `$${p.price_per_month}` : "Free")],
-                    ["Documents a month", (p: Plan) => p.documents_per_month.toLocaleString()],
-                    ["Members", (p: Plan) => p.members.toLocaleString()],
-                    ["API keys", (p: Plan) => p.api_keys.toLocaleString()],
-                    ["Webhooks", (p: Plan) => p.webhooks.toLocaleString()],
-                  ] as const).map(([label, value]) => (
-                    <tr key={label} className="border-t border-rule">
-                      <td className="py-2 pr-3 text-muted">{label}</td>
-                      {Object.entries(b.plans).map(([k, p]) => <td key={k} className="py-2 pr-3 text-ink">{value(p)}</td>)}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="text-body text-muted">Changing plans needs online payments, which aren’t set up yet. Contact your account manager to change plans.</p>
-            <div className="flex justify-end">
-              <Button variant="secondary" onClick={() => setComparing(false)}>Close</Button>
-            </div>
-          </div>
-        )}
-      </Dialog>
     </div>
   );
 }

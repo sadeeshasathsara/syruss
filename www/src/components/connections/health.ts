@@ -1,7 +1,7 @@
 import type { Tone } from "@/lib/format";
 import type { IntakeChannelInfo, IntakeKeyInfo } from "@/lib/types";
 
-export const TYPE_LABEL: Record<string, string> = { "image/jpeg": "JPEG", "image/png": "PNG", "image/tiff": "TIFF", "image/webp": "WebP" };
+export const TYPE_LABEL: Record<string, string> = { "application/pdf": "PDF", "image/jpeg": "JPEG", "image/png": "PNG", "image/tiff": "TIFF", "image/webp": "WebP" };
 export const ALL_TYPES = Object.keys(TYPE_LABEL);
 
 export const KIND_LABEL: Record<IntakeChannelInfo["kind"], string> = { api: "API", email: "Email", sftp: "SFTP" };

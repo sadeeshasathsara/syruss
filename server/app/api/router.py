@@ -1,7 +1,9 @@
 from fastapi import APIRouter
 from app.api.v1.account import router as account_router
 from app.api.v1.admin import router as admin_router
+from app.api.v1.sysadmin import router as sysadmin_router
 from app.api.v1.audit import router as audit_router
+from app.api.v1.billing import router as billing_router
 from app.api.v1.channels import router as channels_router
 from app.api.v1.connections import router as connections_router
 from app.api.v1.conversations import router as conversations_router
@@ -19,6 +21,7 @@ from app.api.v1.questions import router as questions_router
 from app.api.v1.reviews import router as reviews_router
 from app.api.v1.runs import router as runs_router
 from app.api.v1.screens import router as screens_router
+from app.api.v1.rules import router as rules_router
 from app.api.v1.settings import router as settings_router
 from app.api.v1.system_lessons import router as system_lessons_router
 from app.api.v1.templates import router as templates_router
@@ -43,6 +46,7 @@ api_router.include_router(knowledge_sources_router)
 api_router.include_router(knowledge_router)
 api_router.include_router(conversations_router)
 api_router.include_router(audit_router)
+api_router.include_router(billing_router)
 api_router.include_router(settings_router)
 api_router.include_router(runs_router)
 api_router.include_router(memories_router)
@@ -50,6 +54,7 @@ api_router.include_router(system_lessons_router)
 api_router.include_router(quality_router)
 api_router.include_router(account_router)
 api_router.include_router(admin_router)
+api_router.include_router(sysadmin_router)
 api_router.include_router(ws_router)
 api_router.include_router(live_router)
 api_router.include_router(me_security_router)
@@ -57,6 +62,7 @@ api_router.include_router(org_dashboard_router)
 api_router.include_router(extraction_log_router)
 api_router.include_router(overview_router)
 api_router.include_router(screens_router)
+api_router.include_router(rules_router)
 api_router.include_router(intake_router)
 api_router.include_router(channels_router)
 api_router.include_router(destinations_router)

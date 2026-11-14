@@ -1,0 +1,181 @@
+# The test environment. Only pulls: every Syruss image is built by CI and published to ghcr
+# (see .github/workflows/package.yml), nothing is built on the server.
+#
+# Secrets are in env/*.env on the server (never in git). Run from this folder:
+#   docker compose --env-file env/stack.env pull && docker compose --env-file env/stack.env up -d
+# The limits below keep the whole stack inside a 1 GB machine with swap.
+name: syruss-test
+
+x-app: &app
+  restart: unless-stopped
+  pull_policy: missing  # updates come from the explicit `docker compose pull` the deploy hook runs
+
+services:
+  postgres:
+    <<: *app
+    # Postgres 16 with pgvector and Apache AGE, built by CI from bridge/postgres
+    image: ghcr.io/sadeeshasathsara/syruss/postgres:test
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    command: ["postgres", "-c", "shared_preload_libraries=age", "-c", "shared_buffers=48MB", "-c", "max_connections=40", "-c", "work_mem=4MB"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    <<: *app
+    image: ghcr.io/sadeeshasathsara/syruss/minio:test
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - minio_data:/data
+    mem_limit: 160m
+
+  kafka:
+    <<: *app
+    # Single-node KRaft broker built by CI from bridge/kafka (settings baked in)
+    image: ghcr.io/sadeeshasathsara/syruss/kafka:test
+    environment:
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID}
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+    mem_limit: 448m
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092 || /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 30s
+      retries: 20
+      start_period: 60s
+
+  keycloak-db:
+    <<: *app
+    image: ghcr.io/sadeeshasathsara/syruss/keycloak-db:test
+    environment:
+      POSTGRES_USER: ${KEYCLOAK_DB_USER}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      POSTGRES_DB: keycloak
+    volumes:
+      - keycloak_db_data:/var/lib/postgresql/data
+    mem_limit: 96m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    <<: *app
+    # Production-mode build with the realm and theme inside, made by CI from bridge/keycloak
+    image: ghcr.io/sadeeshasathsara/syruss/keycloak:test
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    environment:
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_HOSTNAME: ${KC_HOSTNAME}
+      JAVA_OPTS_KC_HEAP: "-Xms64m -Xmx256m"
+      SYRUSS_SITE_URL: ${SYRUSS_SITE_URL}
+      SYRUSS_APP_URL: ${SYRUSS_APP_URL}
+      SYRUSS_ADMIN_URL: ${SYRUSS_ADMIN_URL:-}
+      SYRUSS_SITE_CLIENT_SECRET: ${SYRUSS_SITE_CLIENT_SECRET}
+      SYRUSS_APP_CLIENT_SECRET: ${SYRUSS_APP_CLIENT_SECRET}
+      SYRUSS_ADMIN_CLIENT_SECRET: ${SYRUSS_ADMIN_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: unset
+      GOOGLE_CLIENT_SECRET: unset
+    ports:
+      - "127.0.0.1:8080:8080"
+    mem_limit: 384m
+    healthcheck:
+      # The management port answers /health/ready once the realm is imported and the server is accepting requests
+      test:
+        - CMD-SHELL
+        - |
+          exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q UP <&3
+      interval: 15s
+      timeout: 20s
+      retries: 40
+      start_period: 90s
+
+  server:
+    <<: *app
+    image: ghcr.io/sadeeshasathsara/syruss/server:test
+    env_file: env/server.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      minio:
+        condition: service_started
+    ports:
+      - "127.0.0.1:8000:8000"
+    mem_limit: 256m
+    healthcheck:
+      # The image's own check allows 5 seconds, which a busy small server misses even while /health answers
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 25s
+      retries: 5
+      start_period: 120s
+
+  agent:
+    <<: *app
+    image: ghcr.io/sadeeshasathsara/syruss/agent:test
+    env_file: env/agent.env
+    depends_on:
+      - server
+      - kafka
+    mem_limit: 256m
+
+  www:
+    <<: *app
+    image: ghcr.io/sadeeshasathsara/syruss/www:test
+    env_file: env/www.env
+    environment:
+      NODE_OPTIONS: --max-old-space-size=128
+    ports:
+      - "127.0.0.1:3000:3000"
+    mem_limit: 192m
+
+  site:
+    <<: *app
+    image: ghcr.io/sadeeshasathsara/syruss/site:test
+    env_file: env/site.env
+    environment:
+      NODE_OPTIONS: --max-old-space-size=128
+    ports:
+      - "127.0.0.1:3100:3100"
+    mem_limit: 160m
+
+  # The system admin app (platform staff only). Its settings are optional until the server has env/admin.env.
+  admin:
+    <<: *app
+    image: ghcr.io/sadeeshasathsara/syruss/admin:test
+    env_file:
+      - path: env/admin.env
+        required: false
+    environment:
+      NODE_OPTIONS: --max-old-space-size=128
+    ports:
+      - "127.0.0.1:3200:3200"
+    mem_limit: 160m
+
+volumes:
+  postgres_data:
+  minio_data:
+  kafka_data:
+  keycloak_db_data:

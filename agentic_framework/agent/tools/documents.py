@@ -2,7 +2,7 @@
 import base64
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
-from agentic_framework.agent.tools.base import NoArgs, RunContext, ToolOutcome, dump, tool
+from agentic_framework.agent.tools.base import NoArgs, RunContext, ToolOutcome, dump, json_arg, tool
 from agentic_framework.core_api import ToolRefused
 
 
@@ -35,6 +35,7 @@ async def get_document(ctx: RunContext, a: DocumentArgs) -> ToolOutcome:
 
 class ViewArgs(BaseModel):
     document_id: str
+    page: int = Field(1, description="Which page, for a document with several (`pages` in get_document); 1 is the first")
     region: List[float] = Field(default_factory=list, description="Optional zoom box [ymin, xmin, ymax, xmax] on a 0-1000 scale; empty for the full page")
     purpose: str = Field("", description="What you are looking for (shown to users)")
 
@@ -49,8 +50,8 @@ async def view_document(ctx: RunContext, a: ViewArgs) -> ToolOutcome:
         if len(a.region) != 4:
             raise ValueError("region must have 4 numbers: [ymin, xmin, ymax, xmax]")
         region = ",".join(str(round(v, 1)) for v in a.region)
-    image, budget = await ctx.api.get_image(a.document_id, region)
-    caption = f"document {a.document_id}" + (f", region {a.region}" if region else ", full page")
+    image, budget = await ctx.api.get_image(a.document_id, region, max(1, a.page))
+    caption = f"document {a.document_id}, page {max(1, a.page)}" + (f", region {a.region}" if region else ", full page")
     return ToolOutcome(
         f"Image of {caption} follows. {budget_note(budget)}".strip(),
         images=[{"caption": caption, "b64": base64.b64encode(image).decode(), "mime": "image/jpeg"}],
@@ -69,6 +70,38 @@ def budget_note(budget: Optional[Dict[str, Any]]) -> str:
     past = budget["already_read_this_run"]
     return (f"Page budget: {past['left']} of {past['limit']} already-read pages left in this run (the document you are "
             "working on, and documents not read yet, are free). Compare with past documents through their records.")
+
+
+class PagesArgs(BaseModel):
+    document_id: str
+    pages: int = Field(..., description="How many separate pages (sheets) the one picture shows; 2 or more")
+    why: str = Field(..., description="What you see, in a few words: 'two A4 pages photographed side by side'")
+
+
+@tool("report_pages", "Say that ONE picture shows several separate pages: two or more sheets photographed or scanned into a "
+      "single image. The platform counts pages, so call this as soon as you see it, before reading on. Not for a PDF or TIFF "
+      "(their pages are counted from the file), and not for one sheet that merely holds several sections, tables or receipts' "
+      "worth of text: only separate sheets of paper (or screen pages). If it is refused because the pages don't fit the plan, "
+      "mark the document failed with the reason given.", PagesArgs)
+async def report_pages(ctx: RunContext, a: PagesArgs) -> ToolOutcome:
+    result = await ctx.api.post(f"/documents/{a.document_id}/pages", {"pages": a.pages, "why": a.why})
+    return ToolOutcome(dump(result), touched_document_ids=[a.document_id])
+
+
+class IdentifyArgs(BaseModel):
+    document_id: str
+    details_json: str = Field(..., description="What the page says for the template's identification key, shaped like a record, "
+                              'e.g. {"Head": {"name": "...", "date": "2026-07-22"}} with the key\'s own objects and fields. '
+                              'Only the fields the key uses.')
+
+
+@tool("identify_document", "Name the document the way people will recognize it: give the values the template's identification "
+      "key uses (see `identification` in get_workspace's template), as soon as you have read them and before anything else "
+      "(questions, review, commit). From then on every list, notification and question calls the document by that key, not "
+      "its file name. Refused when the template has no key.", IdentifyArgs)
+async def identify_document(ctx: RunContext, a: IdentifyArgs) -> ToolOutcome:
+    result = await ctx.api.post(f"/documents/{a.document_id}/identification", {"details": json_arg(a.details_json, "details_json", {})})
+    return ToolOutcome(dump(result), touched_document_ids=[a.document_id])
 
 
 class FailArgs(BaseModel):

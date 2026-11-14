@@ -22,8 +22,9 @@ from app.core.config import settings
 from app.core.database import get_db_session
 from app.models.document import Document, DocumentStatus
 from app.models.intake import IntakeUpload
-from app.services import intake_service, settings_service
-from app.services.intake_rules import IntakeRejected, SUPPORTED, problem, read_capped
+from app.services import settings_service
+from app.services.intake import service as intake_service
+from app.services.intake.rules import IntakeRejected, SUPPORTED, problem, read_capped
 from app.services.storage_service import storage_service
 
 router = APIRouter(prefix="/intake", tags=["Intake"])
@@ -147,7 +148,7 @@ async def find_documents(
 
 class UploadIn(BaseModel):
     filename: str = Field(..., min_length=1, max_length=255)
-    content_type: str = Field(..., description="image/jpeg, image/png, image/tiff or image/webp")
+    content_type: str = Field(..., description="application/pdf, image/jpeg, image/png, image/tiff or image/webp")
     size_bytes: int = Field(..., ge=1, description="The file's exact size; storage refuses anything larger")
     external_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
