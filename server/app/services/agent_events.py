@@ -33,6 +33,8 @@ from app.core.agent_token import mint_agent_token
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.outbox import AgentEventOutbox
+from app.models.template import DocumentTemplate
+from app.services import platform_controls
 
 try:
     from aiokafka import AIOKafkaProducer
@@ -175,7 +177,14 @@ class AgentEventRelay:
             waiting = (await db.execute(
                 select(AgentEventOutbox.template_id).where(AgentEventOutbox.published_at.is_(None)).distinct()
             )).scalars().all()
+            controls = await platform_controls.current()
+            if not controls.agent or controls.maintenance:
+                return 0  # staff paused the agent (or maintenance): events wait in the outbox, in order
+            paused_tenants = controls.agent_paused_orgs
             held = [t for t in waiting if await budget_service.is_paused(db, t)]
+            if paused_tenants:
+                held += list((await db.execute(select(DocumentTemplate.id).where(
+                    DocumentTemplate.tenant_id.in_(paused_tenants), DocumentTemplate.id.in_(waiting)))).scalars().all())
             stmt = (
                 select(AgentEventOutbox)
                 .where(AgentEventOutbox.published_at.is_(None), AgentEventOutbox.template_id.not_in(held))

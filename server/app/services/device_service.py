@@ -31,7 +31,7 @@ TOKEN = re.compile(r"^[A-Za-z0-9_-]{32,100}$")
 # Pages a browser may open before it is confirmed: the ones that confirm it, and the account steps before an account exists.
 EXEMPT = {
     "/me/device", "/me/device/check", "/me/device/send", "/me/device/confirm",
-    "/me/email-verification", "/me/email-verification/send", "/me/email-verification/confirm", "/auth/logout",
+    "/me/email-verification", "/me/email-verification/send", "/me/email-verification/confirm", "/auth/logout", "/me/kind",
 }
 
 
@@ -107,6 +107,10 @@ def view(dev: TrustedDevice, identity: Identity, *, sent: Optional[bool] = None)
 async def gate(request: Request, identity: Identity) -> None:
     """Refuses a person whose browser hasn't been confirmed. Nothing to protect yet if the account isn't made."""
     if not settings.REQUIRE_TRUSTED_DEVICE:
+        return
+    # The admin app's own sign-in asks for a one-time code every time, which is stronger than a remembered browser; and a
+    # staff account can't open the customer pages where browsers are confirmed.
+    if settings.OIDC_ADMIN_CLIENT and identity.client_id == settings.OIDC_ADMIN_CLIENT:
         return
     path = request.url.path.removeprefix(settings.API_V1_PREFIX).rstrip("/") or "/"
     if path in EXEMPT or path.startswith(("/invitations/", "/org-invitations/")) and request.method == "GET":

@@ -36,7 +36,7 @@ class LessonIn(BaseModel):
     importance: float = Field(0.7, ge=0, le=1)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, include_in_schema=False)
 async def add_lesson(body: LessonIn, auth: AuthContext = Depends(get_current_auth), db: AsyncSession = Depends(get_db_session)):
     _admin(auth)
     lesson = SystemLesson(content=body.content.strip(), importance=body.importance, status="active", source="admin",

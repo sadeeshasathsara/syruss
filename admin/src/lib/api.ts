@@ -1,8 +1,9 @@
 import type {
   BankAccountInfo, BillingPayment, BillingSettingsPage, BillingSetup, CatalogDraft, CatalogItem, CatalogKind, CreditNoteInfo, FollowUp, MoneySummary, OrganizationAccount, PersonAccount,
+  Announcement, AtRisk, BusinessMetrics, OrgNote, OrganizationProfile, PersonProfile, PlatformControls, SearchResults, SecurityView, Severity, SwitchName,
   Invoice, OrgBilling, OrgBillingRow, PaymentFileInfo, SellerSettings, Submission, TaxRateInfo,
   Grant, GrantList, Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
-  StaffActionPage, StaffList, StaffMe, StaffMember, StaffRole,
+  StaffActionPage, StaffInvitation, StaffList, StaffMe, StaffMember, StaffRole, JoinView, SystemLesson,
 } from "./types";
 
 /** Typed client for the platform tools (/api/v1/sysadmin), through this app's own proxy. */
@@ -65,7 +66,18 @@ export const api = {
   health: () => request<PlatformHealth>("/health"),
   staff: {
     list: () => request<StaffList>("/staff"),
-    add: (body: { email: string; role: StaffRole; reason?: string }) => request<StaffMember>("/staff", { method: "POST", body: json(body) }),
+    invitations: () => request<StaffInvitation[]>("/staff/invitations"),
+    invite: (body: { email: string; role: StaffRole; reason: string }) =>
+      request<StaffInvitation & { email_sent: boolean; link: string }>("/staff/invitations", { method: "POST", body: json(body) }),
+    resendInvitation: (id: string) =>
+      request<StaffInvitation & { email_sent: boolean; link: string }>(`/staff/invitations/${encodeURIComponent(id)}/resend`, { method: "POST" }),
+    revokeInvitation: (id: string) => request<void>(`/staff/invitations/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    viewJoin: (token: string) => request<JoinView>(`/staff/join/${encodeURIComponent(token)}`),
+    sendJoinCode: (token: string) => request<unknown>(`/staff/join/${encodeURIComponent(token)}/verify/send`, { method: "POST" }),
+    confirmJoinCode: (token: string, code: string) =>
+      request<unknown>(`/staff/join/${encodeURIComponent(token)}/verify`, { method: "POST", body: json({ code }) }),
+    acceptJoin: (token: string, deleteCustomerAccount: boolean) =>
+      request<{ role: StaffRole }>(`/staff/join/${encodeURIComponent(token)}`, { method: "POST", body: json({ delete_customer_account: deleteCustomerAccount }) }),
     changeRole: (userId: string, body: { role: StaffRole; reason?: string }) =>
       request<StaffMember>(`/staff/${encodeURIComponent(userId)}`, { method: "PATCH", body: json(body) }),
     remove: (userId: string, reason?: string) =>
@@ -101,6 +113,37 @@ export const api = {
     open: (body: { tenant_id: string; reason: string; minutes: number }) => request<Grant>("/access", { method: "POST", body: json(body) }),
     end: (id: string) => request<void>(`/access/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
+  lessons: {
+    list: () => request<{ items: SystemLesson[] }>("/lessons"),
+    add: (content: string) => request<SystemLesson>("/lessons", { method: "POST", body: json({ content }) }),
+    set: (id: string, status: SystemLesson["status"]) => request<SystemLesson>(`/lessons/${encodeURIComponent(id)}`, { method: "PATCH", body: json({ status }) }),
+  },
+
+  console: {
+    metrics: () => request<BusinessMetrics>("/metrics"),
+    atRisk: () => request<AtRisk[]>("/organizations/at-risk"),
+    organization: (id: string) => request<OrganizationProfile>(`/organizations/${encodeURIComponent(id)}/profile`),
+    addNote: (id: string, body: string, pinned = false) =>
+      request<OrgNote>(`/organizations/${encodeURIComponent(id)}/notes`, { method: "POST", body: json({ body, pinned }) }),
+    pinNote: (id: string, noteId: string) => request<OrgNote>(`/organizations/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}/pin`, { method: "POST" }),
+    removeNote: (id: string, noteId: string) => request<void>(`/organizations/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, { method: "DELETE" }),
+    pauseAgent: (id: string, paused: boolean, reason: string) =>
+      request<{ agent_paused: boolean }>(`/organizations/${encodeURIComponent(id)}/agent`, { method: "POST", body: json({ paused, reason }) }),
+    person: (id: string) => request<PersonProfile>(`/people/${encodeURIComponent(id)}/profile`),
+    forgetBrowsers: (id: string, reason: string) =>
+      request<{ browsers_forgotten: number }>(`/people/${encodeURIComponent(id)}/forget-browsers`, { method: "POST", body: json({ reason }) }),
+    platform: () => request<PlatformControls>("/platform"),
+    setMaintenance: (on: boolean, message: string, reason: string) =>
+      request<PlatformControls["maintenance"]>("/platform/maintenance", { method: "PUT", body: json({ on, message, reason }) }),
+    setSwitch: (name: SwitchName, on: boolean, reason: string) =>
+      request<Record<SwitchName, boolean>>("/platform/switches", { method: "PUT", body: json({ name, on, reason }) }),
+    announce: (body: { title: string; body: string; severity: Severity; tenant_id?: string | null; starts_at?: string | null; ends_at?: string | null; reason: string }) =>
+      request<Announcement>("/announcements", { method: "POST", body: json(body) }),
+    endAnnouncement: (id: string) => request<Announcement>(`/announcements/${encodeURIComponent(id)}/end`, { method: "POST" }),
+    search: (q: string) => request<SearchResults>(`/search?q=${encodeURIComponent(q)}`),
+    security: () => request<SecurityView>("/security"),
+  },
+
   accounts: {
     organizations: (q?: string) => request<OrganizationAccount[]>(`/organizations${q ? `?q=${encodeURIComponent(q)}` : ""}`),
     suspend: (id: string, reason: string) =>

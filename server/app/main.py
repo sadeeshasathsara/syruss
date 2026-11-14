@@ -20,7 +20,7 @@ from app.services.storage_service import storage_service
 from app.services import system_lessons
 from app.services.billing import catalog as billing_catalog
 from app.core.auth import validate_auth_config
-from app.core.security_headers import RequestSizeLimit, SecurityHeaders
+from app.core.security_headers import Maintenance, RequestSizeLimit, SecurityHeaders
 from app.core.permissions import ensure_system_roles
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -65,6 +65,7 @@ app = FastAPI(
     openapi_url=None if settings.is_production else "/openapi.json",
 )
 app.add_middleware(SecurityHeaders)
+app.add_middleware(Maintenance)
 app.add_middleware(RequestSizeLimit)
 
 app.add_middleware(

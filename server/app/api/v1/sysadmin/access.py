@@ -47,10 +47,8 @@ def _ip(request: Request) -> Optional[str]:
 
 async def staff_role(db: AsyncSession, user_id: str) -> tuple:
     """(role, from_config) for someone on the platform staff, or (None, False)."""
-    if user_id in settings.platform_admin_ids:
-        return "owner", True
-    row = await db.get(PlatformStaff, user_id)
-    return (row.role, False) if row else (None, False)
+    from app.services.staff_service import staff_role as role_of
+    return await role_of(db, user_id)
 
 
 async def current_staff(request: Request, identity: Identity = Depends(get_identity)) -> Staff:

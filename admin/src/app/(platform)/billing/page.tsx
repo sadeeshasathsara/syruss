@@ -112,7 +112,7 @@ function Organizations() {
           <ul className="flex flex-col divide-y divide-rule">
             {follow.data.map((f) => (
               <li key={f.tenant_id} className="flex flex-wrap items-center gap-2 py-2 text-body">
-                <Link href={`/billing/${f.tenant_id}`} className="min-w-0 flex-1 truncate text-ink hover:underline">{f.organization?.name ?? f.tenant_id}</Link>
+                <Link href={`/accounts/organizations/${f.tenant_id}`} className="min-w-0 flex-1 truncate text-ink hover:underline">{f.organization?.name ?? f.tenant_id}</Link>
                 <span className="text-muted">{f.plan}</span>
                 <Pill tone="warning">{f.status === "trialing" ? `Trial ends ${new Date(f.trial_ends_at!).toLocaleDateString(undefined, { day: "numeric", month: "short" })}`
                   : f.status === "past_due" ? "Renewal past due" : "Payment not recorded for this period"}</Pill>

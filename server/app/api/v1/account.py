@@ -22,6 +22,7 @@ from app.models.workspace import Workspace
 from app.models.workspace_admin import WorkspaceInvitation, WorkspaceMember
 from app.services import data_lifecycle, email_verification, identity_service, invitation_mail, workspace_events
 from app.services.billing import notices as billing_notices
+from app.services import staff_service
 from app.services.notifications import ACCOUNT
 
 router = APIRouter(tags=["Account"])
@@ -129,6 +130,13 @@ async def update_me(body: ProfileIn, auth: AuthContext = Depends(get_current_aut
     return _me(auth.model_copy(update={"username": user.display_name}), user)
 
 
+@router.get("/me/kind")
+async def my_kind(identity: Identity = Depends(get_identity), db: AsyncSession = Depends(get_db_session)):
+    """Whether this sign-in is a staff account (which works only in the admin app) and where that app is. The web apps ask
+    right after sign-in, so a staff account never opens a customer page."""
+    return {"staff": await staff_service.is_staff(db, identity.user_id), "admin_url": settings.PUBLIC_ADMIN_URL.rstrip("/")}
+
+
 @router.delete("/me", status_code=204, dependencies=[Depends(require_recent_login)])
 async def delete_my_account(auth: AuthContext = Depends(get_current_auth), db: AsyncSession = Depends(get_db_session)):
     """
@@ -191,6 +199,8 @@ async def view_invitation(token: str, request: Request, db: AsyncSession = Depen
 @router.post("/invitations/{token}/accept")
 async def accept_invitation(token: str, db: AsyncSession = Depends(get_db_session), identity: Identity = Depends(get_identity)):
     """Joins the workspace (and its organization, as a member) with the invited role."""
+    if await staff_service.is_staff(db, identity.user_id):
+        raise staff_service.refuse_staff()
     user = await db.get(User, identity.user_id)
     if user is None:
         raise HTTPException(status_code=403, detail={"code": "onboarding_required", "message": "Finish setting up your account first."})

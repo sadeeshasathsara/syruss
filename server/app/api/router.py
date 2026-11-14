@@ -6,6 +6,7 @@ from app.api.v1.audit import router as audit_router
 from app.api.v1.billing import router as billing_router
 from app.api.v1.channels import router as channels_router
 from app.api.v1.connections import router as connections_router
+from app.api.v1.announcements import router as announcements_router
 from app.api.v1.conversations import router as conversations_router
 from app.api.v1.deliveries import router as deliveries_router
 from app.api.v1.destinations import router as destinations_router
@@ -68,3 +69,4 @@ api_router.include_router(channels_router)
 api_router.include_router(destinations_router)
 api_router.include_router(deliveries_router)
 api_router.include_router(connections_router)
+api_router.include_router(announcements_router)

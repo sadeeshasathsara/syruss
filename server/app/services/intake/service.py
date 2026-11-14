@@ -18,7 +18,7 @@ from app.core.database import AsyncSessionLocal
 from app.models.document import Document, DocumentStatus
 from app.models.intake import IdempotencyRecord, IntakeChannel, IntakeEvent
 from app.models.template import DocumentTemplate
-from app.services import extraction_log, settings_service
+from app.services import extraction_log, platform_controls, settings_service
 from app.services.billing import alerts as billing_alerts
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
 from app.services.document_service import document_service
@@ -111,6 +111,9 @@ async def accept(db: AsyncSession, *, channel: IntakeChannel, template: Document
     """Checks one file and, if it passes, stores it and hands it to the agent. The caller commits (and calls `finish`)."""
     if channel.status != "active":
         raise IntakeRejected(403, "This channel is paused. Ask the workspace owner to turn it back on.", "channel_paused")
+    controls = await platform_controls.current()
+    if not controls.intake or controls.maintenance:
+        raise IntakeRejected(503, "Syruss isn't taking documents in for a short while. Send it again in a few minutes.", "intake_paused")
     prefs = (await settings_service.get_settings(db, template.id)).documents
     limits = channel_limits(channel, prefs)
     if len(content) > limits["max_bytes"]:
