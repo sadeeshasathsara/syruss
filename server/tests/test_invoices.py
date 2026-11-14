@@ -18,7 +18,7 @@ from tests.conftest import AsyncSessionLocal
 from tests.test_billing import organization
 
 API = "/api/v1"
-ADMIN_APP = {"X-Client-ID": "syruss-admin"}
+ADMIN_APP = {"X-Client-ID": "syruss-admin", "X-User-ID": "usr_platform_owner", "X-Username": "Pat Platform", "X-Email": "owner@syruss.test"}
 DETAILS = {"legal_name": "Acme Holdings (Pvt) Ltd", "email": "accounts@acme.example", "address_line1": "12 Galle Road",
            "city": "Colombo", "postal_code": "00300", "country": "lk"}
 

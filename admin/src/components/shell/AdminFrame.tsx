@@ -1,11 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Building2, CreditCard, FileText, LayoutDashboard, Layers, LogOut, Moon, Radio, ScrollText, ShieldCheck, Sun, UsersRound } from "lucide-react";
+import { Bot, Building2, CreditCard, FileText, LayoutDashboard, Layers, LockKeyhole, LogOut, Moon, Radio, ScrollText, ShieldCheck, SlidersHorizontal, Sun, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useSyncExternalStore } from "react";
 import { BrandMark } from "@/components/shell/Brand";
+import { GlobalSearch } from "@/components/shell/Search";
 import { Button, IconButton } from "@/components/ui/Button";
 import { ApiError, api } from "@/lib/api";
 import { cn } from "@/lib/format";
@@ -28,6 +29,8 @@ const NAV = [
   { href: "/queues", label: "Queues", icon: Layers },
   { href: "/accounts", label: "Accounts", icon: Building2 },
   { href: "/billing", label: "Billing", icon: CreditCard },
+  { href: "/platform", label: "Platform controls", icon: SlidersHorizontal },
+  { href: "/security", label: "Security", icon: LockKeyhole },
   { href: "/staff", label: "Staff", icon: UsersRound },
   { href: "/audit", label: "Audit log", icon: ScrollText },
 ];
@@ -148,9 +151,10 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
 
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <div className="hidden h-12 flex-none items-center gap-2 pr-3 lg:flex">
-                <p className="flex min-w-0 flex-1 items-center gap-1.5 text-meta text-muted">
+                <div className="min-w-0 flex-1"><GlobalSearch /></div>
+                <p className="hidden min-w-0 items-center gap-1.5 text-meta text-muted 2xl:flex" title="Every change you make here is recorded in the audit log.">
                   <ShieldCheck className="size-3.5 flex-none" aria-hidden />
-                  <span className="truncate">Every change you make here is recorded in the audit log.</span>
+                  <span className="truncate">Changes are audited</span>
                 </p>
                 <ThemeToggle />
                 <div className="flex items-center gap-2 pl-1 text-right">

@@ -12,7 +12,7 @@ from app.core.database import get_db_session
 from app.core.permissions import Access, require
 from app.core.secrets import token_hash
 from app.models.workspace_admin import WorkspaceInvitation
-from app.services import invitation_mail
+from app.services import invitation_mail, staff_service
 from app.services.billing import service as billing
 
 router = APIRouter()
@@ -65,6 +65,8 @@ async def invite(body: InviteIn, background: BackgroundTasks, access: Access = D
     ratelimit.limit(f"invite:{access.scope.template_id}", 60, 3600)
     role = await common.assignable(db, access, body.role)
     email = body.email.strip().lower()
+    if await staff_service.staff_email(db, email):
+        raise HTTPException(status_code=409, detail=f"{email} is a Syruss staff account, which can't join a workspace. Invite another address.")
     members = await common.members(db, access.scope.template_id)
     if any((m.email or "").lower() == email for m in members):
         raise HTTPException(status_code=409, detail=f"{email} is already a member.")

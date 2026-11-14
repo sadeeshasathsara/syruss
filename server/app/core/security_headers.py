@@ -44,6 +44,30 @@ class SecurityHeaders:
         await self.app(scope, receive, with_headers)
 
 
+class Maintenance:
+    """
+    While staff have the platform in maintenance, the API is read-only: anything that would change something answers 503
+    with their message (people can still sign in and look). Staff tools, sign-in steps and Stripe's webhook keep working.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            from app.services import platform_controls
+            if platform_controls.held_by_maintenance(scope.get("method", "GET"), scope.get("path", ""), settings.API_V1_PREFIX):
+                controls = await platform_controls.current()
+                if controls.maintenance:
+                    message = controls.message or "Syruss is under maintenance. You can look around; changes are paused for a short while."
+                    body = json.dumps({"detail": {"code": "maintenance", "message": message}}).encode()
+                    await send({"type": "http.response.start", "status": 503, "headers": [
+                        (b"content-type", b"application/json"), (b"content-length", str(len(body)).encode()), (b"retry-after", b"300")]})
+                    await send({"type": "http.response.body", "body": body})
+                    return
+        await self.app(scope, receive, send)
+
+
 class _TooLarge(HTTPException):
     """Raised while the body is read: an HTTP error, so FastAPI answers 413 with it rather than 'could not parse the body'."""
 

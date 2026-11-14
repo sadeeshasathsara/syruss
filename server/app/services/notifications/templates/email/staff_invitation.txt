@@ -1,0 +1,13 @@
+Join the Syruss platform staff
+
+{{ inviter }} invited you to the Syruss platform staff, the people who run the platform from its admin app.
+
+Your role would be {{ role }}: {{ role_description }}
+Invited address: {{ to }}
+Valid until: {{ expires_on }}
+
+Sign in with this address (or create a sign-in for it), with a password and a one-time code. A staff account is only for the admin app: if this address already has a Syruss customer account, you'll be shown what accepting would remove before anything changes.
+
+Open the invitation: {{ url }}
+
+If you weren't expecting this, ignore the email: nothing happens until you accept.
