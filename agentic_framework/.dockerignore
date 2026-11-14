@@ -12,3 +12,6 @@ htmlcov/
 .env*
 .git
 .DS_Store
+tests/
+.pytest_cache/
+pytest.ini

@@ -1,7 +1,7 @@
 # Keycloak in production mode, built once by CI so servers only pull it.
 # `start-dev` repeats a heavy build on every start (about 5 minutes on a small server); `kc.sh build` does it here.
 # Needs at runtime: KC_DB_URL, KC_DB_USERNAME, KC_DB_PASSWORD, KC_HOSTNAME, KC_BOOTSTRAP_ADMIN_*, SYRUSS_* (see deploy/test).
-FROM quay.io/keycloak/keycloak:26.0 AS builder
+FROM quay.io/keycloak/keycloak:26.0@sha256:09a381c715ab0b111835b70f2905955274843a219c6f27efb348e4d9f4086858 AS builder
 
 # Build-time options: they must match what the server runs with.
 ENV KC_DB=postgres \
@@ -11,7 +11,7 @@ ENV KC_DB=postgres \
 COPY themes/syruss /opt/keycloak/themes/syruss
 RUN /opt/keycloak/bin/kc.sh build
 
-FROM quay.io/keycloak/keycloak:26.0
+FROM quay.io/keycloak/keycloak:26.0@sha256:09a381c715ab0b111835b70f2905955274843a219c6f27efb348e4d9f4086858
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 # Substituted from SYRUSS_* environment variables when the realm is imported
 COPY realm-syruss.json /opt/keycloak/data/import/realm-syruss.json

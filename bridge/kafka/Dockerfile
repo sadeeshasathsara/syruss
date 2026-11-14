@@ -1,6 +1,6 @@
 # Single-node Kafka (KRaft) for small servers, built by CI so servers pull it from ghcr instead of Docker Hub.
 # The static settings are baked in; the cluster id comes from the environment (KAFKA_CLUSTER_ID / CLUSTER_ID).
-FROM apache/kafka:3.7.0
+FROM apache/kafka:3.7.0@sha256:41c20d65b0a2180b9deca056d47540771752e69fe9225d5748dd65a25a9675d7
 
 ENV KAFKA_NODE_ID=1 \
     KAFKA_PROCESS_ROLES=broker,controller \
