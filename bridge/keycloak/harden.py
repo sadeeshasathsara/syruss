@@ -8,8 +8,9 @@ Checks the running Keycloak realm against the sign-in settings Syruss expects, a
 
 The same settings are in realm-syruss.json, which a brand-new Keycloak imports; this script brings an existing one in line.
 It also adds any client the realm file has and the running realm lacks (such as syruss-admin), and gives the system admin
-app its own sign-in flow that always asks for a one-time code. A brand-new Keycloak needs this run once too: the import
-creates the client, but the flow is made here.
+app its own sign-in flow that always asks for a one-time code, short sessions (30 minutes idle, 8 hours at most), and
+tokens that say how the person signed in (amr: "pwd", "otp"), which the server checks before opening any platform tool.
+A brand-new Keycloak needs this run once too: the import creates the client, but the flow is made here.
 Needs KEYCLOAK_URL / KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD in the environment, or the local defaults.
 """
 import json
@@ -99,6 +100,14 @@ def smtp_from_env() -> dict:
 # redirect to another provider, and a one-time code every time (someone without one is asked to set it up first).
 ADMIN_CLIENT = "syruss-admin"
 ADMIN_FLOW = "syruss admin browser"
+# Staff sessions: 30 minutes without use ends one, and none lives past a working day
+ADMIN_CLIENT_ATTRIBUTES = {"client.session.idle.timeout": "1800", "client.session.max.lifespan": "28800"}
+# What each step of the admin flow is reported as in the token's amr claim, and for how long after it was done (Keycloak
+# leaves a step out once that many seconds have passed: longer than a staff session, so it holds for the whole of one)
+AMR = {"auth-username-password-form": "pwd", "auth-otp-form": "otp"}
+AMR_MAX_AGE = "36000"
+AMR_MAPPER = {"name": "amr", "protocol": "openid-connect", "protocolMapper": "oidc-amr-mapper",
+              "config": {"access.token.claim": "true", "id.token.claim": "true", "introspection.token.claim": "true"}}
 # Development values the compose file falls back to; a real deployment sets SYRUSS_* (see bridge/.env.example).
 DEFAULTS = {"SYRUSS_SITE_URL": "http://localhost:3100", "SYRUSS_APP_URL": "http://localhost:3000", "SYRUSS_ADMIN_URL": "http://localhost:3200",
             "SYRUSS_SITE_CLIENT_SECRET": "dev-site-secret-change-me", "SYRUSS_APP_CLIENT_SECRET": "dev-app-secret-change-me",
@@ -155,13 +164,47 @@ def ensure_admin_sign_in(token: str, check_only: bool) -> list:
             differed.append(f"flow step '{execution['displayName']}': {execution['requirement']} -> {want}")
             if not check_only:
                 call("PUT", path, token, {**execution, "requirement": want})
+        if execution.get("providerId") in AMR:
+            differed += ensure_reference(token, execution, AMR[execution["providerId"]], check_only)
     [client] = call("GET", f"/admin/realms/{REALM}/clients?clientId={ADMIN_CLIENT}", token) or [None]
-    if client and (client.get("authenticationFlowBindingOverrides") or {}).get("browser") != flows[ADMIN_FLOW]["id"]:
+    if client is None:
+        return differed
+    changed = False
+    if (client.get("authenticationFlowBindingOverrides") or {}).get("browser") != flows[ADMIN_FLOW]["id"]:
         differed.append(f"client {ADMIN_CLIENT}: signs in through the '{ADMIN_FLOW}' flow")
+        client["authenticationFlowBindingOverrides"] = {**(client.get("authenticationFlowBindingOverrides") or {}), "browser": flows[ADMIN_FLOW]["id"]}
+        changed = True
+    attributes = client.get("attributes") or {}
+    for key, value in ADMIN_CLIENT_ATTRIBUTES.items():
+        if attributes.get(key) != value:
+            differed.append(f"client {ADMIN_CLIENT}: {key} {attributes.get(key)!r} -> {value!r}")
+            client["attributes"] = {**attributes, **ADMIN_CLIENT_ATTRIBUTES}
+            changed = True
+    if changed and not check_only:
+        call("PUT", f"/admin/realms/{REALM}/clients/{client['id']}", token, client)
+    mappers = call("GET", f"/admin/realms/{REALM}/clients/{client['id']}/protocol-mappers/models", token) or []
+    if not any(m.get("protocolMapper") == AMR_MAPPER["protocolMapper"] for m in mappers):
+        differed.append(f"client {ADMIN_CLIENT}: tokens say how the person signed in (amr)")
         if not check_only:
-            client["authenticationFlowBindingOverrides"] = {**(client.get("authenticationFlowBindingOverrides") or {}), "browser": flows[ADMIN_FLOW]["id"]}
-            call("PUT", f"/admin/realms/{REALM}/clients/{client['id']}", token, client)
+            call("POST", f"/admin/realms/{REALM}/clients/{client['id']}/protocol-mappers/models", token, AMR_MAPPER)
     return differed
+
+
+def ensure_reference(token: str, execution: dict, reference: str, check_only: bool) -> list:
+    """The step is reported in the token's amr as `reference` (Keycloak reports only steps configured to be)."""
+    wanted = {"default.reference.value": reference, "default.reference.maxAge": AMR_MAX_AGE}
+    config_id = execution.get("authenticationConfig")
+    current = call("GET", f"/admin/realms/{REALM}/authentication/config/{config_id}", token) if config_id else None
+    have = (current or {}).get("config") or {}
+    if all(have.get(k) == v for k, v in wanted.items()):
+        return []
+    if not check_only:
+        if current:
+            call("PUT", f"/admin/realms/{REALM}/authentication/config/{config_id}", token, {**current, "config": {**have, **wanted}})
+        else:
+            call("POST", f"/admin/realms/{REALM}/authentication/executions/{execution['id']}/config", token,
+                 {"alias": f"syruss admin amr {reference}", "config": wanted})
+    return [f"flow step '{execution['displayName']}': reported in the token as amr '{reference}'"]
 
 
 def main() -> int:

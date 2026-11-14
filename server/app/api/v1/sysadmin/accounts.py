@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.sysadmin.access import Staff, record, require_staff
+from app.api.v1.sysadmin.approvals import act, risky
 from app.api.v1.sysadmin.common import tell_organization
 from app.core.config import settings
 from app.core.database import get_db_session
@@ -70,11 +71,22 @@ async def _set_status(db: AsyncSession, staff: Staff, tenant_id: str, status: st
     return await _organization(db, tenant)
 
 
+@risky("organization.suspend", "organization.suspend", "tenants.manage")
+async def _suspend(db: AsyncSession, staff: Staff, p: Dict[str, Any]) -> Dict[str, Any]:
+    return await _set_status(db, staff, p["tenant_id"], "suspended", p["reason"], "suspended the organization")
+
+
 @router.post("/organizations/{tenant_id}/suspend")
 async def suspend(tenant_id: str, body: Reason, staff: Staff = Depends(require_staff("tenants.manage", recent=True)),
-                  db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
+                  db: AsyncSession = Depends(get_db_session)) -> Any:
     """Shuts the organization for everyone in it, and for its keys and channels, until it is reactivated. Nothing is removed."""
-    return await _set_status(db, staff, tenant_id, "suspended", body.reason, "suspended the organization")
+    tenant = await db.get(Tenant, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="No such organization.")
+    if tenant.status != "active":
+        raise HTTPException(status_code=409, detail=f"The organization is {tenant.status}: only an active one is suspended.")
+    return await act(db, staff, "organization.suspend", {"tenant_id": tenant_id, "reason": body.reason}, summary=f"Suspend {tenant.name}",
+                     target_type="tenant", target_id=tenant_id, tenant_id=tenant_id, reason=body.reason)
 
 
 @router.post("/organizations/{tenant_id}/reactivate")
@@ -124,11 +136,24 @@ async def _set_account(db: AsyncSession, staff: Staff, user_id: str, status: str
     return await _person(db, user)
 
 
+@risky("account.disable", "account.disable", "users.manage")
+async def _disable(db: AsyncSession, staff: Staff, p: Dict[str, Any]) -> Dict[str, Any]:
+    return await _set_account(db, staff, p["user_id"], "disabled", p["reason"])
+
+
 @router.post("/people/{user_id}/disable")
 async def disable(user_id: str, body: Reason, staff: Staff = Depends(require_staff("users.manage", recent=True)),
-                  db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
+                  db: AsyncSession = Depends(get_db_session)) -> Any:
     """Stops the person using Syruss at all (every organization, and the admin app) and forgets their browsers."""
-    return await _set_account(db, staff, user_id, "disabled", body.reason)
+    if user_id == staff.user_id:
+        raise HTTPException(status_code=409, detail="You can't disable your own account.")
+    user = await db.get(User, user_id)
+    if user is None or user.status == "deleted":
+        raise HTTPException(status_code=404, detail="No such account.")
+    if user.status == "disabled":
+        raise HTTPException(status_code=409, detail="The account is already disabled.")
+    return await act(db, staff, "account.disable", {"user_id": user_id, "reason": body.reason},
+                     summary=f"Disable the account of {user.display_name} ({user.email})", target_type="user", target_id=user_id, reason=body.reason)
 
 
 @router.post("/people/{user_id}/enable")

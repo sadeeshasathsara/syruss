@@ -153,6 +153,20 @@ STAFF_UPDATE = Kind(
     email=EmailSpec("staff_update", "{{ title }}"),
 )
 
+SUPPORT_ACCESS = Kind(
+    key="support_access",
+    variables=("organization", "staff", "reason", "until", "url"),
+    email=EmailSpec("support_access", "Syruss support opened {{ organization }}'s content"),
+    in_app=InAppSpec(
+        type="org.support_access",
+        title="Syruss support can see this organization's content until {{ until }}",
+        body="{{ staff }}: {{ reason }}",
+        link="{{ url }}",
+        severity="warning",
+        scope="tenant",
+    ),
+)
+
 STAFF_ATTENTION = Kind(
     key="staff_attention",
     variables=("title", "body", "organization", "url"),
@@ -215,4 +229,4 @@ CREDIT_NOTE_ISSUED = Kind(
 )
 
 KINDS: Dict[str, Kind] = {k.key: k for k in (INVITATION, EMAIL_CODE, DEVICE_CODE, DEVICE_ADDED, BILLING_ALERT, INVOICE_ISSUED, PAYMENT_RECEIVED,
-                                             PAYMENT_SUBMITTED, PAYMENT_REJECTED, INVOICE_REMINDER, PLAN_LAPSED, CREDIT_NOTE_ISSUED, STAFF_ATTENTION, STAFF_INVITATION, STAFF_UPDATE)}
+                                             PAYMENT_SUBMITTED, PAYMENT_REJECTED, INVOICE_REMINDER, PLAN_LAPSED, CREDIT_NOTE_ISSUED, STAFF_ATTENTION, STAFF_INVITATION, STAFF_UPDATE, SUPPORT_ACCESS)}

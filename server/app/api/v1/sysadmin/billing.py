@@ -17,6 +17,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.billing import file_response
 from app.api.v1.sysadmin.access import Staff, record, require_staff
+from app.api.v1.sysadmin.approvals import act, risky
 from app.api.v1.sysadmin.common import names, tell_organization
 from app.core.database import get_db_session
 from app.core.downloads import content_disposition, csv_row
@@ -314,8 +315,9 @@ class PlanIn(BaseModel):
     reason: str = Field(..., min_length=5, max_length=1000)
 
 
-@router.post("/organizations/{tenant_id}/plan")
-async def change_plan(tenant_id: str, body: PlanIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+@risky("billing.plan", "billing.giveaways", "billing.manage")
+async def _change_plan(db: AsyncSession, staff: Staff, p: Dict[str, Any]):
+    tenant_id, body = p["tenant_id"], PlanIn(**{k: v for k, v in p.items() if k != "tenant_id"})
     await _tenant(db, tenant_id)
     plan = await _item(db, body.plan_id)
     try:
@@ -328,6 +330,15 @@ async def change_plan(tenant_id: str, body: PlanIn, staff: Staff = Depends(CHANG
     tell_organization(db, staff, tenant_id, text, body.reason)
     await db.commit()
     return {"done": text}
+
+
+@router.post("/organizations/{tenant_id}/plan")
+async def change_plan(tenant_id: str, body: PlanIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """Moves the organization to a plan by hand (it may need a second owner's approval)."""
+    tenant = await _tenant(db, tenant_id)
+    plan = await _item(db, body.plan_id)
+    return await act(db, staff, "billing.plan", {"tenant_id": tenant_id, **body.model_dump()}, summary=f"Move {tenant.name} to the {plan.name} plan",
+                     target_type="organization", target_id=tenant_id, tenant_id=tenant_id, reason=body.reason)
 
 
 class AddonIn(BaseModel):
@@ -422,9 +433,9 @@ class CreditsIn(BaseModel):
     reason: str = Field(..., min_length=5, max_length=1000)
 
 
-@router.post("/organizations/{tenant_id}/credits")
-async def change_credits(tenant_id: str, body: CreditsIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
-    """Gives credits (a grant, a refund for pages the platform got wrong) or corrects the balance."""
+@risky("billing.credits", "billing.giveaways", "billing.manage")
+async def _change_credits(db: AsyncSession, staff: Staff, p: Dict[str, Any]):
+    tenant_id, body = p["tenant_id"], CreditsIn(**{k: v for k, v in p.items() if k != "tenant_id"})
     await _tenant(db, tenant_id)
     try:
         await credits.add(db, tenant_id=tenant_id, delta=body.pages, kind=body.kind, created_by=staff.name, reason=body.reason)
@@ -436,6 +447,16 @@ async def change_credits(tenant_id: str, body: CreditsIn, staff: Staff = Depends
     tell_organization(db, staff, tenant_id, text, body.reason)
     await db.commit()
     return {"done": text, "balance": await credits.balance(db, tenant_id)}
+
+
+@router.post("/organizations/{tenant_id}/credits")
+async def change_credits(tenant_id: str, body: CreditsIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """Gives credits (a grant, a refund for pages the platform got wrong) or corrects the balance (it may need a second owner's approval)."""
+    tenant = await _tenant(db, tenant_id)
+    verb = "Give" if body.pages > 0 else "Take back"
+    return await act(db, staff, "billing.credits", {"tenant_id": tenant_id, **body.model_dump()},
+                     summary=f"{verb} {abs(body.pages):,} prepaid pages ({body.kind}) for {tenant.name}",
+                     target_type="organization", target_id=tenant_id, tenant_id=tenant_id, reason=body.reason)
 
 
 # ---------------------------------------------------------------------------
@@ -718,10 +739,10 @@ async def discard_invoice(invoice_id: str, body: Reasoned, staff: Staff = Depend
     return {"discarded": invoice_id}
 
 
-@router.post("/invoices/{invoice_id}/void")
-async def void_invoice(invoice_id: str, body: Reasoned, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
-    """Cancels an issued invoice nothing was paid on. It stays on record with its number."""
-    invoice = await _invoice(db, invoice_id)
+@risky("billing.void", "billing.corrections", "billing.manage")
+async def _void_invoice(db: AsyncSession, staff: Staff, p: Dict[str, Any]):
+    body = Reasoned(reason=p["reason"])
+    invoice = await _invoice(db, p["invoice_id"])
     try:
         await invoices.void(db, invoice, reason=body.reason)
     except ValueError as exc:
@@ -732,10 +753,18 @@ async def void_invoice(invoice_id: str, body: Reasoned, staff: Staff = Depends(C
     return invoices.describe(invoice)
 
 
-@router.post("/invoices/{invoice_id}/switch-on")
-async def switch_on_early(invoice_id: str, body: Reasoned, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
-    """Switches on what an unpaid invoice sells now, for an organization trusted to pay it; it stays waiting for payment."""
+@router.post("/invoices/{invoice_id}/void")
+async def void_invoice(invoice_id: str, body: Reasoned, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """Cancels an issued invoice nothing was paid on. It stays on record with its number (it may need a second owner's approval)."""
     invoice = await _invoice(db, invoice_id)
+    return await act(db, staff, "billing.void", {"invoice_id": invoice_id, "reason": body.reason}, summary=f"Void invoice {invoice.number}",
+                     target_type="invoice", target_id=invoice_id, tenant_id=invoice.tenant_id, reason=body.reason)
+
+
+@risky("billing.switch_on", "billing.giveaways", "billing.manage")
+async def _switch_on_early(db: AsyncSession, staff: Staff, p: Dict[str, Any]):
+    body = Reasoned(reason=p["reason"])
+    invoice = await _invoice(db, p["invoice_id"])
     try:
         done = await invoices.switch_on_early(db, invoice, by_id=staff.user_id, by_name=staff.name, reason=body.reason)
     except ValueError as exc:
@@ -745,6 +774,15 @@ async def switch_on_early(invoice_id: str, body: Reasoned, staff: Staff = Depend
     tell_organization(db, staff, invoice.tenant_id, text, body.reason)
     await db.commit()
     return {**invoices.describe(invoice), "done": done}
+
+
+@router.post("/invoices/{invoice_id}/switch-on")
+async def switch_on_early(invoice_id: str, body: Reasoned, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """Switches on what an unpaid invoice sells now, for an organization trusted to pay it; it stays waiting for payment."""
+    invoice = await _invoice(db, invoice_id)
+    return await act(db, staff, "billing.switch_on", {"invoice_id": invoice_id, "reason": body.reason},
+                     summary=f"Switch on invoice {invoice.number} before it's paid", target_type="invoice", target_id=invoice_id,
+                     tenant_id=invoice.tenant_id, reason=body.reason)
 
 
 class InvoicePaymentIn(BaseModel):
@@ -784,10 +822,10 @@ class CreditNoteIn(BaseModel):
     refund_reference: Optional[str] = Field(None, max_length=200, description="For a refund staff made: the transfer or receipt number")
 
 
-@router.post("/invoices/{invoice_id}/credit-notes", status_code=201)
-async def issue_credit_note(invoice_id: str, body: CreditNoteIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
-    """Corrects an issued invoice by an amount, with its own number and PDF; optionally refunding it from a payment."""
-    invoice = await _invoice(db, invoice_id)
+@risky("billing.credit_note", "billing.corrections", "billing.manage")
+async def _issue_credit_note(db: AsyncSession, staff: Staff, p: Dict[str, Any]):
+    body = CreditNoteIn(**{k: v for k, v in p.items() if k != "invoice_id"})
+    invoice = await _invoice(db, p["invoice_id"])
     payment = await db.get(BillingPayment, body.refund_payment_id) if body.refund_payment_id else None
     if body.refund_payment_id and payment is None:
         raise HTTPException(status_code=404, detail="No such payment.")
@@ -805,6 +843,21 @@ async def issue_credit_note(invoice_id: str, body: CreditNoteIn, staff: Staff = 
     await db.commit()
     await notices.credit_note_issued(note.id)
     return corrections.note_dict(note, await corrections.refunds_of(db, credit_note_id=note.id))
+
+
+@router.post("/invoices/{invoice_id}/credit-notes", status_code=201)
+async def issue_credit_note(invoice_id: str, body: CreditNoteIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)):
+    """
+    Corrects an issued invoice by an amount, with its own number and PDF; optionally refunding it from a payment (it
+    may need a second owner's approval).
+    """
+    invoice = await _invoice(db, invoice_id)
+    if body.refund_payment_id and await db.get(BillingPayment, body.refund_payment_id) is None:
+        raise HTTPException(status_code=404, detail="No such payment.")
+    amount = money(body.amount_cents, invoice.currency)
+    summary = f"Issue a credit note of {amount} on invoice {invoice.number}" + (" and refund it" if body.refund_payment_id else "")
+    return await act(db, staff, "billing.credit_note", {"invoice_id": invoice_id, **body.model_dump()}, summary=summary,
+                     target_type="invoice", target_id=invoice_id, tenant_id=invoice.tenant_id, reason=body.reason)
 
 
 @router.get("/credit-notes/{note_id}/pdf", dependencies=[VIEW])

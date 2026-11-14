@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
+import { ApprovalRulePanel } from "@/components/ops/ApprovalRule";
 import { ReasonAction, field } from "@/components/ops/Bits";
 import { useStaff } from "@/components/shell/AdminFrame";
 import { Bar, ErrorNote, PageHeader, Panel } from "@/components/ui/Blocks";
@@ -11,6 +12,7 @@ import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
 import { cn, dateTime } from "@/lib/format";
 import type { Announcement, PlatformControls, Severity, SwitchName } from "@/lib/types";
+import { Problem } from "@/components/ui/Problem";
 
 const SWITCHES: { key: SwitchName; label: string; on: string; off: string }[] = [
   { key: "signups", label: "New sign-ups", on: "People can create accounts and organizations.", off: "Paused: new accounts and organizations are refused. Invitations still work." },
@@ -38,6 +40,7 @@ export default function PlatformPage() {
       {!c ? <Bar className="h-64 w-full" /> : (
         <>
           <Maintenance c={c} manage={manage} onDone={refresh} />
+          <ApprovalRulePanel />
           <Panel title="Switches" bodyClassName="p-0">
             <ul className="flex flex-col divide-y divide-rule">
               {SWITCHES.map((s) => {
@@ -116,7 +119,7 @@ function Lessons({ manage }: { manage: boolean }) {
           <Button type="submit" size="sm" disabled={content.trim().length < 5 || add.isPending}>Add it</Button>
         </form>
       )}
-      {(set.error ?? add.error) && <p className="mt-2 text-meta text-negative">{(set.error ?? add.error)!.message}</p>}
+      {(set.error ?? add.error) && <Problem error={(set.error ?? add.error)!} className="mt-2" />}
     </Panel>
   );
 }
@@ -212,7 +215,7 @@ function NewAnnouncement({ onDone }: { onDone: () => void }) {
         <input type="datetime-local" value={ends} onChange={(e) => setEnds(e.target.value)} className={field} />
       </label>
       <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={1000} placeholder="Why (kept in the audit log)" aria-label="Why" className={cn(field, "@3xl:col-span-2")} />
-      {create.error && <p className="text-meta text-negative @3xl:col-span-2">{create.error.message}</p>}
+      {create.error && <Problem error={create.error} className="@3xl:col-span-2" />}
       <div className="@3xl:col-span-2"><Button type="submit" size="sm" variant="primary" disabled={!ready || create.isPending}>Announce it</Button></div>
     </form>
   );

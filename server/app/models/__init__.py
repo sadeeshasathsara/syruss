@@ -47,7 +47,7 @@ from app.models.page_view import AgentPageView
 from app.models.system_lesson import SystemLesson
 from app.models.platform import (
     OrganizationNote, PlatformAccessGrant, PlatformAnnouncement, PlatformAuditEntry, PlatformSetting, PlatformStaff,
-    PlatformStaffInvitation,
+    PlatformStaffInvitation, PlatformApproval,
 )
 from app.models.billing import (
     BankAccount, BillingPayment, BillingProfile, BillingRefund, BillingSequence, BillingSettings, CardCheckout, CatalogItem, CreditEntry,
