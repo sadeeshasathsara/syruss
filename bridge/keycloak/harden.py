@@ -221,6 +221,20 @@ def ensure_reference(token: str, execution: dict, reference: str, check_only: bo
     return [f"flow step '{execution['displayName']}': reported in the token as amr '{reference}'"]
 
 
+def ensure_account_console_off(token: str, check_only: bool) -> list:
+    """
+    Keycloak's own account pages are off: people manage their password, two-step verification and Google in Syruss's
+    settings, which start single Keycloak steps (Application Initiated Actions) and read Keycloak's account API with the
+    person's own token. That API belongs to the "account" client, which stays on.
+    """
+    [console] = call("GET", f"/admin/realms/{REALM}/clients?clientId=account-console", token) or [None]
+    if not console or not console.get("enabled", True):
+        return []
+    if not check_only:
+        call("PUT", f"/admin/realms/{REALM}/clients/{console['id']}", token, {**console, "enabled": False})
+    return ["client account-console: Keycloak's own account pages are turned off (Syruss's settings replace them)"]
+
+
 def main() -> int:
     check_only = "--check" in sys.argv
     token = call("POST", "/realms/master/protocol/openid-connect/token",
@@ -233,6 +247,7 @@ def main() -> int:
     for name, (now, want) in {**changes, **{f"headers.{k}": v for k, v in header_changes.items()}}.items():
         print(f"  {name}: {now!r} -> {want!r}")
     admin_sign_in = ensure_admin_sign_in(token, check_only)
+    admin_sign_in += ensure_account_console_off(token, check_only)
     for line in admin_sign_in:
         print(f"  {line}")
     if not changes and not header_changes and not admin_sign_in:
