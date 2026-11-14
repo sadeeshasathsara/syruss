@@ -67,3 +67,11 @@ export function useTheme(): "light" | "dark" {
     () => "light",
   );
 }
+
+/**
+ * A full browser navigation, for addresses that aren't pages this app renders on the client: the sign-in routes, the
+ * site, or a page that must start without this app's state (after closing an organization or deleting the account).
+ */
+export function loadPage(address: string): void {
+  window.location.assign(new URL(address, window.location.origin).href);
+}

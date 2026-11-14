@@ -32,7 +32,7 @@ export default function StaffPage() {
         subtitle={manage ? "Who can use these tools, and what each role may do. Changes ask you to sign in again first." : "Who can use these tools. Only an owner changes this list."}
       />
       {staff.isError && <ErrorNote message="Couldn't load the staff." onRetry={() => staff.refetch()} />}
-      {manage && <InviteStaff onDone={done} />}
+      <AddingStaff />
       <Invitations manage={manage} onDone={done} />
 
       <Panel title="On the staff" aside={staff.data ? <span className="num">{staff.data.items.length}{dueCount(staff.data.items) ? ` · ${dueCount(staff.data.items)} to review` : ""}</span> : undefined} bodyClassName="p-0">
@@ -115,50 +115,20 @@ function AccessPolicy({ policy, manage, onDone }: { policy: StaffPolicy; manage:
   );
 }
 
-/** Inviting anyone by email: they need no account yet. The invitation is always emailed (and its link shown here too). */
-function InviteStaff({ onDone }: { onDone: () => void }) {
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState<StaffRole>("viewer");
-  const [reason, setReason] = useState("");
-  const [sent, setSent] = useState<{ email: string; ok: boolean; link: string } | null>(null);
-  const invite = useMutation({
-    mutationFn: () => api.staff.invite({ email: email.trim(), role, reason: reason.trim() }),
-    onSuccess: (r) => {
-      setSent({ email: r.email, ok: r.email_sent, link: r.link });
-      setEmail("");
-      setReason("");
-      onDone();
-    },
-  });
+/** Nobody is added from this app: an operator adds staff on the server, which also makes their sign-in. */
+function AddingStaff() {
   return (
-    <Panel title="Invite to the staff">
-      <form className="flex flex-col gap-3 @3xl:flex-row @3xl:items-end" onSubmit={(e) => { e.preventDefault(); if (email.trim() && reason.trim().length >= 5) invite.mutate(); }}>
-        <label className="flex min-w-0 flex-1 flex-col gap-1 text-meta text-muted">
-          Their email
-          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={field} placeholder="name@company.com" autoComplete="off" />
-        </label>
-        <label className="flex flex-col gap-1 text-meta text-muted">
-          Role
-          <select value={role} onChange={(e) => setRole(e.target.value as StaffRole)} className={field}>
-            {ROLES.map((r) => <option key={r} value={r}>{title(r)}</option>)}
-          </select>
-        </label>
-        <label className="flex min-w-0 flex-1 flex-col gap-1 text-meta text-muted">
-          Why (kept in the audit log)
-          <input value={reason} onChange={(e) => setReason(e.target.value)} minLength={5} maxLength={500} required className={field} />
-        </label>
-        <Button type="submit" variant="primary" disabled={!email.trim() || reason.trim().length < 5 || invite.isPending}>{invite.isPending ? "Inviting…" : "Send the invitation"}</Button>
-      </form>
-      {invite.error && <Problem error={invite.error} className="mt-2" />}
-      {sent && (
-        <p className={cn("mt-2 text-meta", sent.ok ? "text-muted" : "text-negative")}>
-          {sent.ok ? `Invitation emailed to ${sent.email}.` : `The email to ${sent.email} couldn't be sent. Send it again, or give them this link yourself:`}{" "}
-          {!sent.ok && <span className="break-all font-mono text-ink">{sent.link}</span>}
-        </p>
-      )}
+    <Panel title="Adding someone">
+      <p className="text-body text-muted">
+        People are added to the staff from the server, not from this app, and this app&apos;s sign-in page creates no accounts. On the
+        server, run:
+      </p>
+      <pre className="mt-2 overflow-x-auto rounded-control bg-raised px-3 py-2 font-mono text-meta text-ink">syruss staff add name@company.com --role support</pre>
       <p className="mt-2 text-meta text-muted">
-        They need no Syruss account. They sign in (or create a sign-in) with that address, with a password and a one-time code. A staff
-        account works only in this app: if the address already has a customer account, they&apos;re shown what accepting would delete first.
+        In production: <span className="font-mono">docker compose exec -e KEYCLOAK_URL=http://keycloak:8080 -e KEYCLOAK_ADMIN -e KEYCLOAK_ADMIN_PASSWORD server python -m app.invite_staff name@company.com support</span>.
+        It makes their sign-in if they have none (Keycloak emails them a link to choose a password and set up a one-time code) and emails the
+        invitation, which they accept here. A staff account works only in this app: if the address already has a customer account, they&apos;re
+        shown what accepting would delete first. Running it again sends both again.
       </p>
     </Panel>
   );
@@ -166,7 +136,6 @@ function InviteStaff({ onDone }: { onDone: () => void }) {
 
 function Invitations({ manage, onDone }: { manage: boolean; onDone: () => void }) {
   const list = useQuery({ queryKey: ["staff", "invitations"], queryFn: api.staff.invitations });
-  const resend = useMutation({ mutationFn: (id: string) => api.staff.resendInvitation(id), onSuccess: onDone });
   const revoke = useMutation({ mutationFn: (id: string) => api.staff.revokeInvitation(id), onSuccess: onDone });
   if (!list.data?.length) return null;
   return (
@@ -182,12 +151,11 @@ function Invitations({ manage, onDone }: { manage: boolean; onDone: () => void }
               </p>
             </div>
             {i.status === "expired" && <Pill tone="warning">Expired</Pill>}
-            {manage && <Button size="sm" onClick={() => resend.mutate(i.id)} disabled={resend.isPending}>Send again</Button>}
             {manage && <Button size="sm" variant="danger" onClick={() => revoke.mutate(i.id)} disabled={revoke.isPending}>Withdraw</Button>}
           </li>
         ))}
       </ul>
-      {(resend.error ?? revoke.error) && <Problem error={(resend.error ?? revoke.error)!} className="px-4 pb-3" />}
+      {revoke.error && <Problem error={revoke.error} className="px-4 pb-3" />}
     </Panel>
   );
 }

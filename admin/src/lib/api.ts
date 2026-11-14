@@ -6,6 +6,7 @@ import type {
   StaffActionPage, StaffInvitation, StaffList, StaffMe, StaffMember, StaffRole, JoinView, SystemLesson,
   Approval, ApprovalList, ApprovalRule, StaffPolicy,
 } from "./types";
+import { loadPage } from "./navigate";
 
 /** Typed client for the platform tools (/api/v1/sysadmin), through this app's own proxy. */
 
@@ -49,7 +50,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (res.status === 401 && typeof window !== "undefined") {
     // Signed out, or the session ended: sign in again (with the one-time code) and come back to this page.
-    window.location.assign(`/api/auth/login?returnTo=${encodeURIComponent(here())}`);
+    loadPage(`/api/auth/login?returnTo=${encodeURIComponent(here())}`);
   }
   if (res.status === 202) {
     const body = (await res.json().catch(() => ({}))) as { approval?: Approval; message?: string };
@@ -69,7 +70,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const code = (detail as { code?: string } | undefined)?.code;
     if (res.status === 403 && code === "reauth_required" && typeof window !== "undefined") {
       // A platform change: sign in again first, then come back to this page to make it.
-      window.location.assign(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(here())}`);
+      loadPage(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(here())}`);
     }
     throw new ApiError(res.status, messageFrom(detail, `Request failed (${res.status}).`), code);
   }
@@ -86,10 +87,6 @@ export const api = {
   staff: {
     list: () => request<StaffList>("/staff"),
     invitations: () => request<StaffInvitation[]>("/staff/invitations"),
-    invite: (body: { email: string; role: StaffRole; reason: string }) =>
-      request<StaffInvitation & { email_sent: boolean; link: string }>("/staff/invitations", { method: "POST", body: json(body) }),
-    resendInvitation: (id: string) =>
-      request<StaffInvitation & { email_sent: boolean; link: string }>(`/staff/invitations/${encodeURIComponent(id)}/resend`, { method: "POST" }),
     revokeInvitation: (id: string) => request<void>(`/staff/invitations/${encodeURIComponent(id)}`, { method: "DELETE" }),
     viewJoin: (token: string) => request<JoinView>(`/staff/join/${encodeURIComponent(token)}`),
     sendJoinCode: (token: string) => request<unknown>(`/staff/join/${encodeURIComponent(token)}/verify/send`, { method: "POST" }),
