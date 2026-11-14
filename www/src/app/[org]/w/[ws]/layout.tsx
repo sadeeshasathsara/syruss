@@ -13,7 +13,7 @@ import { NavList, OrgSwitcher, WorkspaceSwitcher, type NavItem } from "@/compone
 import { Loader } from "@/components/shell/Loader";
 import { OrgFrame } from "@/components/shell/OrgFrame";
 import { SETTINGS, settingsHref } from "@/components/settings/sections";
-import { Bar, ErrorNote } from "@/components/ui/Blocks";
+import { ErrorNote } from "@/components/ui/Blocks";
 import { ApiError, api } from "@/lib/api";
 import { useAccess } from "@/lib/access";
 import { LiveProvider } from "@/lib/live";
@@ -101,6 +101,7 @@ function navFor(org: string, w: Workspace, sees: (p?: Permission) => boolean, sc
     ["documents.view", { href: `${base}/template`, label: "Template", icon: LayoutTemplate, also: [`${base}/setup`], children: [
       { href: `${base}/template`, label: "Current version" },
       { href: `${base}/template?tab=versions`, label: "Version history" },
+      { href: `${base}/template/rules`, label: "Rules" },
       { href: `${base}/template?tab=quality`, label: "Quality" },
       ...(sees("template.publish") ? [{ href: `${base}/setup`, label: "Refine with samples" }] : []),
     ] }],

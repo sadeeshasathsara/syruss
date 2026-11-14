@@ -5,11 +5,10 @@ A browser can't send an Authorization header on a WebSocket and a token must nev
 web app's server asks for a ticket here (as the signed-in person), and the browser opens the socket with it.
 A ticket is bound to one person and one channel, lasts seconds, and works once.
 
-Channels: `user:{id}` (your notifications), `tenant:{id}` (your organization), `template:{id}` (a workspace,
-for its members), a conversation id (a private chat is its person's alone), a document id (workspace
-members who can see documents).
+Channels: `user:{id}` (your notifications), `template:{id}` (a workspace, for its members), a conversation id (a
+private chat is its person's alone), a document id (workspace members who can see documents). There is no
+organization-wide channel: being in an organization opens no workspace's data, so no live event goes to all of it.
 """
-import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -20,6 +19,7 @@ from app.core.auth.context import AuthContext
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.scope import membership
+from app.core.secrets import token_hash
 from app.models.conversation import Conversation
 from app.models.document import Document
 from app.models.identity import WsTicket
@@ -29,15 +29,11 @@ from app.models.template import DocumentTemplate
 AUDIENCE_PERMISSION = {"admin": "template.publish", "reviewer": "documents.review"}
 
 
-def _hash(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
-
-
 async def can_listen(db: AsyncSession, auth: AuthContext, channel: str) -> bool:
     if channel.startswith("user:"):
         return channel == f"user:{auth.user_id}"
     if channel.startswith("tenant:"):
-        return channel == f"tenant:{auth.tenant_id}"
+        return False
     if channel.startswith("template:"):
         template = await db.get(DocumentTemplate, channel.removeprefix("template:"))
         return bool(template and template.tenant_id == auth.tenant_id and await membership(db, template.id, auth.user_id))
@@ -72,7 +68,7 @@ async def issue_ticket(db: AsyncSession, auth: AuthContext, channel: str) -> Opt
     now = datetime.now(timezone.utc)
     await db.execute(delete(WsTicket).where(WsTicket.expires_at < now - timedelta(minutes=5)))
     token = secrets.token_urlsafe(24)
-    db.add(WsTicket(token_hash=_hash(token), user_id=auth.user_id, tenant_id=auth.tenant_id, channel=channel,
+    db.add(WsTicket(token_hash=token_hash(token), user_id=auth.user_id, tenant_id=auth.tenant_id, channel=channel,
                     expires_at=now + timedelta(seconds=settings.WS_TICKET_TTL_SECONDS)))
     await db.commit()
     return token
@@ -80,18 +76,18 @@ async def issue_ticket(db: AsyncSession, auth: AuthContext, channel: str) -> Opt
 
 async def ticket_channel(db: AsyncSession, token: str) -> Optional[str]:
     """The channel a ticket was issued for (the notifications socket learns its channel from its ticket)."""
-    return (await db.execute(select(WsTicket.channel).where(WsTicket.token_hash == _hash(token)))).scalar_one_or_none()
+    return (await db.execute(select(WsTicket.channel).where(WsTicket.token_hash == token_hash(token)))).scalar_one_or_none()
 
 
 async def redeem_ticket(db: AsyncSession, token: str, channel: str) -> Optional[WsTicket]:
     """Marks the ticket used (once, atomically) and returns it if it was valid for this channel."""
     now = datetime.now(timezone.utc)
     result = await db.execute(
-        update(WsTicket).where(WsTicket.token_hash == _hash(token), WsTicket.used_at.is_(None), WsTicket.expires_at > now,
+        update(WsTicket).where(WsTicket.token_hash == token_hash(token), WsTicket.used_at.is_(None), WsTicket.expires_at > now,
                                WsTicket.channel == channel).values(used_at=now).returning(WsTicket.token_hash)
     )
     if result.first() is None:
         await db.commit()
         return None
     await db.commit()
-    return (await db.execute(select(WsTicket).where(WsTicket.token_hash == _hash(token)))).scalar_one()
+    return (await db.execute(select(WsTicket).where(WsTicket.token_hash == token_hash(token)))).scalar_one()

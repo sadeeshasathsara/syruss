@@ -27,6 +27,10 @@ function staleKeys(e: LiveEvent): string[][] {
       return [["documents"], ["reviews"], ["workspace"], ["extraction"], ["screen-run"]];
     case "screen_changed":
       return [["screens"], ["screen"], ["screen-run"]];
+    case "rule_changed":
+      return [["rules"], ["rule"]];
+    case "rule_ideas":
+      return [["rules"]];
     case "agent_question":
       return [["questions"], ["workspace"]];
     case "agent_proposal":
@@ -36,6 +40,8 @@ function staleKeys(e: LiveEvent): string[][] {
       return [["thread"]];
     case "agent_conversation":
       return [["conversations"], ["conversation"], ["workspace"], ["questions"]];
+    case "conversation_renamed":
+      return [["conversations"], ["conversation"]];
     case "intake_received":
       return [["channels"], ["connections"]];
     case "delivery_changed":

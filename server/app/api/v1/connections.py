@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
 from app.core.permissions import Access, require
 from app.models.delivery import Delivery, Destination
+from app.services.document_key import document_label
 from app.models.document import Document
 from app.models.intake import IntakeChannel, IntakeEvent
 
@@ -42,7 +43,7 @@ async def overview(access: Access = Depends(require("integrations.manage")), db:
         .where(Delivery.template_id == t, Delivery.status == "dead").order_by(Delivery.updated_at.desc()).limit(5)
     )).all()
     for d, dest, doc in dead:
-        problems.append({"kind": "delivery_dead", "title": f"{doc.original_filename} could not be sent to {dest.name}", "detail": d.last_error, "delivery_id": d.id, "destination_id": dest.id})
+        problems.append({"kind": "delivery_dead", "title": f"{document_label(doc)} could not be sent to {dest.name}", "detail": d.last_error, "delivery_id": d.id, "destination_id": dest.id})
     for c in channels:
         if c.status == "paused":
             problems.append({"kind": "channel_paused", "title": f"{c.name} is paused", "detail": "Documents sent through it are refused.", "channel_id": c.id, "slug": c.slug})
@@ -55,7 +56,7 @@ async def overview(access: Access = Depends(require("integrations.manage")), db:
         "publish": {"destinations": len(destinations), "active": sum(1 for d in destinations if d.status == "active"), "paused": sum(1 for d in destinations if d.status == "paused"),
                     "delivered_24h": delivered_24h, "waiting": by_status.get("pending", 0) + by_status.get("retrying", 0) + by_status.get("sending", 0),
                     "held": by_status.get("held", 0), "dead": by_status.get("dead", 0)},
-        "held": [{"delivery_id": d.id, "reason": d.hold_reason, "destination": dest.name, "document": {"id": doc.id, "filename": doc.original_filename, "external_id": doc.external_id}, "since": d.created_at}
+        "held": [{"delivery_id": d.id, "reason": d.hold_reason, "destination": dest.name, "document": {"id": doc.id, "filename": doc.original_filename, "display_name": doc.display_name, "external_id": doc.external_id}, "since": d.created_at}
                  for d, dest, doc in held_rows],
         "held_reasons": [{"reason": r, "count": n} for r, n in sorted(reasons.items(), key=lambda x: -x[1])],
         "problems": problems,

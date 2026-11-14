@@ -39,11 +39,18 @@ from app.models.conversation import Conversation, ChatMessage
 from app.models.graph import EntitySighting
 from app.models.jobs import WorkspaceJob
 from app.models.screen import WorkspaceScreen
+from app.models.rule import TemplateRule
 from app.models.intake import IdempotencyRecord, IntakeChannel, IntakeEvent, IntakeUpload
 from app.models.delivery import Delivery, DeliveryAttempt, Destination
 from app.models.evaluation import EvalRun, EvalRunItem
 from app.models.page_view import AgentPageView
 from app.models.system_lesson import SystemLesson
+from app.models.platform import PlatformAccessGrant, PlatformAuditEntry, PlatformStaff
+from app.models.billing import (
+    BankAccount, BillingPayment, BillingProfile, BillingRefund, BillingSequence, BillingSettings, CardCheckout, CatalogItem, CreditEntry,
+    CreditNote, Invoice,
+    InvoiceLine, OrgLimitOverride, OrgSubscription, OrgSubscriptionAddon, PaymentFile, PaymentSubmission, StripeEvent, TaxRate, UsageEvent,
+)
 
 __all__ = [
     "Tenant",
@@ -88,4 +95,27 @@ __all__ = [
     "EvalRunItem",
     "AgentPageView",
     "SystemLesson",
+    "PlatformStaff",
+    "PlatformAuditEntry",
+    "PlatformAccessGrant",
+    "CatalogItem",
+    "OrgSubscription",
+    "OrgSubscriptionAddon",
+    "OrgLimitOverride",
+    "UsageEvent",
+    "CreditEntry",
+    "BillingPayment",
+    "BillingProfile",
+    "BillingSettings",
+    "BankAccount",
+    "TaxRate",
+    "BillingSequence",
+    "Invoice",
+    "InvoiceLine",
+    "PaymentSubmission",
+    "PaymentFile",
+    "CardCheckout",
+    "StripeEvent",
+    "CreditNote",
+    "BillingRefund",
 ]

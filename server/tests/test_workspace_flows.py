@@ -242,7 +242,7 @@ async def test_agent_cannot_commit_an_identity_that_contradicts_known_records(cl
 
 
 def test_identity_fields_must_exist():
-    from app.services.rule_engine import check_rule_definitions
+    from app.services.rules.engine import check_rule_definitions
     schema = copy.deepcopy(SCHEMA)
     schema["objects"][1]["identity"] = {"id_field": "badge", "label_field": "name"}
     assert any("identity.id_field" in p for p in check_rule_definitions(schema))

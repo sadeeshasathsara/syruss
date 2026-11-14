@@ -4,6 +4,7 @@ import { Link2, Plus, Trash2 } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
+import { DocumentKeyFields, pruneIdentification } from "@/components/workspace/DocumentKeyEditor";
 import { humanize } from "@/lib/format";
 import type { TemplateField, TemplateObject, TemplateSchema } from "@/lib/types";
 
@@ -40,14 +41,33 @@ function identityTypes(schema: TemplateSchema): string[] {
 export function SchemaEditor({ schema, onChange }: { schema: TemplateSchema; onChange: (s: TemplateSchema) => void }) {
   const entityTypes = identityTypes(schema);
 
+  const emit = (next: TemplateSchema) => onChange(pruneIdentification(next));
+
   const setObject = (i: number, next: TemplateObject | null) => {
     const objects = [...schema.objects];
     if (next) objects[i] = next;
     else objects.splice(i, 1);
     const removedType = next ? null : schema.objects[i].type;
-    onChange({
+    // A renamed field keeps its place in the key.
+    const before = schema.objects[i]?.fields ?? [];
+    const after = next?.fields ?? [];
+    const name = (f: string | TemplateField) => (typeof f === "string" ? f : f.name);
+    const renames = next && before.length === after.length
+      ? before.map((f, fi) => [name(f), name(after[fi])] as const).filter(([from, to]) => from !== to)
+      : [];
+    const identification = schema.identification && renames.length
+      ? {
+          ...schema.identification,
+          parts: schema.identification.parts.map((p) => {
+            const hit = renames.find(([from]) => p.object === schema.objects[i].type && p.field === from);
+            return hit ? { ...p, field: hit[1] } : p;
+          }),
+        }
+      : schema.identification;
+    emit({
       ...schema,
       objects,
+      identification,
       validation_rules: removedType ? (schema.validation_rules ?? []).filter((r) => r.object !== removedType) : schema.validation_rules,
     });
   };
@@ -244,6 +264,11 @@ export function SchemaEditor({ schema, onChange }: { schema: TemplateSchema; onC
           );
         })}
       </div>
+
+      <section className="rounded-card border border-border bg-card px-4 py-3">
+        <h3 className="mb-2 text-section font-semibold text-ink">How documents are named</h3>
+        <DocumentKeyFields schema={schema} onChange={(identification) => emit({ ...schema, identification })} />
+      </section>
 
       {(schema.validation_rules?.length ?? 0) > 0 && (
         <section>

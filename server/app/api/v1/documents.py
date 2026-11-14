@@ -1,14 +1,15 @@
-import io
+import asyncio
 import re
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
 from app.core.auth import AuthContext, get_current_auth
+from app.core.downloads import content_disposition
 from app.core.scope import TemplateScope, get_template_scope, resolve_template_scope
 from app.models.audit import AuditLog
 from app.models.document import DocumentRole, DocumentStatus
@@ -22,7 +23,9 @@ from app.services.conversation_service import conversation_service
 from app.services.storage_service import storage_service
 from app.core.permissions import Access, require
 from app.core.permissions import check_permission
-from app.services import extraction_log, quality_service, settings_service, workspace_events
+from app.services import document_key, extraction_log, quality_service, settings_service, workspace_events
+from app.services import pages as pages_of
+from app.services.billing import alerts as billing_alerts
 from app.services.record_service import record_service
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -51,13 +54,11 @@ async def upload_document(
         process = intake.auto_process
     if file.size is not None and file.size > intake.max_file_mb * 1_000_000:
         raise HTTPException(status_code=413, detail=f"Files can be up to {intake.max_file_mb} MB in this workspace.")
-    await settings_service.check_limit(db, scope.template_id, "documents_per_month")
     if process and not scope.template.active_version_id:
         raise HTTPException(status_code=409, detail="This workspace has no published template yet.")
-    doc = await document_service.store_document(
+    doc = await document_service.store_document(  # charges its pages, or refuses it when the plan's pages are used
         db, tenant_id=scope.tenant_id, template_id=scope.template_id, file=file, actor=scope.user_id, allowed_types=intake.allowed_types,
     )
-    await _warn_near_limit(db, scope)
     if process:
         doc.status = DocumentStatus.QUEUED
         enqueue_agent_event(
@@ -67,6 +68,7 @@ async def upload_document(
         )
     await db.commit()
     await workspace_events.dispatch(db)
+    await billing_alerts.check(scope.tenant_id)  # pages or credits running low: the organization's billing people hear once a period
     if process:
         agent_event_relay.notify()
     await db.refresh(doc)
@@ -76,26 +78,12 @@ async def upload_document(
     return doc
 
 
-async def _warn_near_limit(db: AsyncSession, scope: TemplateScope) -> None:
-    """Tells the people who manage billing when the month's documents reach 80% and 100% of the plan."""
-    plan = settings_service.PLANS[(await settings_service.get_settings(db, scope.template_id)).plan]
-    used = (await settings_service.usage(db, scope.template_id))["documents_this_month"]
-    limit = plan["documents_per_month"]
-    if used in (int(limit * 0.8), limit):
-        await workspace_events.emit(
-            db, tenant_id=scope.tenant_id, template_id=scope.template_id, type="usage.limit",
-            severity="warning" if used < limit else "error", path="settings/general/billing",
-            title=f"{used} of {limit} documents used this month",
-            body=f"The {plan['name']} plan allows {limit} documents a month." + (" New uploads are refused until next month." if used >= limit else ""),
-        )
-
-
 @router.get("", response_model=List[DocumentResponse], dependencies=[Depends(require("documents.view"))])
 async def list_documents(
     status: Optional[DocumentStatus] = None,
     role: DocumentRole = DocumentRole.DOCUMENT,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db_session),
     scope: TemplateScope = Depends(get_template_scope),
 ):
@@ -117,15 +105,29 @@ async def get_document(
 @router.get("/{document_id}/file", dependencies=[Depends(require("documents.view"))])
 async def download_document_file(
     document_id: str,
+    page: Optional[int] = Query(None, ge=1, description="A page of a document with several, as a JPEG"),
+    original: bool = Query(False, description="The file exactly as it was sent, whatever its type"),
     db: AsyncSession = Depends(get_db_session),
     scope: TemplateScope = Depends(get_template_scope),
 ):
+    """
+    The document to look at. A JPEG, PNG or WebP comes as it is. A PDF or TIFF (which a browser can't show in a picture
+    frame) comes as a JPEG of the page asked for, the first by default; `original=true` gives the file itself.
+    """
     doc = await document_service.get_document(db, scope.tenant_id, scope.template_id, document_id)
-    return StreamingResponse(
-        io.BytesIO(storage_service.download_file(doc.minio_object_key)),
-        media_type=doc.content_type,
-        headers={"Content-Disposition": f'inline; filename="{doc.original_filename}"'},
-    )
+    content = await asyncio.to_thread(storage_service.download_file, doc.minio_object_key)
+    if original or (page in (None, 1) and doc.content_type in pages_of.SHOWN_AS_IS):
+        return Response(content=content, media_type=doc.content_type, headers={
+            "Content-Disposition": content_disposition("attachment" if original else "inline", doc.original_filename)})
+    try:
+        picture = await asyncio.to_thread(pages_of.jpeg, content, doc.content_type, page or 1)
+    except IndexError:
+        raise HTTPException(status_code=404, detail="This document has no such page.")
+    except pages_of.Unreadable as exc:
+        raise HTTPException(status_code=415, detail=str(exc))
+    return Response(content=picture, media_type="image/jpeg", headers={
+        "Content-Disposition": content_disposition("inline", f"{doc.original_filename} (page {page or 1}).jpg"),
+        "Cache-Control": "private, max-age=300"})
 
 
 @router.post("/{document_id}/process", status_code=202)
@@ -211,15 +213,14 @@ def _correction_message(filename: str, changes: List[Dict[str, Any]], reasons: D
 async def correct_record(
     document_id: str,
     body: CorrectionIn,
-    x_conversation_id: Optional[str] = Header(None, alias="X-Conversation-ID"),
     db: AsyncSession = Depends(get_db_session),
     scope: TemplateScope = Depends(get_template_scope),
     _access: Access = Depends(require("documents.review")),
 ):
     """
     A person corrects a saved record. The corrected record must pass the template like any other.
-    What they changed, and why, goes to Syruss as their message in the chat they have open (or a
-    new one), so it can learn from it and answer.
+    What they changed, and why, goes to Syruss as their message in a new chat about this document,
+    so it can learn from it and answer there.
     """
     doc = await document_service.get_document(db, scope.tenant_id, scope.template_id, document_id)
     if doc.status != DocumentStatus.COMPLETED or doc.extraction is None:
@@ -239,13 +240,11 @@ async def correct_record(
         entity_id=doc.id, actor=scope.user_id, details={"changes": changes, "reasons": reasons},
     ))
     await _log(scope, doc, "corrected", f"{scope.username} corrected {len(changes)} field{'s' if len(changes) != 1 else ''}.", actor=scope.username)
-    conv_id = await conversation_service.linked_conversation(db, scope, x_conversation_id)
-    if conv_id is None:
-        conv_id = (await conversation_service.create_conversation(
-            db, scope, ConversationCreate(title=f"Correction: {doc.original_filename}"[:120]))).id
-    conv = await conversation_service.get_conversation(db, scope, conv_id)
+    # Its own chat, about this document: never the chat that happened to be open.
+    name = document_key.label_for(doc, scope.template.schema_definition, body.data)
+    conv = await conversation_service.create_conversation(db, scope, ConversationCreate(title=f"Correction: {name}"[:120]))
     msg = await conversation_service.post_user_message(db, scope, conv, ChatMessageCreate(
-        content=_correction_message(doc.original_filename, changes, reasons),
+        content=_correction_message(name, changes, reasons),
         context={"current_page": f"documents/{doc.id}", "kind": "record_correction", "document_id": doc.id},
     ))
     return {"status": doc.status.value, "conversation_id": conv.id, "message_id": msg.id, "changes": changes}

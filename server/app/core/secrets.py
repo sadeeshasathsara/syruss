@@ -23,6 +23,11 @@ def seal(values: Dict[str, Any]) -> str:
     return _fernet().encrypt(json.dumps(values).encode()).decode()
 
 
+def token_hash(token: str) -> str:
+    """How a bearer token (an API key, an invitation link, a ticket) is stored: only its SHA-256, never the token itself."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def unseal(token: str | None) -> Dict[str, Any]:
     if not token:
         return {}

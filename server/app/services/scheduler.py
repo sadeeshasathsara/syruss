@@ -25,8 +25,9 @@ from app.models.jobs import WorkspaceJob
 from app.models.screen import WorkspaceScreen
 from app.models.outbox import AgentEventOutbox
 from app.models.template import DocumentTemplate
-from app.services import graph_service, memory_service, settings_service, workspace_events
+from app.services import data_lifecycle, graph_service, memory_service, run_watch, settings_service, workspace_events
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
+from app.services.billing import dunning, service as billing
 
 logger = logging.getLogger("core.scheduler")
 
@@ -211,6 +212,14 @@ def job_dict(job: Optional[WorkspaceJob]) -> Optional[Dict[str, Any]]:
 
 async def tick(now: Optional[datetime] = None) -> None:
     """One pass over every published workspace; each workspace's jobs commit on their own."""
+    # the platform's own, across every workspace (renewals after periods have rolled on)
+    for watch in (run_watch.mark_lost, run_watch.prune_steps, billing.roll_periods, dunning.run, data_lifecycle.purge_closed):
+        async with AsyncSessionLocal() as db:
+            try:
+                await watch(db, now)
+            except Exception:
+                await db.rollback()
+                logger.exception("Run watch %s failed", watch.__name__)
     async with AsyncSessionLocal() as db:
         ids = (await db.execute(select(DocumentTemplate.id).where(DocumentTemplate.active_version_id.is_not(None)))).scalars().all()
     for template_id in ids:

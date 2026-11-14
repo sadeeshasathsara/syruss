@@ -35,6 +35,17 @@ flowchart LR
     Core -->|SMTP| Mail[(Mailpit :1025 / UI :8025)]
 ```
 
+### Where Code Goes
+
+Keep to the layers that are already there; don't add new ones (no repositories, base classes or interfaces with one implementation).
+
+- **`server/app/api/v1/`**: a route checks who may call it, reads simple data, and shapes the response. When an area grows past one screenful of routes, make it a package with one module per part and an `__init__.py` that joins their routers (see `api/v1/sysadmin/`).
+- **`server/app/services/`**: business rules, and anything two places need. Routes and the agent API call these. Services that belong together share a folder (`intake/`, `rules/`, `live/`, `destinations/`, `notifications/`).
+- **`server/app/models/`**: tables only. Every change to them comes with a migration in `server/migrations/versions/`.
+- **`server/app/api/internal/agent_tools/`**: the only way the agent reads or changes business data. `scope.py` checks the token; each other module is one area (documents, records, conversations, …).
+- **`agentic_framework/agent/tools/`**: one file per group of tools the agent can call; `registry.py` decides which tools a run gets.
+- **`www/src/lib/`**: data access (`api.ts`) and shared types (`types/`). **`www/src/components/<area>/`**: the UI for that area. Pages under `www/src/app/` stay thin and compose components.
+
 ---
 
 ## 2. Prerequisites
@@ -264,6 +275,47 @@ The agent worker listens to Kafka events from the core server and executes agent
 
 ---
 
+### Step 7: System Admin App (`admin/`, platform staff only)
+
+The platform tools for the people who run Syruss: service health, platform figures, the platform staff and their
+audit log. It signs in through its own Keycloak client, `syruss-admin`, with a password **and a one-time code** every
+time; the server's `/api/v1/sysadmin` routes accept only that client's tokens, and only from platform staff.
+
+1. Give your running Keycloak the admin client and its sign-in flow (a brand-new Keycloak needs this once too):
+   ```bash
+   python bridge/keycloak/harden.py
+   ```
+
+2. Make yourself a platform owner: put your Keycloak user id (Keycloak > Users > your account > ID) in
+   `server/.env`, then restart the server. Owners add everyone else on the platform staff from the app.
+   ```env
+   PLATFORM_ADMIN_USER_IDS=<your keycloak user id>
+   ```
+
+3. Install and configure the app:
+   ```bash
+   cd admin
+   npm install
+   # Windows (PowerShell): Copy-Item .env.example .env.local    macOS / Linux: cp .env.example .env.local
+   ```
+   In `admin/.env.local`, set `OIDC_CLIENT_SECRET` (the dev default is `dev-admin-secret-change-me`) and a new
+   `SESSION_SECRET` (generate one as above; don't reuse another app's).
+
+4. Start it (runs on port 3200):
+   ```bash
+   syruss run dev admin
+   ```
+   Access at: [http://localhost:3200](http://localhost:3200). The first sign-in asks you to set up an authenticator app.
+
+**Following agent work.** Live, Agent runs, Documents and Queues show every run and document across the platform as
+it happens (Server-Sent Events from `/api/v1/sysadmin/live`, through the app's own proxy). They show facts only; a
+customer's content (thoughts, tool results, records, the file) opens for one organization at a time, with a reason and
+an end time ("Open content…" on a run or document), and that organization sees it in its activity. The agent saves a run
+when it starts and after every step, so restart the agent service after pulling these changes; a run with no step for
+15 minutes is marked lost (`RUN_LOST_AFTER_SECONDS`).
+
+---
+
 ## 5. Running the Test Suite
 
 ### Backend Unit & Integration Tests (pytest)
@@ -353,6 +405,7 @@ syruss run dev                  # Start all services concurrently in single term
 syruss run dev --console        # Start all services in independent console windows
 syruss run dev server           # Start only the FastAPI REST API
 syruss run dev www              # Start only the Next.js Web App
+syruss run dev admin            # Start only the System Admin app (platform staff)
 
 # Production Mode
 syruss start                    # Start all services in production mode
@@ -397,7 +450,7 @@ syruss changeset status
 ```
 
 ### What Happens on Merge
-- **Merge to `dev`**: Changesets are consumed, `CHANGELOG.md` is updated, and dev prerelease tags (e.g. `www-v0.2.0-dev.1`) are published.
+- **Merge to `dev`**: Changesets are consumed, `_changelog/dev.md` is updated, and dev prerelease tags (e.g. `www-v0.2.0-dev.1`) are published.
 - **Merge to `test`**: Dev entries are automatically promoted to release candidates (e.g. `www-v0.2.0-rc.1`).
 - **Merge to `main`**: Roll-up into official production releases (e.g. `www-v0.2.0`).
-- The top table in `CHANGELOG.md` automatically reflects live versions across all three environments.
+- `_changelog/` holds one generated file per environment (`dev.md`, `test.md`, `main.md`), each written only by the release job on its own branch. Never edit them by hand: CI fails any pull request with a commit that does. Run `syruss changeset table` to see every service's version in dev, test and main.

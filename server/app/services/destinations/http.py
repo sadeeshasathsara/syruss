@@ -62,13 +62,13 @@ async def call(
     if settings.is_production and urlsplit(url).scheme != "https":
         return Reply(error="Destinations must use https in production.", retryable=False)
     try:
-        await source_data._check_host(url)
+        await source_data.check_host(url)
     except SourceError as exc:
         message = str(exc)
         return Reply(error=message, retryable="could not be found" in message)
     started = time.perf_counter()
     try:
-        async with httpx.AsyncClient(transport=source_data.HTTP_TRANSPORT, timeout=timeout or settings.DELIVERY_TIMEOUT_SECONDS, follow_redirects=False) as client:
+        async with httpx.AsyncClient(transport=source_data.transport(), timeout=timeout or settings.DELIVERY_TIMEOUT_SECONDS, follow_redirects=False) as client:
             async with client.stream(method, url, headers=headers, json=json_body, content=content, data=data, params=params, auth=auth) as response:
                 chunks, size = [], 0
                 async for chunk in response.aiter_bytes():

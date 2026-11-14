@@ -19,7 +19,7 @@ router = APIRouter(prefix="/conversations", tags=["Workspace Chat"], dependencie
 
 @router.get("")
 async def list_conversations(
-    kind: Literal["chat", "agent", "history"] = "chat",
+    kind: Literal["chat", "agent", "syruss", "history"] = "chat",
     status: Optional[Literal["open", "resolved"]] = None,
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0),
@@ -29,10 +29,11 @@ async def list_conversations(
     """
     A page of conversations, newest first: their ids and titles only, never their messages.
     kind "chat": your chats. kind "agent": conversations Syruss opened with people in your role.
-    kind "history": both, for the chat history.
+    kind "syruss": every thread Syruss started with your role (its conversations and its flags), open ones first.
+    kind "history": your chats and those threads together.
     """
     result = await conversation_service.list_conversations(db, scope, kind, limit, offset, status)
-    if kind in ("agent", "history"):
+    if kind in ("agent", "syruss", "history"):
         await db.commit()  # resolving the role may have made the first visitor the owner
     return result
 

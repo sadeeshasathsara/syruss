@@ -14,6 +14,10 @@ COPY . .
 
 ARG NEXT_PUBLIC_APP_VERSION=dev
 ENV NEXT_PUBLIC_APP_VERSION=${NEXT_PUBLIC_APP_VERSION}
+# Public addresses the browser code needs: baked in at build, so CI builds the image per environment with them
+ARG NEXT_PUBLIC_SITE_URL=http://localhost:3100
+ARG NEXT_PUBLIC_ACCOUNT_URL=http://localhost:8080/realms/syruss/account
+ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL} NEXT_PUBLIC_ACCOUNT_URL=${NEXT_PUBLIC_ACCOUNT_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build

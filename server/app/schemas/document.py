@@ -11,8 +11,10 @@ class DocumentResponse(BaseModel):
     template_version_id: Optional[str] = None
     role: DocumentRole
     original_filename: str
+    display_name: Optional[str] = None  # the identification key, when the template has one and the record has its values
     content_type: str
     file_size_bytes: int
+    page_count: int = 1  # what reading it is charged: a PDF's or TIFF's pages, or the sheets one picture shows
     file_hash: str
     status: DocumentStatus
     error_message: Optional[str] = None

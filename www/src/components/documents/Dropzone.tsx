@@ -4,7 +4,7 @@ import { Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { cn, fileSize } from "@/lib/format";
 
-export const ACCEPTED = "image/jpeg,image/png,image/tiff,image/webp";
+export const ACCEPTED = "application/pdf,image/jpeg,image/png,image/tiff,image/webp";
 
 /** Drop files or pick them; lists what is chosen before anything is sent. */
 export function Dropzone({
@@ -26,7 +26,7 @@ export function Dropzone({
     if (!list) return;
     const incoming = [...list];
     const ok = incoming.filter((f) => ACCEPTED.split(",").includes(f.type));
-    setRejected(ok.length < incoming.length ? "Only JPEG, PNG, TIFF and WebP images can be read for now." : null);
+    setRejected(ok.length < incoming.length ? "Only PDFs and JPEG, PNG, TIFF or WebP images can be read." : null);
     const merged = [...files, ...ok.filter((f) => !files.some((g) => g.name === f.name && g.size === f.size))];
     onChange(max ? merged.slice(0, max) : merged);
   };
@@ -50,7 +50,7 @@ export function Dropzone({
         )}
       >
         <div>
-          <p className="text-body font-medium text-ink">Drop images here</p>
+          <p className="text-body font-medium text-ink">Drop files here</p>
           <p className="text-body text-muted">{hint}</p>
         </div>
         <button

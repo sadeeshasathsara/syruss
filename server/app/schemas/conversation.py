@@ -38,6 +38,7 @@ class ConversationResponse(BaseModel):
     title: str
     context_metadata: Dict[str, Any] = Field(default_factory=dict)
     kind: str = "chat"
+    mode: str = "general"
     status: Optional[str] = None
     audience: Optional[str] = None
     resolution: Optional[str] = None

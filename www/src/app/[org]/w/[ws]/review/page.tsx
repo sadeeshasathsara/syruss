@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { QuestionCard } from "@/components/chat/cards";
-import { PageViewer } from "@/components/documents/PageViewer";
+import { DocumentViewer } from "@/components/documents/PageViewer";
 import { RecordView } from "@/components/documents/RecordView";
 import { useShell } from "@/components/shell/ShellContext";
 import { Bar, Empty, ErrorNote, PageHeader, PickOne } from "@/components/ui/Blocks";
@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Field";
 import { Markdown } from "@/components/ui/Markdown";
 import { api } from "@/lib/api";
-import { ago, cn, dateTime } from "@/lib/format";
+import { ago, cn, dateTime, docName } from "@/lib/format";
 import { Pill } from "@/components/ui/Pill";
 import type { AgentQuestion, ReviewTask } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
@@ -35,7 +35,7 @@ function ReviewItem({ task, onDone }: { task: ReviewTask; onDone: () => void }) 
     mutationFn: (action: "APPROVE" | "CORRECT" | "REJECT") =>
       api.reviews.decide(wid, task.id, action, action === "CORRECT" ? data : undefined, notes.trim() || undefined),
     onSuccess: (_, action) => {
-      const name = doc.data?.original_filename ?? "a document";
+      const name = doc.data ? docName(doc.data) : "a document";
       announce(
         action === "REJECT" ? `You rejected ${name}` : action === "CORRECT" ? `You corrected ${name}. The agent is learning from it.` : `You approved ${name}`,
         { href: href(`documents/${task.document_id}`) },
@@ -49,13 +49,13 @@ function ReviewItem({ task, onDone }: { task: ReviewTask; onDone: () => void }) 
     <div className="flex flex-col gap-5">
       <div>
         <h2 className="text-section font-semibold text-ink">
-          <Link href={href(`documents/${task.document_id}`)} className="hover:underline">{doc.data?.original_filename ?? "Document"}</Link>
+          <Link href={href(`documents/${task.document_id}`)} className="hover:underline">{doc.data ? docName(doc.data) : "Document"}</Link>
         </h2>
         <p className="mt-1 text-body text-ink">{task.reason}</p>
       </div>
       <WhatHappened documentId={task.document_id} />
       <div className="grid grid-cols-1 items-start gap-5 @5xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <PageViewer src={api.documents.fileUrl(wid, task.document_id)} alt="Scanned page" className="h-[50dvh] @5xl:h-[calc(100dvh-180px)]" />
+        <DocumentViewer documentId={task.document_id} className="h-[50dvh] @5xl:h-[calc(100dvh-180px)]" />
         <div className="flex min-w-0 flex-col gap-5">
           <RecordView
             data={data}
@@ -92,6 +92,7 @@ function WhatHappened({ documentId }: { documentId: string }) {
   const v = extraction.data?.validation;
   const notes = [
     ...(v?.errors ?? []).map((e) => e.message),
+    ...(v?.warnings ?? []).map((w) => w.message),
     ...(v?.signals ?? []).map((s) => s.message.split(" Look at the page again")[0]),
   ];
   if (!extraction.data?.agent_notes && notes.length === 0) return null;
@@ -133,13 +134,13 @@ function FlagItem({ question }: { question: AgentQuestion }) {
   const docId = question.related_document_id ?? question.evidence_document_ids[0];
   const others = question.evidence_document_ids.filter((d) => d !== docId);
   const docs = useQuery({ queryKey: ["documents", workspace.id], queryFn: () => api.documents.list(workspace.id, undefined, 500) });
-  const nameOf = (id: string) => docs.data?.find((d) => d.id === id)?.original_filename ?? "Document";
+  const nameOf = (id: string) => (() => { const x = docs.data?.find((d) => d.id === id); return x ? docName(x) : "Document"; })();
   return (
     <div className="flex flex-col gap-5">
       <div className={cn("grid grid-cols-1 items-start gap-5", docId && "@5xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")}>
         {docId && (
           <div className="flex flex-col gap-2">
-            <PageViewer src={api.documents.fileUrl(workspace.id, docId)} alt="Scanned page" className="h-[50dvh] @5xl:h-[calc(100dvh-220px)]" />
+            <DocumentViewer documentId={docId} className="h-[50dvh] @5xl:h-[calc(100dvh-220px)]" />
             <Link href={href(`documents/${docId}`)} className="text-body text-muted hover:text-ink hover:underline">{nameOf(docId)}</Link>
           </div>
         )}
@@ -175,7 +176,7 @@ function ReviewQueue() {
   // Open flags, and answered ones Syruss is still working on (pending until it resolves their thread)
   const flags = useQuery({ queryKey: ["questions", workspace.id, "ACTIVE"], queryFn: () => api.questions.list(workspace.id, "ACTIVE") });
   const docs = useQuery({ queryKey: ["documents", workspace.id], queryFn: () => api.documents.list(workspace.id, undefined, 500) });
-  const nameOf = (docId: string) => docs.data?.find((d) => d.id === docId)?.original_filename ?? "Document";
+  const nameOf = (docId: string) => (() => { const x = docs.data?.find((d) => d.id === docId); return x ? docName(x) : "Document"; })();
   const items: QueueItem[] = [
     ...(reviews.data ?? []).map((t) => ({ kind: "review" as const, id: t.id, title: nameOf(t.document_id), detail: t.reason, at: t.created_at, task: t })),
     ...(flags.data ?? []).map((q) => ({ kind: "flag" as const, id: q.id, title: q.question, detail: q.context, at: q.created_at, question: q })),
@@ -270,7 +271,7 @@ function ReviewHistory() {
   const reviews = useQuery({ queryKey: ["reviews", workspace.id, "decided"], queryFn: () => api.reviews.list(workspace.id, true) });
   const answered = useQuery({ queryKey: ["questions", workspace.id, "ALL"], queryFn: () => api.questions.list(workspace.id, "ALL") });
   const docs = useQuery({ queryKey: ["documents", workspace.id], queryFn: () => api.documents.list(workspace.id, undefined, 500) });
-  const nameOf = (docId: string) => docs.data?.find((d) => d.id === docId)?.original_filename ?? "Document";
+  const nameOf = (docId: string) => (() => { const x = docs.data?.find((d) => d.id === docId); return x ? docName(x) : "Document"; })();
   const rows = [
     ...(reviews.data ?? []).map((r) => ({
       id: r.id, title: nameOf(r.document_id), detail: r.reviewer_notes || r.reason, status: r.status,

@@ -1,17 +1,17 @@
 """
 Questions across records, answered from the database in one call.
 
-"Who worked the day shift", "which documents mention site S12", "how many hours did Perera log in
-July" are questions about rows of one template object across every saved record. The agent asks
-them with a filter instead of opening records one by one (or looking at pages):
+"Which rows have this value", "which documents mention X", "how much of something in July" are
+questions about rows of one template object across every saved record. The agent asks them with a
+filter instead of opening records one by one (or looking at pages):
 
-  object    the template object whose rows are wanted (e.g. the people on a roster)
+  object    the template object whose rows are wanted
   where     conditions on the row's fields, or on fields of the document's one-per-document objects
-            written "Object.field" (e.g. the roster's date). Comparisons ignore case and spaces at
+            written "Object.field" (e.g. the document's date). Comparisons ignore case and spaces at
             the ends; gte/lte compare numbers as numbers and everything else as text (so ISO dates
             and HH:MM times order correctly).
   distinct  fields to group by: unique combinations with how often and in how many documents
-            (e.g. the unique workers matching the filter)
+            (e.g. the unique names matching the filter)
 
 When nothing matches, the values that do occur in the filtered fields are returned, so the agent
 can see how the documents write them ("D" rather than "Day") and ask again.
@@ -24,8 +24,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.document import Document, DocumentRole, DocumentStatus
 from app.models.extraction import ExtractionResult
+from app.models.template import DocumentTemplate
+from app.services.document_key import identification_key
 from app.services.graph_service import rows_of
-from app.services.rule_engine import normalize_schema
+from app.services.rules.engine import normalize_schema
 
 MAX_RECORDS = 5000
 OPS = ("eq", "ne", "contains", "in", "gte", "lte", "empty", "not_empty")
@@ -91,16 +93,19 @@ def _context(objects: Dict[str, Dict[str, Any]], data: Dict[str, Any]) -> Dict[s
 
 
 async def saved_records(db: AsyncSession, *, template_id: str, include_pending_review: bool = False, hidden: Sequence[str] = ()):
-    """Every saved record of the workspace, newest document first: (document id, file name, status, extracted data).
-    One more than MAX_RECORDS is fetched so callers can tell the list was cut."""
+    """Every saved record of the workspace, newest document first: (document id, name, status, extracted data). The name is
+    the document's identification key when the template has one, else its file name. One more than MAX_RECORDS is fetched so callers can tell the list was cut."""
     statuses = [DocumentStatus.COMPLETED] + ([DocumentStatus.NEEDS_REVIEW] if include_pending_review else [])
-    return (await db.execute(
+    template = await db.get(DocumentTemplate, template_id)
+    schema = template.schema_definition if template else None
+    rows = (await db.execute(
         select(Document.id, Document.original_filename, Document.status, ExtractionResult.extracted_data)
         .join(ExtractionResult, ExtractionResult.document_id == Document.id)
         .where(Document.template_id == template_id, Document.role == DocumentRole.DOCUMENT,
                Document.status.in_(statuses), Document.id.not_in(list(hidden)))
         .order_by(Document.created_at.desc()).limit(MAX_RECORDS + 1)
     )).all()
+    return [(doc_id, identification_key(schema, data) or filename, status, data) for doc_id, filename, status, data in rows]
 
 
 async def query(db: AsyncSession, *, template_id: str, schema: Dict[str, Any], q: RecordQuery,

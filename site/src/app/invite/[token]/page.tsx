@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AccountShell } from "@/components/AccountShell";
-import { ApiError, api, type Context } from "@/lib/api";
+import { Unavailable } from "@/components/Unavailable";
+import { ApiError, api, reach, unreachable, type Context } from "@/lib/api";
 import { readSession } from "@/lib/auth/session";
 import { AcceptButton } from "./AcceptButton";
 
@@ -21,7 +22,7 @@ async function lookup(token: string): Promise<Invitation | null> {
   // The previews are public (the unguessable link is the key), so no sign-in is needed to read them.
   const base = (process.env.API_ORIGIN ?? "http://localhost:8000").replace(/\/$/, "");
   for (const path of [`/invitations/${token}`, `/org-invitations/${token}`]) {
-    const response = await fetch(`${base}/api/v1${path}`, { cache: "no-store" });
+    const response = await reach(`${base}/api/v1${path}`, { cache: "no-store" });
     if (response.ok) return (await response.json()) as Invitation;
   }
   return null;
@@ -35,14 +36,22 @@ const WHY: Record<string, string> = {
 
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const invitation = /^[A-Za-z0-9_-]{16,80}$/.test(token) ? await lookup(token) : null;
   const session = await readSession().catch(() => null);
+  let invitation: Invitation | null = null;
+  if (/^[A-Za-z0-9_-]{16,80}$/.test(token)) {
+    try {
+      invitation = await lookup(token);
+    } catch (e) {
+      if (unreachable(e)) return <Unavailable again={`/invite/${token}`} signedIn={!!session} />;
+      throw e;
+    }
+  }
 
   if (!invitation) {
     return (
       <AccountShell signedIn={!!session}>
         <div className="sheet">
-          <h1>This link isn't valid</h1>
+          <h1>This link isn&apos;t valid</h1>
           <p className="lede">Ask the person who invited you for a new one.</p>
         </div>
       </AccountShell>

@@ -14,7 +14,7 @@ from app.core.database import AsyncSessionLocal
 from app.models.document import Document
 from app.models.intake import IntakeEvent
 from app.services import settings_service
-from tests.conftest import VALID_RECORD, business_plan, create_template, png_bytes, ws
+from tests.conftest import TENANT, VALID_RECORD, business_plan, create_template, png_bytes, ws
 
 API = "/api/v1"
 AGENT = "/internal/agent/v1"
@@ -155,7 +155,7 @@ async def test_what_a_file_really_is_decides_whether_it_is_let_in(client):
     res = await send(client, secret, exe, name="invoice.png", ctype="image/png")
     assert res.status_code == 415 and res.json()["detail"]["code"] == "unsupported_type"
     pdf = await send(client, secret, b"%PDF-1.7\n" + os.urandom(500), name="invoice.png", ctype="image/png")
-    assert pdf.status_code == 415 and "PDF" in pdf.json()["detail"]["message"]
+    assert pdf.status_code == 422 and "PDF" in pdf.json()["detail"]["message"]  # PDFs are accepted; this one is damaged
     assert (await send(client, secret, b"", name="a.png")).status_code == 400
     broken = png_bytes()[:200]
     assert (await send(client, secret, broken)).status_code == 422
@@ -168,7 +168,7 @@ async def test_a_channel_can_narrow_what_the_workspace_accepts_but_not_widen_it(
     jpeg = io.BytesIO()
     Image.new("RGB", (80, 60), (3, 4, 5)).save(jpeg, "JPEG")
     assert (await send(client, secret, jpeg.getvalue(), name="a.jpg", ctype="image/jpeg")).status_code == 202
-    bad = await client.post(f"{API}/channels", headers=ws(tpl), json={"name": "Odd", "config": {"allowed_types": ["application/pdf"]}})
+    bad = await client.post(f"{API}/channels", headers=ws(tpl), json={"name": "Odd", "config": {"allowed_types": ["application/zip"]}})
     assert bad.status_code == 422
 
 
@@ -228,8 +228,10 @@ async def test_a_key_can_be_limited_to_the_senders_own_addresses(client, monkeyp
     assert (await client.get(f"{API}/intake/me", headers=auth(secret, **{"X-Forwarded-For": "203.0.113.7"}))).status_code == 403
     monkeypatch.setattr(settings, "TRUST_PROXY_HEADERS", True)
     assert (await client.get(f"{API}/intake/me", headers=auth(secret, **{"X-Forwarded-For": "203.0.113.7"}))).status_code == 200
-    assert (await client.get(f"{API}/intake/me", headers=auth(secret, **{"X-Forwarded-For": "10.20.5.9, 1.2.3.4"}))).status_code == 200
+    assert (await client.get(f"{API}/intake/me", headers=auth(secret, **{"X-Forwarded-For": "1.2.3.4, 10.20.5.9"}))).status_code == 200
     assert (await client.get(f"{API}/intake/me", headers=auth(secret, **{"X-Forwarded-For": "10.21.0.1"}))).status_code == 403
+    # Only the address the proxy added (the last one) counts: a sender can't put an allowed address in front of it.
+    assert (await client.get(f"{API}/intake/me", headers=auth(secret, **{"X-Forwarded-For": "203.0.113.7, 1.2.3.4"}))).status_code == 403
     bad = await client.post(f"{API}/channels/{ch['id']}/keys", headers=ws(tpl), json={"name": "x", "ip_allowlist": ["not-an-ip"]})
     assert bad.status_code == 422
     log = (await client.get(f"{API}/channels/{ch['id']}/activity", headers=ws(tpl), params={"outcome": "rejected"})).json()["items"]
@@ -260,19 +262,21 @@ async def test_a_paused_channel_refuses_documents_until_it_is_turned_back_on(cli
     assert (await send(client, secret)).status_code == 202
 
 
-async def test_the_plans_document_allowance_applies_to_documents_sent_in(client):
-    tpl = await create_template(client)  # free plan: 200 a month
+async def test_the_plans_page_allowance_applies_to_documents_sent_in(client):
+    from tests.conftest import pages_allowance
+    from app.services.billing import service as billing
+    tpl = await create_template(client)
     ch = await channel(client, tpl)
     secret = (await key(client, tpl, ch["id"]))["secret"]
-    free = settings_service.PLANS["free"]
-    original = free["documents_per_month"]
-    free["documents_per_month"] = 1
+    async with AsyncSessionLocal() as db:
+        used = (await billing.summary(db, TENANT))["pages_used"]
+    await pages_allowance(used + 1)
     try:
         assert (await send(client, secret)).status_code == 202
         res = await send(client, secret)
         assert res.status_code == 402 and res.json()["detail"]["code"] == "plan_limit_reached"
     finally:
-        free["documents_per_month"] = original
+        await pages_allowance(None)
 
 
 async def test_a_document_is_queued_for_the_agent_unless_the_sender_says_not_to(client):
@@ -431,7 +435,7 @@ async def test_an_upload_link_is_for_its_own_channel_and_expires(client):
         await db.commit()
     assert (await client.post(path, headers=auth(secret))).status_code == 410
     unsupported = await client.post(f"{API}/intake/uploads", headers=auth(secret), json={
-        "filename": "a.pdf", "content_type": "application/pdf", "size_bytes": 100})
+        "filename": "a.zip", "content_type": "application/zip", "size_bytes": 100})
     assert unsupported.status_code == 415
     huge = await client.post(f"{API}/intake/uploads", headers=auth(secret), json={
         "filename": "a.png", "content_type": "image/png", "size_bytes": 10_000_000_000})

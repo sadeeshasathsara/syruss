@@ -29,8 +29,9 @@ from app.models.question import AgentQuestion, AgentQuestionStatus
 from app.models.review import ReviewStatus, ReviewTask
 from app.models.template import DocumentTemplate
 from app.services import mapping_service, workspace_events
+from app.services.document_key import document_label
 from app.services.destinations import ADAPTERS, SendContext, SendResult
-from app.services.ui_events import publish_ui_event
+from app.services.live.ui_events import publish_ui_event
 
 logger = logging.getLogger("core.deliveries")
 
@@ -420,7 +421,7 @@ class DeliveryWorker:
                 ).returning(Destination.consecutive_failures).execution_options(synchronize_session=False))).scalar_one()
                 if d.status == "dead":
                     await _tell(db, dest, "delivery.dead", f"A delivery to {dest.name} could not be sent",
-                                f"{document.original_filename}: {d.last_error} You can replay it once the problem is fixed.")
+                                f"{document_label(document)}: {d.last_error} You can replay it once the problem is fixed.")
                 if failures >= settings.DELIVERY_BREAKER_FAILURES and await pause_destination(
                         db, dest, f"Paused automatically after {failures} failed tries in a row. Last problem: {d.last_error}", "system"):
                     await _tell(db, dest, "destination.failing", f"{dest.name} was paused",

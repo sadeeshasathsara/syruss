@@ -16,8 +16,8 @@ class Conversation(Base):
                   like "agent", but listed in Review rather than the agent inbox.
     kind "agent"  a conversation Syruss opened with the people who can settle an issue (`audience`:
                   "admin" or "reviewer"). It stays open until resolved; meanwhile `agent_state`
-                  holds Syruss's working state (its message history, a checkpoint) so it picks up
-                  exactly where it left off whenever someone replies.
+                  holds a note of where Syruss left off (`note`, `document_ids`), so it picks up from
+                  that note and the thread itself whenever someone replies.
     """
     __tablename__ = "conversations"
     __table_args__ = (Index("ix_conversations_listing", "template_id", "kind", "updated_at"),)
@@ -31,9 +31,11 @@ class Conversation(Base):
     context_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
     kind: Mapped[str] = mapped_column(String(16), default="chat", server_default="chat", nullable=False)
+    # chat: what it is for, fixed by its first message ("general" | "rules" | "screens"); every reply in it works that way.
+    mode: Mapped[str] = mapped_column(String(16), default="general", server_default="general", nullable=False)
     status: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)         # agent: "open" | "resolved"
     audience: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)       # agent: "admin" | "reviewer"
-    agent_state: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)         # agent: checkpoint until resolved
+    agent_state: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)         # agent: where it left off, until resolved
     resolution: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

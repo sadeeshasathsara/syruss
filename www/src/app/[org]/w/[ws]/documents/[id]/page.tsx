@@ -4,14 +4,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAgentChat } from "@/components/chat/ChatProvider";
-import { PageViewer } from "@/components/documents/PageViewer";
+import { PageViewer, pagesToShow } from "@/components/documents/PageViewer";
 import { RecordView } from "@/components/documents/RecordView";
 import { useShell } from "@/components/shell/ShellContext";
 import { Bar, ErrorNote, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/Pill";
 import { ApiError, api } from "@/lib/api";
-import { ago, percent } from "@/lib/format";
+import { ago, docName, percent } from "@/lib/format";
 import type { Extraction } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -48,7 +48,7 @@ export default function DocumentDetail() {
   const reread = useMutation({
     mutationFn: () => api.documents.reprocess(wid, id),
     onSuccess: () => {
-      announce(`You asked the agent to read ${doc.data?.original_filename ?? "a document"} again`, { href: href(`documents/${id}`), openChat: true });
+      announce(`You asked the agent to read ${doc.data ? docName(doc.data) : "a document"} again`, { href: href(`documents/${id}`), openChat: true });
       queryClient.invalidateQueries({ queryKey: ["documents", wid] });
     },
   });
@@ -69,6 +69,7 @@ export default function DocumentDetail() {
   const e = extraction.data;
   const working = d.status === "QUEUED" || d.status === "PROCESSING";
   const errors = e?.validation?.errors ?? [];
+  const warnings = e?.validation?.warnings ?? [];
   const signals = e?.validation?.signals ?? [];
   const subtitle = working
     ? "The agent is reading this document. Follow it in the chat."
@@ -84,8 +85,8 @@ export default function DocumentDetail() {
     <div className="flex flex-col gap-5">
       <PageHeader
         back={{ href: href("documents"), label: "Documents" }}
-        title={d.original_filename}
-        subtitle={<span className="flex flex-wrap items-center gap-2"><StatusPill status={d.status} />{subtitle}</span>}
+        title={docName(d)}
+        subtitle={<span className="flex flex-wrap items-center gap-2"><StatusPill status={d.status} />{subtitle}{d.display_name && <span className="text-muted">File: {d.original_filename}</span>}{d.page_count > 1 && <span className="text-muted">{d.page_count} pages</span>}</span>}
         actions={
           <>
             {review && (
@@ -108,6 +109,7 @@ export default function DocumentDetail() {
         <PageViewer
           src={api.documents.fileUrl(wid, id)}
           alt={`Scanned page: ${d.original_filename}`}
+          pages={pagesToShow(d)}
           className="h-[60dvh] @5xl:sticky @5xl:top-0 @5xl:h-[calc(100dvh-140px)]"
         />
         <div className="flex min-w-0 flex-col gap-5">
@@ -129,6 +131,13 @@ export default function DocumentDetail() {
                 <Panel title="Checks that failed">
                   <ul className="flex flex-col gap-1">
                     {errors.map((err, i) => <li key={i} className="text-body text-ink">{err.message}</li>)}
+                  </ul>
+                </Panel>
+              )}
+              {warnings.length > 0 && (
+                <Panel title="Rule warnings">
+                  <ul className="flex flex-col gap-1">
+                    {warnings.map((w, i) => <li key={i} className="text-body text-ink">{w.message}</li>)}
                   </ul>
                 </Panel>
               )}

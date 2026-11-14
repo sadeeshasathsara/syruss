@@ -1,4 +1,4 @@
-// Shared by site/ and www/ (src/lib/auth is kept identical in both; `npm run check:auth-sync` in site/ verifies it).
+// Shared by site/, www/ and admin/ (src/lib/auth is kept identical in each; `npm run check:auth-sync` in site/ verifies it).
 // Everything here is read on the server only.
 
 export type AuthConfig = {
@@ -41,8 +41,18 @@ export function authConfig(): AuthConfig {
   return cached;
 }
 
-/** Only same-site relative paths may be returned to after sign-in (no open redirects). */
+/**
+ * Only same-site relative paths may be returned to after sign-in (no open redirects). Browsers drop tabs and line
+ * breaks from an address before reading it, so "/\t/evil.example" would become "//evil.example": control characters
+ * are refused, and the path must still point at this site once it is resolved.
+ */
 export function safeReturnTo(value: string | null | undefined, fallback = "/"): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return fallback;
+  if (!value || !value.startsWith("/") || value.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(value)) return fallback;
+  try {
+    const base = "https://return-to.invalid";
+    if (new URL(value, base).origin !== base) return fallback;
+  } catch {
+    return fallback;
+  }
   return value;
 }

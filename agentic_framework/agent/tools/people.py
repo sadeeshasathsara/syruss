@@ -5,20 +5,22 @@ from agentic_framework.agent.tools.base import RunContext, ToolOutcome, dump, to
 
 
 class DataTableArgs(BaseModel):
-    title: Optional[str] = Field(None, description="What the table shows, e.g. 'Employees on this sheet'")
+    title: Optional[str] = Field(None, description="What the table shows, e.g. 'Rows on this page'")
     columns: List[str] = Field(..., description="Column names")
     rows: List[List[str]] = Field(..., description="One list of cell values per row, in column order")
 
 
 class FlagArgs(BaseModel):
-    question: str = Field(..., description="One precise question")
-    context: str = Field(..., description="Why you ask, what you saw, and your current hypothesis")
+    question: str = Field(..., description="One precise, short question, for the person who answers it")
+    context: str = Field(..., description="For the person who answers, in a sentence or two: what you saw and what you think, "
+                         "naming documents by their name. Not ids, file names, or the policies you follow; your own plan goes "
+                         "in resume_note")
     answer_type: str = Field("single", description="single (pick one option), multiple (pick any) or text (a written answer)")
     options: List[str] = Field(default_factory=list, description="The choices, for single or multiple; 'Other' (their own "
                                "answer) is always added for them")
     evidence_document_ids: List[str] = Field(default_factory=list)
     data_table: Optional[DataTableArgs] = Field(None, description="The data you read that the question is about, as a table "
-                                                "(for example the rows of a roster): a few short columns and one list "
+                                                "(for example the rows of a table on the page): a few short columns and one list "
                                                 "of cells per row. Always include it when the question is about what "
                                                 "you extracted, so the person sees rows, not a paragraph")
     target_role: str = Field("admin", description="admin (business meaning, template) or reviewer (reading/identity)")
@@ -54,9 +56,9 @@ async def flag(ctx: RunContext, a: FlagArgs) -> ToolOutcome:
 
 
 class OpenConversationArgs(BaseModel):
-    title: str = Field(..., description="The issue in a few words, e.g. 'Overtime column on night rosters'")
-    message: str = Field(..., description="Your opening message: what you found (with document names), why it matters, "
-                         "what you need from them. Markdown allowed")
+    title: str = Field(..., description="The issue in a few words, e.g. 'Unlabelled column on some pages'")
+    message: str = Field(..., description="Your opening message, written for the people who will read it: what you found "
+                         "(documents by their names, never ids), why it matters, what you need from them. Markdown allowed")
     audience: str = Field("admin", description="admin (business meaning, template) or reviewer (reading, identities)")
     document_ids: List[str] = Field(default_factory=list, description="Documents it is about")
     priority: str = Field("normal", description="low, normal, or high (work is blocked)")
@@ -91,7 +93,8 @@ class ResolveConversationArgs(BaseModel):
     resolution: str = Field(..., description="What was decided or done, in one or two sentences")
 
 
-@tool("resolve_conversation", "Close a conversation you opened once the issue is settled and you have acted on it.",
+@tool("resolve_conversation", "Close a conversation you opened once the issue is settled and you have acted on it. "
+      "When someone wrote to you in it, reply_to_user first: the platform refuses to close it before your answer.",
       ResolveConversationArgs)
 async def resolve_conversation(ctx: RunContext, a: ResolveConversationArgs) -> ToolOutcome:
     result = await ctx.api.post(f"/conversations/{a.conversation_id}/resolve", {"resolution": a.resolution})
@@ -100,17 +103,16 @@ async def resolve_conversation(ctx: RunContext, a: ResolveConversationArgs) -> T
 
 
 class ReplyArgs(BaseModel):
-    content: str = Field(..., description="Your reply (markdown allowed)")
-    conversation_id: str = Field("", description="Defaults to the conversation that woke you")
+    content: str = Field(..., description="Your reply, written for the person (markdown allowed)")
 
 
-@tool("reply_to_user", "Reply in the chat conversation.", ReplyArgs)
+@tool("reply_to_user", "Reply to the person who wrote to you, in the conversation they wrote in.", ReplyArgs)
 async def reply_to_user(ctx: RunContext, a: ReplyArgs) -> ToolOutcome:
-    conv_id = a.conversation_id or ctx.event.payload.get("conversation_id") or ctx.event.payload.get("channel_id")
-    if not conv_id or conv_id.startswith("template:"):
-        raise ValueError("Nobody is waiting for a chat reply in this run.")
+    conv_id = ctx.event.payload.get("conversation_id")
+    if ctx.event.type not in ("human.message", "human.answered") or not conv_id:
+        raise ValueError("Nobody wrote to you in this run, so there is no one to reply to.")
     body = {"content": a.content, "reply_to": ctx.event.payload.get("message_id"),
-            "channel_id": ctx.event.payload.get("channel_id")}
+            "channel_id": ctx.event.payload.get("channel_id"), "actions": ctx.actions}
     result = await ctx.api.post(f"/conversations/{conv_id}/messages", body)
     ctx.replied = True
     return ToolOutcome(dump(result))

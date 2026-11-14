@@ -237,8 +237,9 @@ async def test_organization_roles_and_invitations(client):
 
 # --- every route is behind a gate -----------------------------------------------------
 
-# Public by design: invitation previews (an unguessable token is the key) and health.
-PUBLIC = {"/invitations/{token}", "/org-invitations/{token}", "/destinations/oauth/callback"}
+# Public by design: invitation previews (an unguessable token is the key), an OAuth provider's redirect, and Stripe's events
+# (their signature is the key).
+PUBLIC = {"/invitations/{token}", "/org-invitations/{token}", "/destinations/oauth/callback", "/billing/webhooks/stripe"}
 
 
 def _flatten(router, prefix=""):
