@@ -25,6 +25,7 @@ nothing is built on it. The folder holds everything the server needs besides its
 4. `docker compose --env-file env/stack.env pull && docker compose --env-file env/stack.env up -d`.
 5. Harden the Keycloak realm on the server itself (Caddy keeps `/admin` closed from outside):
    `KEYCLOAK_URL=http://127.0.0.1:8080 KEYCLOAK_ADMIN=... KEYCLOAK_ADMIN_PASSWORD=... python3 harden.py` (from `bridge/keycloak`).
+   Run it again after upgrading: it also makes staff sign-ins report their one-time code, which the server requires.
 6. Invite the first platform owner: `docker compose --env-file env/stack.env exec server python -m app.invite_staff you@company.com`.
    The invitation is emailed (and its link printed). Use an address with no Syruss customer account: a staff account only
    opens the admin app. Everyone else on the staff is then invited from the admin app's Staff page.

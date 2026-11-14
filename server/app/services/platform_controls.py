@@ -22,7 +22,8 @@ DEFAULT_MAINTENANCE = {"on": False, "message": ""}
 DEFAULT_SWITCHES = {"signups": True, "agent": True, "intake": True, "agent_paused_orgs": []}
 
 # Paths (after /api/v1) that keep working while the platform is read-only
-MAINTENANCE_OPEN = ("/sysadmin/", "/billing/webhooks/", "/me/device", "/me/email-verification", "/auth/", "/ws/ticket")
+MAINTENANCE_OPEN = ("/sysadmin/", "/billing/webhooks/", "/me/device", "/me/email-verification", "/auth/", "/ws/ticket",
+                    "/organization/support-access")  # a customer can always shut Syruss support out
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,12 @@ async def read(db: Optional[AsyncSession] = None) -> Dict[str, Dict[str, Any]]:
         return await get(db)
     async with AsyncSessionLocal() as session:
         return await get(session)
+
+
+async def read_key(db: AsyncSession, key: str) -> Optional[Dict[str, Any]]:
+    """Any other stored platform setting by key (the approval rule, the staff access policy), or None if never set."""
+    row = await db.get(PlatformSetting, key)
+    return dict(row.value) if row else None
 
 
 async def current() -> Controls:

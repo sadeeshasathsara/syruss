@@ -15,6 +15,7 @@ import { describeAction } from "@/lib/audit";
 import { money } from "@/lib/billing";
 import { ago, cn, dateTime, plural } from "@/lib/format";
 import type { OrganizationProfile } from "@/lib/types";
+import { Problem } from "@/components/ui/Problem";
 
 const STATUS = { active: ["positive", "Open"], suspended: ["negative", "Suspended"], closed: ["neutral", "Closed by its owner"] } as const;
 
@@ -154,7 +155,7 @@ function Notes({ id, notes, me, onDone }: { id: string; notes: OrganizationProfi
       <form className="flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); if (body.trim().length >= 2) add.mutate(); }}>
         <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} maxLength={4000} aria-label="A note for the staff"
           placeholder="A call, a promise, a warning…" className="w-full rounded-control border border-control bg-sheet px-2.5 py-2 text-body text-ink outline-none focus-visible:border-accent" />
-        {add.error && <p className="text-meta text-negative">{add.error.message}</p>}
+        {add.error && <Problem error={add.error} />}
         <div><Button type="submit" size="sm" variant="primary" disabled={body.trim().length < 2 || add.isPending}>Add the note</Button></div>
       </form>
       {notes.length > 0 && (

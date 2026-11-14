@@ -62,4 +62,12 @@ class OidcProvider(BaseIAMProvider):
             picture=claims.get("picture"),
             auth_time=int(claims["auth_time"]) if isinstance(claims.get("auth_time"), (int, float)) else None,
             client_id=claims.get("azp"),
+            amr=_methods(claims.get("amr")),
         )
+
+
+def _methods(value) -> list:
+    """The token's amr claim as a list of strings, whatever shape it came in."""
+    if isinstance(value, str):
+        return [value]
+    return [str(v) for v in value] if isinstance(value, list) else []
