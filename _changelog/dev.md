@@ -14,11 +14,34 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.8.0-dev.1` | 2026-11-14 | [What changed](#admin-080-dev1) |
+| **admin** | `0.9.0-dev.1` | 2026-11-14 | [What changed](#admin-090-dev1) |
 | **agent** | `0.7.0-dev.1` | 2026-11-12 | [What changed](#agent-070-dev1) |
-| **server** | `0.15.0-dev.1` | 2026-11-14 | [What changed](#server-0150-dev1) |
+| **server** | `0.16.0-dev.1` | 2026-11-14 | [What changed](#server-0160-dev1) |
 | **site** | `0.2.6-dev.1` | 2026-11-14 | [What changed](#site-026-dev1) |
-| **www** | `0.11.0-dev.1` | 2026-11-14 | [What changed](#www-0110-dev1) |
+| **www** | `0.11.1-dev.1` | 2026-11-14 | [What changed](#www-0111-dev1) |
+
+## [2026-11-14] - Release via dev
+
+### admin (0.9.0-dev.1)
+- Platform staff are added only from the terminal: `syruss staff add EMAIL --role ROLE`, or `python -m app.invite_staff` on a server.
+- For an address with no sign-in, it creates one in Keycloak, and Keycloak emails a link to choose a password and set up the one-time code. That link leads to the invitation.
+- The Keycloak admin login comes only from the command's own environment, so the running server gets no Keycloak access.
+- The admin app no longer invites or resends invitations: its Staff page shows the command, and owners can still withdraw invitations. Its sign-in page still creates no accounts.
+- Full-page loads (sign-in, signing in again, onboarding, the signed-out pages) use an absolute address in admin and www.
+
+### server (0.16.0-dev.1)
+- Platform staff are added only from the terminal: `syruss staff add EMAIL --role ROLE`, or `python -m app.invite_staff` on a server.
+- For an address with no sign-in, it creates one in Keycloak, and Keycloak emails a link to choose a password and set up the one-time code. That link leads to the invitation.
+- The Keycloak admin login comes only from the command's own environment, so the running server gets no Keycloak access.
+- The admin app no longer invites or resends invitations: its Staff page shows the command, and owners can still withdraw invitations. Its sign-in page still creates no accounts.
+- Full-page loads (sign-in, signing in again, onboarding, the signed-out pages) use an absolute address in admin and www.
+
+### www (0.11.1-dev.1)
+- Platform staff are added only from the terminal: `syruss staff add EMAIL --role ROLE`, or `python -m app.invite_staff` on a server.
+- For an address with no sign-in, it creates one in Keycloak, and Keycloak emails a link to choose a password and set up the one-time code. That link leads to the invitation.
+- The Keycloak admin login comes only from the command's own environment, so the running server gets no Keycloak access.
+- The admin app no longer invites or resends invitations: its Staff page shows the command, and owners can still withdraw invitations. Its sign-in page still creates no accounts.
+- Full-page loads (sign-in, signing in again, onboarding, the signed-out pages) use an absolute address in admin and www.
 
 ## [2026-11-14] - Release via dev
 
