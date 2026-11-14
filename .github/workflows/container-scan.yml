@@ -1,0 +1,84 @@
+name: Container Scan
+
+# Builds every image and scans it for known vulnerabilities (Trivy), and checks the Dockerfiles and compose files for
+# risky settings. Syruss's own images fail the check on a critical vulnerability that has a fix; the third-party ones
+# (Postgres, Keycloak, Kafka, MinIO) are reported only, since fixing them means upgrading them.
+on:
+  pull_request:
+    branches: [dev, test, main]
+    paths:
+      - "**/Dockerfile"
+      - "**/.dockerignore"
+      - "**/requirements.txt"
+      - "**/package-lock.json"
+      - "bridge/**"
+      - "deploy/**"
+      - ".github/workflows/container-scan.yml"
+  schedule:
+    - cron: "0 3 * * 1"   # every Monday: new vulnerabilities are found in images that haven't changed
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.57.1
+
+jobs:
+  image:
+    name: Scan ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: server, context: server, gate: true }
+          - { name: agent, context: agentic_framework, gate: true }
+          - { name: www, context: www, gate: true }
+          - { name: site, context: site, gate: true }
+          - { name: admin, context: admin, gate: true }
+          - { name: minio, context: bridge/minio, gate: false }
+          - { name: postgres, context: bridge/postgres, gate: false }
+          - { name: keycloak-db, context: bridge/keycloak-db, gate: false }
+          - { name: keycloak, context: bridge/keycloak, gate: false }
+          - { name: kafka, context: bridge/kafka, gate: false }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.context }}
+          load: true
+          push: false
+          tags: scan/${{ matrix.name }}:ci
+          cache-from: type=gha,scope=scan-${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=scan-${{ matrix.name }}
+
+      - name: Report (high and critical)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image --quiet --no-progress \
+            --scanners vuln --severity HIGH,CRITICAL --format table "scan/${{ matrix.name }}:ci" | tee report.txt
+          { echo "### ${{ matrix.name }}"; echo '```'; cat report.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Gate (critical, with a fix)
+        if: matrix.gate
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image --quiet --no-progress \
+            --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 "scan/${{ matrix.name }}:ci"
+
+  config:
+    name: Scan Dockerfiles and compose files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Reported, not enforced: the Postgres images and the local development compose file run as root on purpose
+      - name: Misconfigurations (high and critical)
+        run: |
+          docker run --rm -v "$PWD:/src:ro" "$TRIVY_IMAGE" config --quiet --severity HIGH,CRITICAL \
+            --skip-dirs node_modules /src | tee config.txt
+          { echo "### Dockerfiles and compose files"; echo '```'; cat config.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

@@ -39,6 +39,15 @@ nothing is built on it. The folder holds everything the server needs besides its
    `PROD_DEPLOY_SECRET` secrets, create the `production` environment (add yourself as a required reviewer), and set the
    repository variable `PROD_DEPLOY_ENABLED=true`. Until then a release on `main` publishes images and deploys nothing.
 
+## How the containers are locked down
+
+`docker-compose.yml` runs every container without Linux capabilities (the Postgres images and MinIO get back only what
+they need to switch to their own user), with `no-new-privileges`, and with a process limit. Syruss's own services run as
+an unprivileged user on a read-only filesystem, with scratch space in memory. The networks keep the web apps away from
+the databases, and the databases, Kafka and object storage off the internet: `data` and `auth` are internal networks.
+Base images are pinned by digest (Dependabot proposes updates), and `.github/workflows/container-scan.yml` scans the
+images every week. Raise `pids_limit` or a `tmpfs` size here if a service needs more.
+
 ## Backups
 
 `backup.sh` writes `syruss.pgdump`, `keycloak.pgdump` and `files.tar.gz` with checksums into `~/syruss-backups/<time>/`
