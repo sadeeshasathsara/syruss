@@ -1,20 +1,23 @@
 """
-The platform staff: who they are and what role each has. Only someone who may manage staff (an owner) changes it, after
-a fresh sign-in, and every change is in the platform audit log. Owners named in PLATFORM_ADMIN_USER_IDS are listed but
+The platform staff: who they are and what role each has. People join by an emailed invitation (they need no account
+first); only someone who may manage staff (an owner) invites, changes or removes, after a fresh sign-in. Every change is
+in the platform audit log and is emailed to the person it is about. Owners named in PLATFORM_ADMIN_USER_IDS are listed but
 can't be changed here: the deployment sets them, so the platform can never be left without an owner.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.sysadmin.access import Staff, record, require_staff
+from app.core.auth import Identity, get_identity
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.core.platform_permissions import PLATFORM_GRANTS, PLATFORM_ROLES
 from app.models.identity import User
-from app.models.platform import PlatformStaff
+from app.models.platform import PlatformStaff, PlatformStaffInvitation
+from app.services import staff_service
 
 router = APIRouter(prefix="/staff")
 
@@ -32,12 +35,6 @@ class StaffMember(BaseModel):
     added_at: Optional[datetime] = None
     last_seen_at: Optional[datetime] = None
     status: str = "active"
-
-
-class AddStaff(BaseModel):
-    email: str = Field(..., max_length=255, description="The account to add: they must have signed up to Syruss already")
-    role: Role
-    reason: Optional[str] = Field(None, max_length=500)
 
 
 class ChangeRole(BaseModel):
@@ -86,21 +83,139 @@ async def list_staff(db: AsyncSession = Depends(get_db_session)) -> Dict[str, An
     return {"items": items, "roles": PLATFORM_ROLES}
 
 
-@router.post("", status_code=201)
-async def add_staff(body: AddStaff, staff: Staff = Depends(require_staff("staff.manage", recent=True)),
-                    db: AsyncSession = Depends(get_db_session)) -> StaffMember:
-    user = (await db.execute(select(User).where(func.lower(User.email) == body.email.strip().lower()))).scalar_one_or_none()
-    if user is None:
-        raise HTTPException(status_code=404, detail="No Syruss account has that email. They need to sign up first.")
-    if user.status != "active":
-        raise HTTPException(status_code=409, detail="That account is disabled.")
-    if user.id in settings.platform_admin_ids or await db.get(PlatformStaff, user.id):
-        raise HTTPException(status_code=409, detail="They're already on the platform staff.")
-    row = PlatformStaff(user_id=user.id, role=body.role, added_by=staff.user_id)
-    db.add(row)
-    record(db, staff, "staff.added", "user", user.id, reason=body.reason, details={**_who(user), "role": body.role})
+class InviteIn(BaseModel):
+    email: str = Field(..., max_length=255, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    role: Role
+    reason: str = Field(..., min_length=5, max_length=500)
+
+
+def _invitation(i: PlatformStaffInvitation) -> Dict[str, Any]:
+    expired = i.status == "pending" and i.expires_at < datetime.now(timezone.utc)
+    return {"id": i.id, "email": i.email, "role": i.role, "status": "expired" if expired else i.status, "expires_at": i.expires_at,
+            "invited_by_name": i.invited_by_name, "reason": i.reason, "email_sent_at": i.email_sent_at, "created_at": i.created_at,
+            "accepted_at": i.accepted_at}
+
+
+@router.get("/invitations", dependencies=[Depends(require_staff())])
+async def invitations(db: AsyncSession = Depends(get_db_session)) -> List[Dict[str, Any]]:
+    """Invitations waiting for an answer (and expired ones, to send again)."""
+    rows = (await db.execute(select(PlatformStaffInvitation).where(PlatformStaffInvitation.status == "pending")
+                             .order_by(PlatformStaffInvitation.created_at.desc()))).scalars().all()
+    return [_invitation(i) for i in rows]
+
+
+@router.post("/invitations", status_code=201)
+async def invite(body: InviteIn, staff: Staff = Depends(require_staff("staff.manage", recent=True)),
+                 db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
+    """
+    Invites anyone to the staff by email: they need no Syruss account yet. The invitation is always emailed; the link
+    makes their sign-in a staff account (a customer account under it is deleted only after they confirm).
+    """
+    row, plain = await staff_service.invite(db, email=body.email, role=body.role, by_id=staff.user_id, by_name=staff.name, reason=body.reason,
+                                            by_email=staff.email)
+    record(db, staff, "staff.invited", "invitation", row.id, reason=body.reason, details={"email": row.email, "role": row.role})
     await db.commit()
-    return _member(user, user.id, body.role, from_config=False, row=row)
+    sent = await staff_service.send(row.id, plain)
+    await db.refresh(row)
+    return {**_invitation(row), "email_sent": sent, "link": staff_service.join_url(plain)}
+
+
+async def _pending(db: AsyncSession, invitation_id: str) -> PlatformStaffInvitation:
+    row = await db.get(PlatformStaffInvitation, invitation_id)
+    if row is None or row.status != "pending":
+        raise HTTPException(status_code=404, detail="No invitation waiting with that id.")
+    return row
+
+
+@router.post("/invitations/{invitation_id}/resend")
+async def resend(invitation_id: str, staff: Staff = Depends(require_staff("staff.manage", recent=True)),
+                 db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
+    """Emails it again with a fresh link and a fresh week; the old link stops working."""
+    row = await _pending(db, invitation_id)
+    plain = staff_service.renew(row)
+    record(db, staff, "staff.invitation_resent", "invitation", row.id, details={"email": row.email, "role": row.role})
+    await db.commit()
+    sent = await staff_service.send(row.id, plain)
+    await db.refresh(row)
+    return {**_invitation(row), "email_sent": sent, "link": staff_service.join_url(plain)}
+
+
+@router.delete("/invitations/{invitation_id}", status_code=204)
+async def revoke(invitation_id: str, staff: Staff = Depends(require_staff("staff.manage", recent=True)),
+                 db: AsyncSession = Depends(get_db_session)) -> None:
+    row = await _pending(db, invitation_id)
+    row.status = "revoked"
+    record(db, staff, "staff.invitation_revoked", "invitation", row.id, details={"email": row.email, "role": row.role})
+    await db.commit()
+    await staff_service.tell(row.email, "Your invitation to the Syruss platform staff was withdrawn",
+                             f"{staff.name} withdrew the invitation to join the platform staff as {row.role.title()}. The link no longer works.",
+                             with_link=False)
+
+
+# ---- the invitation, from the invited person's side ---------------------------------------------
+
+async def _invitee(identity: Identity = Depends(get_identity)) -> Identity:
+    """Opened in the admin app, signed in through its client (password and one-time code)."""
+    if settings.OIDC_ADMIN_CLIENT and identity.client_id != settings.OIDC_ADMIN_CLIENT:
+        raise HTTPException(status_code=403, detail={"code": "admin_app_required", "message": "Open the invitation in the Syruss admin app."})
+    return identity
+
+
+@router.get("/join/{token}")
+async def view_invitation(token: str, identity: Identity = Depends(_invitee), db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
+    """What the invitation is for, whether it can be accepted with this sign-in, and what accepting would remove."""
+    row = await staff_service.by_token(db, token)
+    customer = await staff_service.customer_account(db, identity.user_id)
+    problem = None
+    try:
+        await staff_service.check_open(db, row, identity)
+    except HTTPException as exc:
+        problem = exc.detail if isinstance(exc.detail, dict) else {"code": "closed", "message": exc.detail}
+    return {"invitation": _invitation(row), "role_description": PLATFORM_ROLES.get(row.role, ""), "signed_in_as": identity.email,
+            "problem": problem, "already_staff": await staff_service.is_staff(db, identity.user_id),
+            "customer_account": customer.as_dict() if customer else None}
+
+
+class CodeIn(BaseModel):
+    code: str = Field(..., min_length=4, max_length=12)
+
+
+@router.post("/join/{token}/verify/send")
+async def send_join_code(token: str, identity: Identity = Depends(_invitee), db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
+    """Emails a one-time code to the signed-in address, to prove it is theirs before they join (as customers do)."""
+    await staff_service.by_token(db, token)
+    from app.services import email_verification
+    return await email_verification.send_code(db, identity)
+
+
+@router.post("/join/{token}/verify")
+async def confirm_join_code(token: str, body: CodeIn, identity: Identity = Depends(_invitee), db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
+    await staff_service.by_token(db, token)
+    from app.services import email_verification
+    return await email_verification.confirm(db, identity, body.code)
+
+
+class AcceptIn(BaseModel):
+    delete_customer_account: bool = Field(False, description="Required when the sign-in has a customer account: it is deleted")
+
+
+@router.post("/join/{token}")
+async def accept_invitation(token: str, body: AcceptIn, identity: Identity = Depends(_invitee),
+                            db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
+    row = await staff_service.by_token(db, token)
+    member = await staff_service.accept(db, row, identity, confirmed=body.delete_customer_account)
+    await db.commit()
+    user = await db.get(User, member.user_id)
+    await staff_service.tell(user.email, "You're on the Syruss platform staff",
+                             f"You joined the platform staff as {member.role.title()}, invited by {row.invited_by_name}. Sign in to the admin app with this address.")
+    await staff_service.tell(row.invited_by_email or await _email_of(db, row.invited_by), f"{user.display_name} joined the platform staff",
+                             f"{user.display_name} ({user.email}) accepted your invitation and is on the staff as {member.role.title()}.")
+    return {"role": member.role}
+
+
+async def _email_of(db: AsyncSession, user_id: str) -> Optional[str]:
+    user = await db.get(User, user_id)
+    return user.email if user else None
 
 
 @router.patch("/{user_id}")
@@ -113,6 +228,10 @@ async def change_role(user_id: str, body: ChangeRole, staff: Staff = Depends(req
     user = await db.get(User, user_id)
     record(db, staff, "staff.role_changed", "user", user_id, reason=body.reason, details={**_who(user), "from": before, "to": body.role})
     await db.commit()
+    if before != body.role:
+        await staff_service.tell(user.email if user else None, f"Your platform staff role is now {body.role.title()}",
+                                 f"{staff.name} changed your role from {before.title()} to {body.role.title()}: {PLATFORM_ROLES.get(body.role, '')}"
+                                 + (f" Why: {body.reason}" if body.reason else ""))
     return _member(user, user_id, row.role, from_config=False, row=row)
 
 
@@ -122,6 +241,10 @@ async def remove_staff(user_id: str, reason: Optional[str] = None, staff: Staff 
     row = await _changeable(db, staff, user_id)
     if row.role == "owner" and await _owners_left(db, user_id) == 0:
         raise HTTPException(status_code=409, detail="The platform needs at least one owner.")
-    record(db, staff, "staff.removed", "user", user_id, reason=reason, details={**_who(await db.get(User, user_id)), "role": row.role})
+    user = await db.get(User, user_id)
+    record(db, staff, "staff.removed", "user", user_id, reason=reason, details={**_who(user), "role": row.role})
     await db.delete(row)
     await db.commit()
+    await staff_service.tell(user.email if user else None, "You're no longer on the Syruss platform staff",
+                             f"{staff.name} removed you from the platform staff. The admin app no longer opens for this address."
+                             + (f" Why: {reason}" if reason else ""), with_link=False)

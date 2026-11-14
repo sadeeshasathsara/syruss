@@ -105,11 +105,11 @@ async def people(q: str = Query(..., min_length=2, max_length=100), limit: int =
 
 
 async def _set_account(db: AsyncSession, staff: Staff, user_id: str, status: str, reason: str) -> Dict[str, Any]:
+    if user_id == staff.user_id:
+        raise HTTPException(status_code=409, detail="You can't disable your own account.")
     user = await db.get(User, user_id)
     if user is None or user.status == "deleted":
         raise HTTPException(status_code=404, detail="No such account.")
-    if user.id == staff.user_id:
-        raise HTTPException(status_code=409, detail="You can't disable your own account.")
     if status == "disabled" and user.id in settings.platform_admin_ids:
         raise HTTPException(status_code=409, detail="This platform owner is set by the deployment and can't be disabled here.")
     if user.status == status:

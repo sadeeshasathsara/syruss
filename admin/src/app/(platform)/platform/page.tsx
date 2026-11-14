@@ -65,9 +65,59 @@ export default function PlatformPage() {
             )}
           </Panel>
           <Announcements list={c.announcements} manage={manage} onDone={refresh} />
+          <Lessons manage={manage} />
         </>
       )}
     </div>
+  );
+}
+
+/** How Syruss works: the lessons every workspace's agent is briefed with. The agent proposes; staff approve. */
+function Lessons({ manage }: { manage: boolean }) {
+  const queryClient = useQueryClient();
+  const list = useQuery({ queryKey: ["lessons"], queryFn: api.lessons.list });
+  const [content, setContent] = useState("");
+  const done = () => queryClient.invalidateQueries({ queryKey: ["lessons"] });
+  const set = useMutation({ mutationFn: ({ id, status }: { id: string; status: "active" | "retired" }) => api.lessons.set(id, status), onSuccess: done });
+  const add = useMutation({ mutationFn: () => api.lessons.add(content.trim()), onSuccess: () => { setContent(""); done(); } });
+  const items = list.data?.items ?? [];
+  const proposed = items.filter((l) => l.status === "proposed");
+  const active = items.filter((l) => l.status === "active");
+  return (
+    <Panel title="How Syruss works" aside={<span className="text-meta text-muted">Lessons every workspace&apos;s agent is briefed with</span>}>
+      {proposed.length > 0 && (
+        <div className="mb-4">
+          <p className="mb-2 text-body font-medium text-ink">Proposed by the agent <span className="num text-muted">{proposed.length}</span></p>
+          <ul className="flex flex-col divide-y divide-rule">
+            {proposed.map((l) => (
+              <li key={l.id} className="flex flex-wrap items-start gap-x-3 gap-y-1 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-body text-ink">{l.content}</p>
+                  {(l.why || l.times_proposed) && <p className="text-meta text-muted">{l.why}{l.times_proposed && l.times_proposed > 1 ? ` · proposed ${l.times_proposed} times` : ""}</p>}
+                </div>
+                {manage && <Button size="sm" variant="primary" onClick={() => set.mutate({ id: l.id, status: "active" })}>Approve</Button>}
+                {manage && <Button size="sm" onClick={() => set.mutate({ id: l.id, status: "retired" })}>Turn down</Button>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <ul className="flex flex-col divide-y divide-rule">
+        {active.map((l) => (
+          <li key={l.id} className="flex items-start gap-3 py-2">
+            <p className="min-w-0 flex-1 text-body text-ink">{l.content}</p>
+            {manage && <Button size="sm" onClick={() => set.mutate({ id: l.id, status: "retired" })}>Retire</Button>}
+          </li>
+        ))}
+      </ul>
+      {manage && (
+        <form className="mt-3 flex flex-col gap-2 @3xl:flex-row" onSubmit={(e) => { e.preventDefault(); if (content.trim().length >= 5) add.mutate(); }}>
+          <input value={content} onChange={(e) => setContent(e.target.value)} maxLength={1000} placeholder="A lesson for every workspace's agent" aria-label="New lesson" className={cn(field, "min-w-0 flex-1")} />
+          <Button type="submit" size="sm" disabled={content.trim().length < 5 || add.isPending}>Add it</Button>
+        </form>
+      )}
+      {(set.error ?? add.error) && <p className="mt-2 text-meta text-negative">{(set.error ?? add.error)!.message}</p>}
+    </Panel>
   );
 }
 

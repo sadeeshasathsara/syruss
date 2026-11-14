@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { authConfig, safeReturnTo } from "@/lib/auth/config";
-import { checkDevice, ensureDeviceToken } from "@/lib/auth/device";
+import { adminHomeFor, checkDevice, ensureDeviceToken } from "@/lib/auth/device";
 import { beginLogin, completeLogin, logoutUrl, refresh, unreachable, type Transaction } from "@/lib/auth/oidc";
 import { clearSealed, clearSession, readSealed, readSession, writeSealed, writeSession } from "@/lib/auth/session";
 
@@ -47,6 +47,13 @@ async function callback(request: NextRequest) {
     await writeSession(session);
   } catch (e) {
     return failed(unreachable(e) ? "unavailable" : "signin");
+  }
+  // A Syruss staff account works only in the admin app: from anywhere else it goes to the admin dashboard, whatever
+  // address it was going to (and this app keeps no session for it). In the admin app itself, its own pages are kept.
+  const adminHome = await adminHomeFor(session);
+  if (adminHome && new URL(adminHome).origin !== authConfig().appOrigin) {
+    await clearSession();
+    return NextResponse.redirect(new URL("/overview", adminHome), { status: 303 });
   }
   const returnTo = safeReturnTo(tx.returnTo, "/");
   // Is this a browser the person has confirmed? A new one is sent to the site for the code before anything opens.

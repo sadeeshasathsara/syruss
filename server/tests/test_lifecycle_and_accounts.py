@@ -115,7 +115,7 @@ async def test_staff_can_suspend_an_organization_and_disable_an_account_with_a_r
     on = await client.post(f"{API}/sysadmin/people/usr_nuisance/enable", headers=ADMIN_APP, json={"reason": "Apologised, key rotated"})
     assert on.json()["status"] == "active" and (await client.get(f"{API}/workspaces", headers=someone)).status_code == 200
     # Nobody disables themselves, and the everyday app's sign-in can't reach these switches.
-    assert (await client.post(f"{API}/sysadmin/people/usr_admin_default/disable", headers=ADMIN_APP, json={"reason": "Testing myself"})).status_code == 409
+    assert (await client.post(f"{API}/sysadmin/people/usr_platform_owner/disable", headers=ADMIN_APP, json={"reason": "Testing myself"})).status_code == 409
     assert (await client.post(f"{API}/sysadmin/people/usr_nuisance/disable", json={"reason": "From the wrong app"})).status_code == 403
     log = (await client.get(f"{API}/sysadmin/audit", headers=ADMIN_APP)).json()
     actions = [e["action"] for e in (log["items"] if isinstance(log, dict) else log)]

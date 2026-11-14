@@ -17,6 +17,7 @@ async function Resolve({ next }: { next?: string }) {
     if (unreachable(e)) return <Unavailable again={here} />;
     throw e;
   }
+  if (ctx.staff && ctx.admin_url) redirect(`${ctx.admin_url}/overview`);  // staff accounts work only in the admin app
   const org = ctx.organizations[0];
   if (!ctx.onboarded || !org) redirect("/onboarding");
   const wanted = safeReturnTo(next, "");

@@ -347,7 +347,8 @@ async def test_system_lessons_seed_propose_and_need_approval(client):
     listed = (await client.get(f"{API}/system-lessons", headers=member)).json()
     assert not listed["can_manage"] and all(l["status"] == "active" for l in listed["items"])
     assert (await client.patch(f"{API}/system-lessons/{proposed['id']}", headers=member, json={"status": "active"})).status_code == 403
-    assert (await client.patch(f"{API}/system-lessons/{proposed['id']}", json={"status": "active"})).json()["status"] == "active"
+    staff_owner = {"X-Client-ID": "syruss-admin", "X-User-ID": "usr_platform_owner", "X-Username": "Pat Platform", "X-Email": "owner@syruss.test"}
+    assert (await client.patch(f"{API}/sysadmin/lessons/{proposed['id']}", headers=staff_owner, json={"status": "active"})).json()["status"] == "active"
     assert lesson in [l["content"] for l in (await client.get(f"{AGENT}/system-lessons", headers=agent(tpl))).json()]
 
 

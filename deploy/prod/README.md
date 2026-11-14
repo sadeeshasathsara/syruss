@@ -25,8 +25,11 @@ nothing is built on it. The folder holds everything the server needs besides its
 4. `docker compose --env-file env/stack.env pull && docker compose --env-file env/stack.env up -d`.
 5. Harden the Keycloak realm on the server itself (Caddy keeps `/admin` closed from outside):
    `KEYCLOAK_URL=http://127.0.0.1:8080 KEYCLOAK_ADMIN=... KEYCLOAK_ADMIN_PASSWORD=... python3 harden.py` (from `bridge/keycloak`).
-6. In the admin app, fill in Syruss's billing details, a bank account and the tax rates. Invoices can't be issued before.
-7. The deploy hook: run `hook.py` as a systemd service with `HOOK_SECRET` (a long random value) and
+6. Invite the first platform owner: `docker compose --env-file env/stack.env exec server python -m app.invite_staff you@company.com`.
+   The invitation is emailed (and its link printed). Use an address with no Syruss customer account: a staff account only
+   opens the admin app. Everyone else on the staff is then invited from the admin app's Staff page.
+7. In the admin app, fill in Syruss's billing details, a bank account and the tax rates. Invoices can't be issued before.
+8. The deploy hook: run `hook.py` as a systemd service with `HOOK_SECRET` (a long random value) and
    `DEPLOY_DIR=~/syruss-deploy`. In GitHub, set the `PROD_DEPLOY_URL` (`https://deploy.<domain>/deploy`) and
    `PROD_DEPLOY_SECRET` secrets, create the `production` environment (add yourself as a required reviewer), and set the
    repository variable `PROD_DEPLOY_ENABLED=true`. Until then a release on `main` publishes images and deploys nothing.

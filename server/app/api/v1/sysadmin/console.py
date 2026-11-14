@@ -498,7 +498,8 @@ async def security(db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]
     staff = [(u, row.role) for row, u in staff_rows]
     configured = settings.platform_admin_ids - {u.id for u, _ in staff}
     if configured:
-        staff += [(u, "owner") for u in (await db.execute(select(User).where(User.id.in_(configured)))).scalars().all()]
+        found = {u.id: u for u in (await db.execute(select(User).where(User.id.in_(configured)))).scalars().all()}
+        staff += [(found.get(uid) or User(id=uid, email="", first_name=uid, last_name="", status="active"), "owner") for uid in sorted(configured)]
     last_action = dict((await db.execute(select(PlatformAuditEntry.actor_id, func.max(PlatformAuditEntry.created_at))
                                          .group_by(PlatformAuditEntry.actor_id))).all())
     return {

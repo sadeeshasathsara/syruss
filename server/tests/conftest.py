@@ -8,7 +8,7 @@ import random
 
 os.environ["POSTGRES_DB"] = "doc_intelligence_test"
 os.environ["MINIO_BUCKET_NAME"] = "documents-test"
-os.environ["PLATFORM_ADMIN_USER_IDS"] = "usr_admin_default"
+os.environ["PLATFORM_ADMIN_USER_IDS"] = "usr_platform_owner"  # a staff account of its own: staff never use customer pages
 os.environ["MAIL_BACKEND"] = "memory"
 os.environ["REQUIRE_TRUSTED_DEVICE"] = "false"  # device tests switch it on for themselves
 os.environ["PUBLIC_SITE_URL"] = "http://site.test"
@@ -206,3 +206,15 @@ async def pages_allowance(pages, tenant_id: str = TENANT) -> None:
     async with AsyncSessionLocal() as db:
         await billing.set_override(db, tenant_id=tenant_id, key=billing.PAGES, value=pages, reason="test", set_by="tests")
         await db.commit()
+
+
+async def make_staff(client, headers: dict, role: str, reason: str = "Joins the staff") -> None:
+    """Invites a person to the platform staff (as the test owner) and accepts it as them, in the admin app."""
+    owner = {"X-Client-ID": "syruss-admin", "X-User-ID": "usr_platform_owner", "X-Username": "Pat Platform", "X-Email": "owner@syruss.test"}
+    res = await client.post("/api/v1/sysadmin/staff/invitations", headers=owner, json={"email": headers["X-Email"], "role": role, "reason": reason})
+    assert res.status_code == 201, res.text
+    token = res.json()["link"].rsplit("/", 1)[1]
+    # (the mock sign-in vouches for the address; in the app they confirm it with an emailed code)
+    accepted = await client.post(f"/api/v1/sysadmin/staff/join/{token}", headers={**headers, "X-Client-ID": "syruss-admin"},
+                                 json={"delete_customer_account": True})
+    assert accepted.status_code == 200, accepted.text

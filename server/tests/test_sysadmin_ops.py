@@ -14,12 +14,12 @@ from app.models.platform import PlatformAuditEntry
 from app.models.trace import AgentExecutionTrace as Run
 from app.services import run_watch
 from app.services.live import platform_feed
-from tests.conftest import TENANT, AsyncSessionLocal, create_template, outbox_events, person, register, upload, ws
+from tests.conftest import TENANT, AsyncSessionLocal, create_template, outbox_events, person, register, upload, ws, make_staff
 
 API = "/api/v1"
 SYS = "/api/v1/sysadmin"
 AGENT = "/internal/agent/v1"
-ADMIN_APP = {"X-Client-ID": "syruss-admin"}
+ADMIN_APP = {"X-Client-ID": "syruss-admin", "X-User-ID": "usr_platform_owner", "X-Username": "Pat Platform", "X-Email": "owner@syruss.test"}
 
 STEP = {"step_number": 1, "thought": "The total on the page is 41.20", "tool_calls": [
     {"tool_name": "view_page", "arguments": {"page": 1}, "observation": "secret page text", "status": "success", "duration_ms": 12.5}]}
@@ -105,9 +105,9 @@ async def test_staff_see_facts_and_open_content_only_through_an_audited_grant(cl
     assert (await client.get(f"{SYS}/processes/{doc}/file", headers=ADMIN_APP)).json()["detail"]["code"] == "content_access_required"
 
     # A viewer can't open content at all.
-    viewer = {**person("usr_ops_viewer", "Vera Viewer"), **ADMIN_APP}
+    viewer = {**ADMIN_APP, **person("usr_ops_viewer", "Vera Viewer")}
     await register(viewer, None)
-    await client.post(f"{SYS}/staff", headers=ADMIN_APP, json={"email": "usr_ops_viewer@example.com", "role": "viewer"})
+    await make_staff(client, viewer, "viewer")
     assert (await client.post(f"{SYS}/access", headers=viewer, json={"tenant_id": TENANT, "reason": "Just looking"})).status_code == 403
     assert (await client.post(f"{SYS}/access", headers=ADMIN_APP, json={"tenant_id": TENANT, "reason": "x"})).status_code == 422
 
@@ -186,9 +186,9 @@ async def test_staff_stop_runs_retry_documents_and_resend_events_with_a_reason(c
     assert (await client.get(f"{AGENT}/run/cancelled", headers=token)).json()["cancelled"] is True
     assert (await client.post(f"{SYS}/processes/{doc}/retry", headers=ADMIN_APP, json={"reason": "Read it again"})).status_code == 409  # still running
 
-    viewer = {**person("usr_ops_viewer2", "Val Viewer"), **ADMIN_APP}
+    viewer = {**ADMIN_APP, **person("usr_ops_viewer2", "Val Viewer")}
     await register(viewer, None)
-    await client.post(f"{SYS}/staff", headers=ADMIN_APP, json={"email": "usr_ops_viewer2@example.com", "role": "viewer"})
+    await make_staff(client, viewer, "viewer")
     assert (await client.post(f"{SYS}/runs/{trace_id}/stop", headers=viewer, json={"reason": "Looping on one page"})).status_code == 403
 
     async with AsyncSessionLocal() as db:
