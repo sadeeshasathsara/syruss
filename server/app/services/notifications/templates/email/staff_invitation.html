@@ -1,4 +1,4 @@
-{#- An invitation to the platform staff. Variables: inviter, role, role_description, url, expires_on -#}
+{#- An invitation to the platform staff. Variables: inviter, role, role_description, url, expires_on; optional: new_signin -#}
 {% extends "_layout.html" %}
 {% import "_components.html" as ui %}
 {% block preheader %}Join the people who run Syruss, as {{ role }}.{% endblock %}
@@ -7,7 +7,11 @@
 {{ ui.paragraph(inviter ~ " invited you to the Syruss platform staff, the people who run the platform from its admin app.") }}
 {{ ui.paragraph("Your role would be " ~ role ~ ": " ~ role_description) }}
 {{ ui.facts([("Your role", role), ("Invited address", to), ("Valid until", expires_on)]) }}
-{{ ui.paragraph("Sign in with this address (or create a sign-in for it), with a password and a one-time code. A staff account is only for the admin app: if this address already has a Syruss customer account, you'll be shown what accepting would remove before anything changes.") }}
+{% if new_signin %}
+{{ ui.paragraph("A sign-in was made for this address. A separate email from Syruss sign-in has a link to choose your password and set up a one-time code in an authenticator app: do that first, and it brings you back to this invitation.") }}
+{% else %}
+{{ ui.paragraph("Sign in to the admin app with this address, your password and a one-time code. A staff account is only for the admin app: if this address already has a Syruss customer account, you'll be shown what accepting would remove before anything changes.") }}
+{% endif %}
 {{ ui.button("Open the invitation", url) }}
 {% endblock %}
 {% block footer %}If you weren't expecting this, ignore the email: nothing happens until you accept.{% endblock %}

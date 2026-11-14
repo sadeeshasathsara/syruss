@@ -95,7 +95,7 @@ def renew(row: PlatformStaffInvitation) -> str:
     return plain
 
 
-async def send(invitation_id: str, plain: str) -> bool:
+async def send(invitation_id: str, plain: str, new_signin: bool = False) -> bool:
     """Emails the invitation. True when it left. Never raises."""
     from app.core.database import AsyncSessionLocal
     from app.services.notifications import STAFF_INVITATION, Recipient, notify
@@ -106,7 +106,8 @@ async def send(invitation_id: str, plain: str) -> bool:
         try:
             delivery = await notify(STAFF_INVITATION, Recipient(email=row.email), {
                 "inviter": row.invited_by_name, "role": row.role.title(), "role_description": PLATFORM_ROLES.get(row.role, ""),
-                "url": join_url(plain), "expires_on": f"{row.expires_at:%d %B %Y}"}, channels={"email"})
+                "url": join_url(plain), "expires_on": f"{row.expires_at:%d %B %Y}", "new_signin": new_signin},
+                channels={"email"})
         except Exception:  # noqa: BLE001  (a mail problem must not fail the invitation)
             return False
         sent = getattr(delivery, "email", None) == "sent"

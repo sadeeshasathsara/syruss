@@ -11,7 +11,7 @@ from app.models.audit import AuditLog
 from app.models.platform import PlatformApproval, PlatformAuditEntry, PlatformSetting, PlatformStaff
 from app.models.tenant import Tenant
 from app.services import platform_controls, staff_offboarding
-from tests.conftest import AsyncSessionLocal, make_staff, person, register
+from tests.conftest import AsyncSessionLocal, invite_staff, make_staff, person, register
 from tests.test_billing import organization
 
 API = "/api/v1"
@@ -49,15 +49,20 @@ async def test_platform_tools_need_a_one_time_code_and_a_sign_in_from_today(clie
     me = (await client.get(f"{SYS}/me", headers=OWNER)).json()
     assert me["session"]["idle_minutes"] == 30 and me["session"]["ends_at"]
     # Accepting a staff invitation asks the same of the sign-in.
-    res = await client.post(f"{SYS}/staff/invitations", headers=OWNER, json={"email": "code.less@example.com", "role": "viewer", "reason": "Joining"})
-    token = res.json()["link"].rsplit("/", 1)[1]
+    token = await invite_staff("code.less@example.com", "viewer")
     newcomer = {**staff_headers("usr_code_less", "Cody Less"), "X-Email": "code.less@example.com", "X-Amr": "pwd"}
     assert (await client.get(f"{SYS}/staff/join/{token}", headers=newcomer)).json()["detail"]["code"] == "two_step_required"
 
 
-async def test_with_the_rule_on_a_risky_action_waits_for_a_second_owner(client, mailbox, clean_rules):
+async def test_with_the_rule_on_a_risky_action_waits_for_a_second_owner(client, mailbox, clean_rules, monkeypatch):
     # The rule needs two owners who can approve.
-    refused = await client.put(f"{SYS}/platform/approvals", headers=OWNER, json={"on": True, "reason": "Four eyes on risky changes"})
+    from app.api.v1.sysadmin import approvals
+
+    async def only_one(db):
+        return [{"id": "usr_platform_owner", "email": None}]
+    with monkeypatch.context() as m:
+        m.setattr(approvals, "approvers", only_one)
+        refused = await client.put(f"{SYS}/platform/approvals", headers=OWNER, json={"on": True, "reason": "Four eyes on risky changes"})
     assert refused.status_code == 409
     second = staff_headers("usr_second_owner", "Sam Second")
     await make_staff(client, second, "owner")
