@@ -1,6 +1,6 @@
 "use client";
 
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Check, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -40,9 +40,23 @@ function usePlacement(anchor: React.RefObject<HTMLElement | null>, open: boolean
   return rect;
 }
 
+type HistoryTab = "chat" | "syruss";
+
+/** How many threads Syruss started with your role are still open (shown on the history button). */
+export function useOpenThreads(): number {
+  const { workspace } = useWorkspace();
+  const threads = useQuery({
+    queryKey: ["conversations", workspace.id, "syruss", "open"],
+    queryFn: () => api.chat.list(workspace.id, { kind: "syruss", limit: 1 }),
+    staleTime: 60_000,
+  });
+  return threads.data?.open ?? 0;
+}
+
 /**
- * Your earlier chats. Nothing is fetched until it opens; then titles arrive 20 at a time as you
- * scroll. A chat's messages load only when you open it.
+ * Your earlier chats, and apart from them the threads Syruss started with you (its questions and the issues it raised),
+ * open ones first. Nothing is fetched until it opens; then titles arrive 20 at a time as you scroll. A conversation's
+ * messages load only when you open it.
  */
 export function ChatHistory({ open, onClose, anchor }: { open: boolean; onClose: () => void; anchor: React.RefObject<HTMLElement | null> }) {
   const { workspace } = useWorkspace();
@@ -50,9 +64,11 @@ export function ChatHistory({ open, onClose, anchor }: { open: boolean; onClose:
   const rect = usePlacement(anchor, open);
   const list = useRef<HTMLDivElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
+  const [tab, setTab] = useState<HistoryTab>("chat");
+  const openThreads = useOpenThreads();
   const history = useInfiniteQuery({
-    queryKey: ["conversations", workspace.id, "history"],
-    queryFn: ({ pageParam }) => api.chat.list(workspace.id, { kind: "history", offset: pageParam, limit: 20 }),
+    queryKey: ["conversations", workspace.id, tab],
+    queryFn: ({ pageParam }) => api.chat.list(workspace.id, { kind: tab, offset: pageParam, limit: 20 }),
     initialPageParam: 0,
     getNextPageParam: (last) => (last.has_more ? last.next_offset : undefined),
     enabled: open,
@@ -92,13 +108,33 @@ export function ChatHistory({ open, onClose, anchor }: { open: boolean; onClose:
           <h2 className="min-w-0 flex-1 text-body font-semibold text-ink">Chat history</h2>
           <IconButton aria-label="Close chat history" onClick={onClose}><X /></IconButton>
         </div>
+        <div className="flex flex-none gap-1 border-b border-border px-2 py-1.5" role="tablist" aria-label="Which conversations">
+          {([["chat", "Your chats"], ["syruss", "From Syruss"]] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={tab === value}
+              onClick={() => setTab(value)}
+              className={cn(
+                "flex h-7 items-center gap-1.5 rounded-control px-2.5 text-body transition-colors",
+                tab === value ? "bg-card font-medium text-ink shadow-sm" : "text-muted hover:text-ink",
+              )}
+            >
+              {label}
+              {value === "syruss" && openThreads > 0 && <span className="num text-meta text-ink">{openThreads}</span>}
+            </button>
+          ))}
+        </div>
         <div ref={list} className="min-h-0 flex-1 overflow-y-auto p-1.5 scrollbar-thin">
           {history.isLoading ? (
             <div className="flex flex-col gap-2 p-1.5">{[0, 1, 2, 3].map((i) => <Bar key={i} className="h-9 w-full" />)}</div>
           ) : history.isError ? (
-            <p className="p-3 text-body text-negative">Couldn&rsquo;t load your chats.</p>
+            <p className="p-3 text-body text-negative">Couldn&rsquo;t load these conversations.</p>
           ) : items.length === 0 ? (
-            <p className="p-3 text-body text-muted">No earlier chats yet.</p>
+            <p className="p-3 text-body text-muted">
+              {tab === "chat" ? "No earlier chats yet." : "Syruss hasn’t asked you anything yet. Its questions and the issues it raises show here."}
+            </p>
           ) : (
             <ul className="flex flex-col">
               {items.map((c) => (
@@ -117,7 +153,7 @@ export function ChatHistory({ open, onClose, anchor }: { open: boolean; onClose:
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-body text-ink">{c.title}</span>
                       <span className="block text-meta text-muted">
-                        {c.kind !== "chat" ? `${c.kind === "flag" ? "Decision" : "Started by Syruss"} · ${c.status === "resolved" ? "resolved" : "pending"} · ` : ""}{ago(c.updated_at)}
+                        {c.kind !== "chat" ? `${c.kind === "flag" ? "Question" : "Issue"} · ${c.status === "resolved" ? "resolved" : "waiting on you"} · ` : ""}{ago(c.updated_at)}
                       </span>
                     </span>
                     {c.id === activeId && <Check className="size-4 flex-none text-ink" />}

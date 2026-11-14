@@ -50,8 +50,8 @@ function NewChannelDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
       queryClient.invalidateQueries({ queryKey: ["billing", workspace.id] });
       onOpenChange(false);
       setName("");
-      // The SFTP password is shown once, on the channel's page.
-      if (channel.sftp_password) sessionStorage.setItem(`sftp-password:${channel.id}`, channel.sftp_password);
+      // The SFTP password is shown once, on the channel's page; it is only ever kept in this tab's memory.
+      if (channel.sftp_password) queryClient.setQueryData(["sftp-password", channel.id], channel.sftp_password);
       router.push(href(`connections/receive/${channel.slug}`));
     },
   });
@@ -336,6 +336,34 @@ function Activity({ channel }: { channel: IntakeChannelInfo }) {
   );
 }
 
+/** Where a scanner or older system drops its files, and the password: shown once, when the channel is made or a new one is set. */
+function SftpSection({ channel }: { channel: IntakeChannelInfo }) {
+  const { workspace } = useWorkspace();
+  const queryClient = useQueryClient();
+  const [password, setPassword] = useState<string | null>(() => queryClient.getQueryData<string>(["sftp-password", channel.id]) ?? null);
+  useEffect(() => { queryClient.removeQueries({ queryKey: ["sftp-password", channel.id] }); }, [queryClient, channel.id]);
+  const reset = useMutation({ mutationFn: () => api.channels.resetSftpPassword(workspace.id, channel.id), onSuccess: (r) => setPassword(r.password) });
+  if (!channel.sftp) return null;
+  return (
+    <Section title="Connect by SFTP" description="Point the scanner or system at this server. Each file it uploads is read like any other document.">
+      <div className="flex flex-col gap-3">
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-body">
+          <dt className="text-muted">Host</dt><dd className="font-mono text-ink">{channel.sftp.host}</dd>
+          <dt className="text-muted">Port</dt><dd className="font-mono text-ink">{channel.sftp.port}</dd>
+          <dt className="text-muted">Username</dt><dd className="font-mono text-ink">{channel.sftp.username}</dd>
+        </dl>
+        {password ? <ShowOnce label="The SFTP password" value={password} onDone={() => setPassword(null)} /> : (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="secondary" disabled={reset.isPending} onClick={() => reset.mutate()}>{reset.isPending ? "Setting…" : "Set a new password"}</Button>
+            <span className="text-meta text-muted">The old one stops working at once.</span>
+          </div>
+        )}
+        {reset.error && <p className="text-body text-negative">{reset.error.message}</p>}
+      </div>
+    </Section>
+  );
+}
+
 export function ChannelPage({ slug }: { slug: string }) {
   const { workspace, href } = useWorkspace();
   const queryClient = useQueryClient();
@@ -352,8 +380,13 @@ export function ChannelPage({ slug }: { slug: string }) {
     mutationFn: () => api.channels.remove(workspace.id, channel!.id),
     onSuccess: () => { refresh(); router.replace(href("connections/receive")); },
   });
-  const [name, setName] = useState("");
-  useEffect(() => { if (channel) setName(channel.name); }, [channel?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The rename field starts from the saved name, and follows it when it changes.
+  const [name, setName] = useState(channel?.name ?? "");
+  const [savedName, setSavedName] = useState(channel?.name);
+  if (channel && channel.name !== savedName) {
+    setSavedName(channel.name);
+    setName(channel.name);
+  }
   const rename = useMutation({ mutationFn: () => api.channels.update(workspace.id, channel!.id, { name: name.trim() }), onSuccess: refresh });
 
   const back = <Link href={href("connections/receive")} className="mb-1 inline-block text-body text-muted hover:text-ink">All channels</Link>;
@@ -390,6 +423,8 @@ export function ChannelPage({ slug }: { slug: string }) {
           {channel.status === "active" ? "Accepting documents" : "Paused: documents are refused"}
         </label>
       </header>
+
+      {channel.kind === "sftp" && <SftpSection channel={channel} />}
 
       <Section title="Send a document" description="Other systems send files to this address with a key. The key, not the request, decides which workspace and channel a file belongs to.">
         <div className="flex flex-col gap-3">

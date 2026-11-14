@@ -33,7 +33,7 @@ export function toRequest(filters: ScreenFilter[]): ScreenFilter[] {
 
 /**
  * Filters, from simple to advanced. A filter is a column, how to compare (is, is not, contains, at least, at most, between, one of a
- * list, blank) and a value; an advanced condition is written as a formula such as `hours > 10 and site == "S12"`. All of them have to hold.
+ * list, blank) and a value; an advanced condition is written as a formula such as `qty > 10 and place == "P1"`. All of them have to hold.
  */
 export function FilterEditor({ filters, onChange, columns, label = "Add a filter", empty }: {
   filters: ScreenFilter[];

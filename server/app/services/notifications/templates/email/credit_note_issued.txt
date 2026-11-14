@@ -1,0 +1,13 @@
+Credit note {{ number }}
+
+Syruss has issued a credit note of {{ amount }} for invoice {{ invoice_number }}. It is attached as a PDF.
+
+"{{ reason }}"
+{% if refunded %}
+
+{{ refunded }} is being refunded to you.
+{% endif %}
+
+Open billing: {{ url }}
+
+You get this because it is the billing address of {{ organization }} on Syruss.

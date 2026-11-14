@@ -3,7 +3,6 @@ Who is sending a document in. An intake key is tied to exactly one channel, and 
 a document belongs: senders never name a workspace. These keys are accepted only on /intake/* and nowhere else in the API
 (get_current_auth refuses them), so a leaked key can add documents to its channel and read back its own, and do nothing more.
 """
-import hashlib
 import ipaddress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -14,12 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import ratelimit
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db_session
+from app.core.secrets import token_hash
 from app.models.intake import IntakeChannel
 from app.models.tenant import Tenant
 from app.models.template import DocumentTemplate
 from app.models.workspace_admin import ApiKey
-from app.services.intake_rules import problem
-from app.services.intake_service import Sender, reject
+from app.services.intake.rules import problem
+from app.services.intake.service import Sender, reject
 
 
 @dataclass
@@ -38,9 +38,13 @@ class IntakeCaller:
 
 
 def client_ip(request: Request) -> str:
-    """The sender's address. X-Forwarded-For is believed only when the API runs behind a proxy you control (TRUST_PROXY_HEADERS)."""
+    """
+    The sender's address. X-Forwarded-For is believed only when the API runs behind a proxy you control (TRUST_PROXY_HEADERS),
+    and then only its last entry: the one that proxy added. Anything before it came from the sender, who can write whatever
+    they like there (a proxy that appends would otherwise let anyone claim an address on a key's allowlist).
+    """
     if settings.TRUST_PROXY_HEADERS:
-        forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
         if forwarded:
             return forwarded
     return request.client.host if request.client else ""
@@ -94,7 +98,7 @@ async def intake_caller(request: Request, db: AsyncSession = Depends(get_db_sess
     token = _bearer(request)
     if not token.startswith("sk_"):
         raise _unauthorized("Send your intake key as 'Authorization: Bearer sk_...'.")
-    key = (await db.execute(select(ApiKey).where(ApiKey.key_hash == hashlib.sha256(token.encode()).hexdigest()))).scalar_one_or_none()
+    key = (await db.execute(select(ApiKey).where(ApiKey.key_hash == token_hash(token)))).scalar_one_or_none()
     now = datetime.now(timezone.utc)
     if key is None or key.revoked_at or (key.expires_at and key.expires_at < now):
         raise _unauthorized("This key is not valid. It may have expired or been revoked.")

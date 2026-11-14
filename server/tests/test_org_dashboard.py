@@ -2,9 +2,12 @@
 The organization dashboard: an overview anyone in the organization can read, an activity page for those who may audit,
 and closing the organization (owners only, by typing its name).
 """
-from sqlalchemy import select
+from datetime import datetime, timedelta, timezone
+from sqlalchemy import select, update
+from app.models.document import Document, DocumentStatus
 from app.models.tenant import Tenant
-from tests.conftest import AsyncSessionLocal, create_template, person, register
+from app.models.trace import AgentExecutionTrace
+from tests.conftest import TENANT, AsyncSessionLocal, create_template, person, register, upload
 
 API = "/api/v1"
 
@@ -22,6 +25,37 @@ async def test_the_overview_counts_the_organization_and_hides_what_a_role_may_no
     seen = (await client.get(f"{API}/organization/overview", headers=worker)).json()
     assert seen["pending_invitations"] is None and seen["activity"] is None  # a member sees the shape, not the management
     assert seen["workspaces"]["mine"] == 0
+
+
+async def test_the_overview_reads_the_period_against_the_one_before_and_each_workspaces_health(client):
+    tpl, unpriced = await create_template(client, "Overview health"), await create_template(client, "Overview unpriced")
+    saved, failed, old = await upload(client, tpl), await upload(client, tpl), await upload(client, tpl)
+    async with AsyncSessionLocal() as db:
+        await db.execute(update(Document).where(Document.id == saved).values(status=DocumentStatus.COMPLETED))
+        await db.execute(update(Document).where(Document.id == failed).values(status=DocumentStatus.FAILED))
+        await db.execute(update(Document).where(Document.id == old).values(created_at=datetime.now(timezone.utc) - timedelta(days=10)))
+        db.add(AgentExecutionTrace(tenant_id=TENANT, template_id=tpl, profile="document.submitted", model="m", cost_usd=0.25))
+        # A model without a price records tokens but no cost: that reads as unknown, never as free.
+        db.add(AgentExecutionTrace(tenant_id=TENANT, template_id=unpriced, profile="document.submitted", model="m", input_tokens=900, output_tokens=100))
+        await db.commit()
+
+    assert (await client.get(f"{API}/organization/overview", params={"days": 5})).status_code == 422
+    data = (await client.get(f"{API}/organization/overview", params={"days": 7})).json()
+    assert len(data["period"]["series"]) == 7 and data["period"]["current"]["cost_usd"] is not None
+    [row] = [w for w in data["workspace_health"] if w["id"] == tpl]
+    assert (row["received"], row["saved"], row["failed"], row["failed_now"]) == (2, 1, 1, 1)   # the older one is last period's
+    assert row["hands_free_rate"] == 1.0 and row["cost_usd"] == 0.25 and row["documents_this_month"] >= 2
+    [dark] = [w for w in data["workspace_health"] if w["id"] == unpriced]
+    assert dark["cost_usd"] is None and dark["tokens"] == 1000 and data["costs"]
+    assert any(n["slug"] == row["slug"] and n["failed"] == 1 for n in data["needs_you"])
+    assert data["setup"]["workspace"] and data["setup"]["documents"]
+    assert any(w["workspace"] == "Overview health" for w in data["latest_work"])
+
+    # A member of the organization outside every workspace sees no workspace's figures, and no costs.
+    member = person("usr_dash_counts", "Cal Counts")
+    await register(member, "member")
+    seen = (await client.get(f"{API}/organization/overview", headers=member)).json()
+    assert seen["workspace_health"] == [] and seen["latest_work"] == [] and not seen["costs"] and seen["period"]["current"]["tokens"] is None
 
 
 async def test_the_activity_page_tells_who_did_what_a_page_at_a_time(client):
@@ -63,4 +97,5 @@ async def test_closing_the_organization_needs_an_owner_and_its_exact_name(client
     assert done.status_code == 204
     assert (await client.get(f"{API}/organization/overview", headers=boss)).status_code == 403  # it no longer opens
     async with AsyncSessionLocal() as db:
-        assert (await db.get(Tenant, "tenant_to_close")).is_active is False  # closed, not erased
+        closed = await db.get(Tenant, "tenant_to_close")
+        assert closed.is_active is False and closed.status == "closed"  # closed, not erased, and said to be closed

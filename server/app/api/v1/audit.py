@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.database import get_db_session
@@ -17,8 +17,8 @@ router = APIRouter(prefix="/audit", tags=["Audit Logs"])
 async def list_audit_logs(
     event_type: Optional[str] = None,
     x_template_id: Optional[str] = Header(None, alias="X-Template-ID"),
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db_session),
     auth: AuthContext = Depends(get_current_auth)
 ):

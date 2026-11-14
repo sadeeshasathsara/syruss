@@ -19,5 +19,7 @@ class AuditLog(Base):
 
     actor: Mapped[str] = mapped_column(String(100), default="system", nullable=False)  # user id, "agent", "system"
     details: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    # The agent event (run) that made the change, when the agent made it
+    event_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)

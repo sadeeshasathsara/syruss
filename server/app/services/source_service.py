@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.config import settings
 from app.core.secrets import seal, unseal
 from app.models.audit import AuditLog
 from app.models.knowledge import Entity, EntityAlias
@@ -98,8 +99,11 @@ async def create_file_source(db: AsyncSession, *, tenant_id: str, template_id: s
     name = file.filename or "Uploaded file"
     if not name.lower().endswith((".csv", ".json")):
         raise HTTPException(status_code=400, detail="Upload a .csv or .json file.")
+    content = await file.read(settings.KNOWLEDGE_SOURCE_MAX_BYTES + 1)
+    if len(content) > settings.KNOWLEDGE_SOURCE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"The file is larger than {settings.KNOWLEDGE_SOURCE_MAX_BYTES // 1_000_000} MB.")
     try:
-        data = parse_bytes(await file.read(), filename=name)
+        data = parse_bytes(content, filename=name)
         sets = summarize(data)
     except SourceError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

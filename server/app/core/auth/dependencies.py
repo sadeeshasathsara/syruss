@@ -1,4 +1,3 @@
-import hashlib
 from datetime import datetime, timezone
 from typing import Callable, Optional
 from fastapi import Depends, HTTPException, Request, status
@@ -7,6 +6,7 @@ from starlette.requests import HTTPConnection
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.org_permissions import ORG_GRANTS
+from app.core.secrets import token_hash
 from app.core.auth.context import AuthContext, Identity
 from app.core.auth.provider import BaseIAMProvider
 from app.models.identity import OrgMember, User
@@ -87,7 +87,7 @@ async def get_identity(request: Request) -> Identity:
 async def _api_key_auth(key: str) -> AuthContext:
     """A workspace API key acts only inside its workspace, as a viewer ("read") or an editor ("write")."""
     async with AsyncSessionLocal() as db:
-        row = (await db.execute(select(ApiKey).where(ApiKey.key_hash == hashlib.sha256(key.encode()).hexdigest()))).scalar_one_or_none()
+        row = (await db.execute(select(ApiKey).where(ApiKey.key_hash == token_hash(key)))).scalar_one_or_none()
         now = datetime.now(timezone.utc)
         if row is None or row.revoked_at or (row.expires_at and row.expires_at < now):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="This API key is not valid.")

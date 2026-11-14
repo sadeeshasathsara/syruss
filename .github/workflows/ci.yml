@@ -11,6 +11,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# What every job's token may do: read the code and the pull request (the paths filter needs it). Nothing more.
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   verify-changeset:
     name: Verify Changelog Fragment
@@ -28,6 +33,23 @@ jobs:
         run: |
           python scripts/changeset.py check --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.event.pull_request.head.sha }}"
 
+  guard-changelog:
+    name: Guard _changelog (generated, do not edit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Only the release job writes _changelog/. Any other commit that changes it fails here.
+      - name: Check that _changelog was not edited by hand
+        run: |
+          python scripts/changeset.py guard --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.event.pull_request.head.sha }}"
+
   detect-changes:
     name: Detect Changed Components
     runs-on: ubuntu-latest
@@ -36,6 +58,7 @@ jobs:
       agent: ${{ steps.filter.outputs.agent }}
       www: ${{ steps.filter.outputs.www }}
       site: ${{ steps.filter.outputs.site }}
+      admin: ${{ steps.filter.outputs.admin }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,11 +75,12 @@ jobs:
           echo "agent=$(echo "$CHANGED"  | grep -qE '^(agentic_framework/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
           echo "www=$(echo "$CHANGED"    | grep -qE '^(www/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
           echo "site=$(echo "$CHANGED"   | grep -qE '^(site/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "admin=$(echo "$CHANGED"  | grep -qE '^(admin/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
 
   typecheck-frontend:
     name: Frontend Typecheck & Build
     needs: detect-changes
-    if: needs.detect-changes.outputs.www == 'true' || needs.detect-changes.outputs.site == 'true'
+    if: needs.detect-changes.outputs.www == 'true' || needs.detect-changes.outputs.site == 'true' || needs.detect-changes.outputs.admin == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +91,11 @@ jobs:
           cache-dependency-path: |
             www/package-lock.json
             site/package-lock.json
+            admin/package-lock.json
+
+      # site/, www/ and admin/ share one sign-in implementation, copied into each app: the copies must not drift.
+      - name: Sign-in code is identical in every app
+        run: node site/scripts/check-auth-sync.mjs
 
       - name: Typecheck www
         if: needs.detect-changes.outputs.www == 'true'
@@ -74,6 +103,7 @@ jobs:
           cd www
           npm ci || npm install
           npx tsc --noEmit
+          npx eslint src   # errors fail the check; warnings are shown
 
       - name: Build www
         if: needs.detect-changes.outputs.www == 'true'
@@ -87,6 +117,21 @@ jobs:
           cd site
           npm ci || npm install
           npx tsc --noEmit
+          npx eslint src   # errors fail the check; warnings are shown
+
+      - name: Typecheck admin
+        if: needs.detect-changes.outputs.admin == 'true'
+        run: |
+          cd admin
+          npm ci || npm install
+          npx tsc --noEmit
+          npx eslint src   # errors fail the check; warnings are shown
+
+      - name: Build admin
+        if: needs.detect-changes.outputs.admin == 'true'
+        run: |
+          cd admin
+          npm run build
 
   test-server:
     name: Backend Server Tests

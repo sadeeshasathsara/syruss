@@ -125,13 +125,24 @@ export function NewDestinationPage() {
     setSecrets({});
     setPolicy({ send_updates: k.corrections, include_test: false, max_attempts: 8 });
     setMapping({ mode: "record" });
-    if (k.targets.length) api.destinations.suggestMapping(workspace.id, k.kind).then(setMapping).catch(() => setMapping({ mode: "mapped", fields: [] }));
     setStep(1);
   };
+  // A system that wants specific fields gets a first mapping guessed from the template, once it is chosen.
   useEffect(() => {
-    const wanted = params.get("kind");
-    if (wanted && catalogue.data && !kind) { const k = catalogue.data.find((c) => c.kind === wanted); if (k) choose(k); }
-  }, [catalogue.data]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!kind?.targets.length) return;
+    let current = true;
+    api.destinations.suggestMapping(workspace.id, kind.kind)
+      .then((m) => { if (current) setMapping(m); })
+      .catch(() => { if (current) setMapping({ mode: "mapped", fields: [] }); });
+    return () => { current = false; };
+  }, [kind, workspace.id]);
+  // Arriving with ?kind=... (from the catalogue page) starts on that system, once the catalogue has loaded.
+  const [arrived, setArrived] = useState(false);
+  if (!arrived && catalogue.data) {
+    setArrived(true);
+    const wanted = catalogue.data.find((c) => c.kind === params.get("kind"));
+    if (wanted && !kind) choose(wanted);
+  }
 
   const lacking = kind ? missing(kind, config, secrets) : [];
   const test = useMutation({ mutationFn: () => api.destinations.tryConnection(workspace.id, { kind: kind!.kind, config: withDefaults(kind!, config), secrets }) });
@@ -248,7 +259,7 @@ export function NewDestinationPage() {
               <h2 className="text-body font-medium text-ink">2. See what would be sent</h2>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="w-64">
-                  <Select label="Document to try" value={docId} onChange={setDocId} options={[{ value: "none", label: "Choose an approved document…" }, ...sources.data!.documents.map((d) => ({ value: d.id, label: d.filename }))]} />
+                  <Select label="Document to try" value={docId} onChange={setDocId} options={[{ value: "none", label: "Choose an approved document…" }, ...sources.data!.documents.map((d) => ({ value: d.id, label: d.display_name ?? d.filename }))]} />
                 </div>
                 <Button variant="secondary" disabled={docId === "none" || preview.isPending} onClick={() => preview.mutate()}>Show it</Button>
               </div>
@@ -328,9 +339,13 @@ export function DestinationPage({ id }: { id: string }) {
   const [docId, setDocId] = useState("none");
   const [newSecret, setNewSecret] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
-  useEffect(() => {
-    if (dest.data) { setName(dest.data.name); setConfig(dest.data.config); setMapping(dest.data.mapping); setPolicy(dest.data.policy); setSecrets({}); }
-  }, [dest.data?.id, dest.dataUpdatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The form starts from what is saved, and again whenever a newer copy of it arrives.
+  const loaded = dest.data ? `${dest.data.id}:${dest.dataUpdatedAt}` : null;
+  const [shown, setShown] = useState<string | null>(null);
+  if (dest.data && loaded !== shown) {
+    setShown(loaded);
+    setName(dest.data.name); setConfig(dest.data.config); setMapping(dest.data.mapping); setPolicy(dest.data.policy); setSecrets({});
+  }
 
   const save = useMutation({
     mutationFn: (what: "connection" | "mapping" | "rules") => api.destinations.update(workspace.id, id, what === "connection" ? { name: name.trim(), config: withDefaults(kind!, config), secrets } : what === "mapping" ? { mapping } : { policy: policy! }),
@@ -414,7 +429,7 @@ export function DestinationPage({ id }: { id: string }) {
               <Button variant="primary" disabled={save.isPending} onClick={() => save.mutate("mapping")}>Save</Button>
               {sources.data.documents.length > 0 && (
                 <>
-                  <div className="w-56"><Select label="Document to try" value={docId} onChange={setDocId} options={[{ value: "none", label: "Try it on…" }, ...sources.data.documents.map((x) => ({ value: x.id, label: x.filename }))]} /></div>
+                  <div className="w-56"><Select label="Document to try" value={docId} onChange={setDocId} options={[{ value: "none", label: "Try it on…" }, ...sources.data.documents.map((x) => ({ value: x.id, label: x.display_name ?? x.filename }))]} /></div>
                   <Button variant="secondary" disabled={docId === "none" || preview.isPending} onClick={() => preview.mutate()}>Show what is sent</Button>
                 </>
               )}

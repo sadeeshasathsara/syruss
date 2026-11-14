@@ -2,7 +2,6 @@
 The signed-in person: their account, what they belong to, the invitations they accept, and their
 notifications. None of this is tied to one workspace.
 """
-import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -10,9 +9,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import ratelimit
-from app.core.auth import AuthContext, Identity, get_current_auth, get_identity
+from app.core.auth import AuthContext, Identity, get_current_auth, get_identity, require_recent_login
 from app.core.config import settings
 from app.core.database import get_db_session
+from app.core.secrets import token_hash
 from app.models.audit import AuditLog
 from app.models.identity import OrgMember, User, WorkspaceRole
 from app.models.notification import Notification
@@ -20,7 +20,8 @@ from app.models.template import DocumentTemplate
 from app.models.tenant import Tenant
 from app.models.workspace import Workspace
 from app.models.workspace_admin import WorkspaceInvitation, WorkspaceMember
-from app.services import email_verification, identity_service, invitation_mail, workspace_events
+from app.services import data_lifecycle, email_verification, identity_service, invitation_mail, workspace_events
+from app.services.billing import notices as billing_notices
 from app.services.notifications import ACCOUNT
 
 router = APIRouter(tags=["Account"])
@@ -128,6 +129,23 @@ async def update_me(body: ProfileIn, auth: AuthContext = Depends(get_current_aut
     return _me(auth.model_copy(update={"username": user.display_name}), user)
 
 
+@router.delete("/me", status_code=204, dependencies=[Depends(require_recent_login)])
+async def delete_my_account(auth: AuthContext = Depends(get_current_auth), db: AsyncSession = Depends(get_db_session)):
+    """
+    Deletes your Syruss account: you leave every organization and workspace and your profile is blanked. Refused while you
+    are the only owner of an open organization. Your sign-in (email and password) is removed by Syruss staff, who are told.
+    """
+    user = await db.get(User, auth.user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    email = user.email
+    await data_lifecycle.close_account(db, user)
+    db.add(AuditLog(tenant_id=auth.tenant_id, event_type="ACCOUNT_DELETED", entity_type="User", entity_id=user.id, actor=user.id, details={}))
+    await db.commit()
+    await billing_notices.staff_attention(None, "An account was deleted: remove its sign-in",
+                                          f"{email} (id {user.id}) deleted their Syruss account. Remove the sign-in with that id from Keycloak.")
+
+
 @router.post("/auth/logout", status_code=204)
 async def logout(_: Identity = Depends(get_identity)):
     """The session lives in the web app's server and in Keycloak; ending it is their job. Nothing is kept here."""
@@ -140,7 +158,7 @@ async def logout(_: Identity = Depends(get_identity)):
 
 async def _invitation(db: AsyncSession, token: str) -> WorkspaceInvitation:
     invitation = (await db.execute(select(WorkspaceInvitation).where(
-        WorkspaceInvitation.token_hash == hashlib.sha256(token.encode()).hexdigest(),
+        WorkspaceInvitation.token_hash == token_hash(token),
     ))).scalar_one_or_none()
     if invitation is None:
         raise HTTPException(status_code=404, detail="This invite link isn't valid. Ask for a new one.")

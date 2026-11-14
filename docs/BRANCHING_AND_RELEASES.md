@@ -76,6 +76,12 @@ You write the **exact same standard commit messages** regardless of what branch 
 
 ---
 
+> **Never write a skip marker in a commit message or a pull request title.** GitHub skips every workflow when the
+> text `[skip ci]` (or `[ci skip]`, `[no ci]`, `[skip actions]`) appears anywhere in the head commit's message,
+> even when it is only being talked about. A pull request whose head commit has it shows no checks, and a merge
+> commit that quotes such a title skips the push workflows too. The release job does not use a skip marker; it
+> relies on the path filter in `package.yml` instead.
+
 ## 3. Automated Versioning Across Branches
 
 You do **not** need different commit formats for each branch. The GitHub Actions workflows automate versioning per branch:
@@ -94,7 +100,7 @@ You do **not** need different commit formats for each branch. The GitHub Actions
 ### On `main` branch:
 - When `test` is verified and merged into `main`, CI promotes the release candidate to **Stable**:
   - Example: `v1.2.0`
-  - Generates release notes in `CHANGELOG.md`.
+  - Generates release notes in `_changelog/<branch>.md` (one generated file per environment; never edited by hand). Each file opens with a table of every service's current version there, the day it was released, and a link to its notes further down.
   - Creates the official GitHub Release with artifacts.
   - Promotes the tested `:v1.2.0-rc.N` container to `:latest` and `:v1.2.0`.
 
@@ -131,7 +137,7 @@ You do **not** need different commit formats for each branch. The GitHub Actions
 1. When staging passes all checks, open a PR from **`test` -> `main`**.
 2. PR title: `chore(release): release v1.2.0`.
 3. Once approved, merge to `main`.
-4. CI generates `v1.2.0` tag, updates `CHANGELOG.md`, and triggers production deployment.
+4. CI generates `v1.2.0` tag, updates `_changelog/main.md`, and triggers production deployment.
 
 ### Hotfix Workflow (Emergency Bug in Production)
 1. Branch directly from `main`:

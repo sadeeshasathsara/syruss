@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, History, LayoutDashboard, LayoutGrid, Plus, Settings, UsersRound } from "lucide-react";
+import { ArrowLeft, History, LayoutDashboard, LayoutGrid, Settings, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ORG_SETTINGS, orgSettingsHref } from "@/components/org/sections";

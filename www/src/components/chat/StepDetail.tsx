@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { RuleCard, suggestedRuleId } from "@/components/rules/RuleCard";
 import { ImageViewer, type ViewerImage } from "@/components/ui/ImageViewer";
 import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
@@ -37,24 +38,24 @@ function argOf(args: Json, rawArgs: string | undefined, key: string): string {
 const isObj = (v: unknown): v is Json => !!v && typeof v === "object" && !Array.isArray(v);
 const text = (v: unknown) => (typeof v === "string" ? v : v === undefined || v === null ? "" : String(v));
 
-/** Documents in a (possibly cut-off) result: each `{"id": ...}` chunk with its file name and status. */
+/** Documents in a (possibly cut-off) result: each `{"id": ...}` chunk with its name (the identification key, else the file name) and status. */
 function documentsIn(result: string): { id: string; filename: string; status?: string; role?: string }[] {
   const parsed = parse(result);
   const list = Array.isArray(parsed) ? parsed : isObj(parsed) ? [parsed] : null;
   if (list) {
     return list.filter(isObj).filter((d) => d.id && d.filename).map((d) => ({
-      id: text(d.id), filename: text(d.filename), status: text(d.status) || undefined, role: text(d.role) || undefined,
+      id: text(d.id), filename: text(d.name) || text(d.filename), status: text(d.status) || undefined, role: text(d.role) || undefined,
     }));
   }
   return result.split(/\{"id":\s*"/).slice(1).flatMap((chunk) => {
     const id = chunk.slice(0, chunk.indexOf('"'));
-    const filename = /"filename":\s*"([^"]+)"/.exec(chunk)?.[1];
+    const filename = /"name":\s*"([^"]+)"/.exec(chunk)?.[1] ?? /"filename":\s*"([^"]+)"/.exec(chunk)?.[1];
     if (!id || !filename) return [];
     return [{ id, filename, status: /"status":\s*"([^"]+)"/.exec(chunk)?.[1], role: /"role":\s*"([^"]+)"/.exec(chunk)?.[1] }];
   });
 }
 
-const LABEL_KEYS = ["filename", "name", "original_filename", "title", "question", "content", "message", "observation", "text"];
+const LABEL_KEYS = ["name", "filename", "original_filename", "title", "question", "content", "message", "observation", "text"];
 
 /** What any other result says, as a short list or key/value lines rather than raw JSON. */
 function Summary({ value, raw }: { value: unknown; raw?: string }) {
@@ -116,6 +117,25 @@ export function StepDetail({ step }: { step: RunStep }) {
   if (step.result?.startsWith("REFUSED") || step.result?.startsWith("ERROR")) return <Summary value={undefined} raw={step.result} />;
 
   switch (step.tool) {
+    case "suggest_rule": {
+      const id = suggestedRuleId(step.result);
+      return id ? <RuleCard ruleId={id} /> : <Summary value={result} raw={step.result} />;
+    }
+    case "check_rule": {
+      if (!isObj(result)) return <Summary value={result} raw={step.result} />;
+      const problem = Array.isArray(result.problems) && isObj(result.problems[0]) ? result.problems[0] : undefined;
+      const run = isObj(result.dry_run) ? result.dry_run : undefined;
+      return (
+        <div className="flex flex-col gap-1">
+          <p className="break-all font-mono text-meta text-ink">{arg("check")}</p>
+          {problem ? <p className="text-body text-negative">{text(problem.message)}</p> : run && (
+            <p className="text-body text-ink">
+              Passes on {text(run.passed)}, fails on {text(run.failed)}, doesn&apos;t apply to {text(run.not_applicable)} of {text(run.records)} saved records.
+            </p>
+          )}
+        </div>
+      );
+    }
     case "save_screen":
     case "update_screen": {
       const saved = isObj(result) ? result : undefined;

@@ -24,8 +24,9 @@ from app.models.extraction import ExtractionResult
 from app.models.review import ReviewTask, ReviewStatus
 from app.models.template import DocumentTemplate
 from app.services import delivery_service, duplicate_check, graph_service
+from app.services.rules import service as rule_service
 from app.services.identity_check import find_identity_conflicts, find_unsupported_identities
-from app.services.rule_engine import validate_record
+from app.services.rules.engine import validate_record
 
 
 class RecordService:
@@ -60,7 +61,8 @@ class RecordService:
         if not template.active_version_id:
             raise HTTPException(status_code=409, detail="The template has no active version yet; records cannot be stored.")
 
-        validation = validate_record(template.schema_definition, data)
+        rules = await rule_service.active_rules(db, template.id)
+        validation = validate_record(template.schema_definition, data, rules)
         signals: List[Dict[str, Any]] = []
         if check_identities:
             signals = await graph_service.identity_signals(

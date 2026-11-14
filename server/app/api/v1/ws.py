@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import AuthContext, get_current_auth
 from app.core.database import AsyncSessionLocal, get_db_session
 from app.services import channels
-from app.services.event_broadcaster import broadcaster
+from app.services.live.broadcaster import broadcaster
 
 logger = logging.getLogger(__name__)
 
@@ -35,11 +35,6 @@ async def ws_ticket(body: TicketIn, db: AsyncSession = Depends(get_db_session), 
     if token is None:
         raise HTTPException(status_code=403, detail="You can't listen on that channel.")
     return {"ticket": token, "channel": channel, "expires_in": 30}
-
-
-@router.websocket("/tenant/{tenant_id}")
-async def websocket_tenant_stream(websocket: WebSocket, tenant_id: str):
-    await _stream_channel(websocket, f"tenant:{tenant_id}", f"tenant {tenant_id}")
 
 
 @router.websocket("/documents/{document_id}")

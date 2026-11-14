@@ -6,7 +6,15 @@
 <@layout.registrationLayout displayMessage=messagesPerField.exists('global') displayRequiredFields=true; section>
 <!-- template: register.ftl -->
 
-    <#if section = "header">
+    <#-- Nobody signs up through the system admin app: an owner adds platform staff, in the app. -->
+    <#if layout.staffApp()>
+        <#if section = "header">
+            ${msg("staffNoSignupTitle")}
+        <#elseif section = "form">
+            <p class="syruss-note">${msg("staffNoSignup")}</p>
+            <a class="pf-v5-c-button pf-m-primary syruss-block-button" href="${url.loginUrl}">${msg("doLogIn")}</a>
+        </#if>
+    <#elseif section = "header">
         <#if messageHeader??>
             ${kcSanitize(msg("${messageHeader}"))?no_esc}
         <#else>
