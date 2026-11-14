@@ -10,6 +10,7 @@ import type {
   Rule, RuleCheckResult, RuleDraft, RuleInput, RuleLanguage, ValidationRule,
   Offers, OrgBilling, PurchaseStarted, BillingDetails, Invoice, SentPayment,
 } from "./types";
+import { loadPage } from "./browser";
 
 /**
  * Typed client for the core API. Workspace calls always name their workspace explicitly
@@ -65,7 +66,7 @@ async function request<T>(path: string, init: RequestInit & { workspaceId?: stri
   if (res.status === 401 && typeof window !== "undefined") {
     // Signed out (or the session ended): sign in again and come back to this page.
     const here = window.location.pathname + window.location.search;
-    window.location.assign(`${SITE}/api/auth/login?mode=signin&returnTo=${encodeURIComponent(`/continue?next=${encodeURIComponent(here)}`)}`);
+    loadPage(`${SITE}/api/auth/login?mode=signin&returnTo=${encodeURIComponent(`/continue?next=${encodeURIComponent(here)}`)}`);
   }
   if (!res.ok) {
     let detail: unknown;
@@ -76,12 +77,12 @@ async function request<T>(path: string, init: RequestInit & { workspaceId?: stri
     }
     if (res.status === 403 && (detail as { code?: string } | undefined)?.code === "reauth_required" && typeof window !== "undefined") {
       // A risky action: sign in again (Keycloak asks for the password), then come back to this page to do it.
-      window.location.assign(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      loadPage(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
     }
     if (res.status === 403 && (detail as { code?: string } | undefined)?.code === "device_unverified" && typeof window !== "undefined") {
       // A browser the account hasn't confirmed: the code page is on the site, and brings the person back here.
       const here = window.location.pathname + window.location.search;
-      window.location.assign(`${SITE}/verify-device?next=${encodeURIComponent(`/continue?next=${encodeURIComponent(here)}`)}`);
+      loadPage(`${SITE}/verify-device?next=${encodeURIComponent(`/continue?next=${encodeURIComponent(here)}`)}`);
     }
     throw new ApiError(res.status, messageFrom(detail, `Request failed (${res.status}).`), detail);
   }

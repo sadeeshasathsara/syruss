@@ -12,7 +12,7 @@ import { Pill } from "@/components/ui/Pill";
 import { Switch } from "@/components/ui/Switch";
 import { ACCOUNT_URL, useMe } from "@/lib/access";
 import { api } from "@/lib/api";
-import { applyTheme, useTheme } from "@/lib/browser";
+import { applyTheme, loadPage, useTheme } from "@/lib/browser";
 import { ago, cn, dateTime } from "@/lib/format";
 import { setSound, useSoundOn } from "@/lib/sound";
 
@@ -70,7 +70,7 @@ export function CloseOrganization() {
   const overview = useQuery({ queryKey: ["org-overview", 30], queryFn: () => api.org.overview(30) });
   const [typed, setTyped] = useState("");
   const name = overview.data?.organization.name ?? "";
-  const close = useMutation({ mutationFn: () => api.org.close(typed.trim()), onSuccess: () => window.location.assign("/signed-out") });
+  const close = useMutation({ mutationFn: () => api.org.close(typed.trim()), onSuccess: () => loadPage("/signed-out") });
   const owner = me?.org_role === "owner";
 
   return (
@@ -114,7 +114,7 @@ export function SignInSettings() {
 /** Leaving Syruss for good. Typed confirmation, a recent sign-in, and the server refuses while an organization would be left ownerless. */
 function DeleteAccount({ email }: { email: string }) {
   const [typed, setTyped] = useState("");
-  const remove = useMutation({ mutationFn: () => api.org.deleteMyAccount(), onSuccess: () => window.location.assign("/signed-out") });
+  const remove = useMutation({ mutationFn: () => api.org.deleteMyAccount(), onSuccess: () => loadPage("/signed-out") });
   const sure = !!email && typed.trim().toLowerCase() === email.toLowerCase();
   return (
     <Section title="Delete your account" description="You leave every organization and workspace, and your name and details are removed. Work you did stays with the organizations it belongs to. This can't be undone.">
