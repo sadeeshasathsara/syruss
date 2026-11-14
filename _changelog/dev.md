@@ -14,11 +14,53 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.9.1-dev.1` | 2026-11-14 | [What changed](#admin-091-dev1) |
+| **admin** | `0.9.2-dev.1` | 2026-11-14 | [What changed](#admin-092-dev1) |
 | **agent** | `0.7.1-dev.1` | 2026-11-14 | [What changed](#agent-071-dev1) |
-| **server** | `0.16.1-dev.1` | 2026-11-14 | [What changed](#server-0161-dev1) |
-| **site** | `0.2.7-dev.1` | 2026-11-14 | [What changed](#site-027-dev1) |
-| **www** | `0.11.2-dev.1` | 2026-11-14 | [What changed](#www-0112-dev1) |
+| **server** | `0.16.2-dev.1` | 2026-11-14 | [What changed](#server-0162-dev1) |
+| **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
+| **www** | `0.12.0-dev.1` | 2026-11-14 | [What changed](#www-0120-dev1) |
+
+## [2026-11-14] - Release via dev
+
+### admin (0.9.2-dev.1)
+- **Sign-in settings are managed inside Syruss.** Settings → Account and security shows:
+- whether you have a password and when it last changed;
+- your authenticator apps, and whether two-step verification is on;
+- whether Google is linked.
+- Changing the password, setting up two-step verification or removing an authenticator opens one Syruss-styled sign-in step (a Keycloak Application Initiated Action) that comes straight back with a confirmation. Keycloak's own account pages are turned off (`harden.py`).
+- **Every button on the sign-in pages shows that it's working** ("Signing in…", "Creating your account…") and can't be pressed twice.
+- **Clearer bank transfer slip form:** a drop area with a "Choose files" button, the chosen files listed and removable, and the "Transfer reference" explained.
+- **A card payment Stripe finished while its webhook never arrived is no longer lost.** Paying again, or opening the invoice, checks the open checkout with Stripe and records the payment, instead of reopening Stripe's finished page. An expired checkout is replaced by a new one.
+
+### server (0.16.2-dev.1)
+- **Sign-in settings are managed inside Syruss.** Settings → Account and security shows:
+- whether you have a password and when it last changed;
+- your authenticator apps, and whether two-step verification is on;
+- whether Google is linked.
+- Changing the password, setting up two-step verification or removing an authenticator opens one Syruss-styled sign-in step (a Keycloak Application Initiated Action) that comes straight back with a confirmation. Keycloak's own account pages are turned off (`harden.py`).
+- **Every button on the sign-in pages shows that it's working** ("Signing in…", "Creating your account…") and can't be pressed twice.
+- **Clearer bank transfer slip form:** a drop area with a "Choose files" button, the chosen files listed and removable, and the "Transfer reference" explained.
+- **A card payment Stripe finished while its webhook never arrived is no longer lost.** Paying again, or opening the invoice, checks the open checkout with Stripe and records the payment, instead of reopening Stripe's finished page. An expired checkout is replaced by a new one.
+
+### site (0.2.8-dev.1)
+- **Sign-in settings are managed inside Syruss.** Settings → Account and security shows:
+- whether you have a password and when it last changed;
+- your authenticator apps, and whether two-step verification is on;
+- whether Google is linked.
+- Changing the password, setting up two-step verification or removing an authenticator opens one Syruss-styled sign-in step (a Keycloak Application Initiated Action) that comes straight back with a confirmation. Keycloak's own account pages are turned off (`harden.py`).
+- **Every button on the sign-in pages shows that it's working** ("Signing in…", "Creating your account…") and can't be pressed twice.
+- **Clearer bank transfer slip form:** a drop area with a "Choose files" button, the chosen files listed and removable, and the "Transfer reference" explained.
+- **A card payment Stripe finished while its webhook never arrived is no longer lost.** Paying again, or opening the invoice, checks the open checkout with Stripe and records the payment, instead of reopening Stripe's finished page. An expired checkout is replaced by a new one.
+
+### www (0.12.0-dev.1)
+- **Sign-in settings are managed inside Syruss.** Settings → Account and security shows:
+- whether you have a password and when it last changed;
+- your authenticator apps, and whether two-step verification is on;
+- whether Google is linked.
+- Changing the password, setting up two-step verification or removing an authenticator opens one Syruss-styled sign-in step (a Keycloak Application Initiated Action) that comes straight back with a confirmation. Keycloak's own account pages are turned off (`harden.py`).
+- **Every button on the sign-in pages shows that it's working** ("Signing in…", "Creating your account…") and can't be pressed twice.
+- **Clearer bank transfer slip form:** a drop area with a "Choose files" button, the chosen files listed and removable, and the "Transfer reference" explained.
+- **A card payment Stripe finished while its webhook never arrived is no longer lost.** Paying again, or opening the invoice, checks the open checkout with Stripe and records the payment, instead of reopening Stripe's finished page. An expired checkout is replaced by a new one.
 
 ## [2026-11-14] - Release via dev
 
