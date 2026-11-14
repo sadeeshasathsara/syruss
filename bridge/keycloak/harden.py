@@ -40,7 +40,10 @@ WANTED = {
     # Stolen sessions and tokens
     "accessTokenLifespan": 300,           # an access token is good for five minutes
     "ssoSessionIdleTimeout": 1800,        # 30 minutes without activity ends the session
-    "ssoSessionMaxLifespan": 36000,       # and no session lives past ten hours
+    "ssoSessionMaxLifespan": 36000,       # and no session lives past ten hours...
+    "rememberMe": True,                   # ...unless they tick "Keep me signed in": then the browser stays signed in
+    "ssoSessionIdleTimeoutRememberMe": 2592000,   # for 30 days (asking the password and any one-time code once a month).
+    "ssoSessionMaxLifespanRememberMe": 2592000,   # The admin app's own client limits (8 hours) still apply to staff.
     "revokeRefreshToken": True,           # a refresh token works once...
     "refreshTokenMaxReuse": 0,            # ...and a replayed one revokes the whole session (theft detected)
     "sslRequired": "external",            # plain http only for localhost
@@ -58,8 +61,9 @@ WANTED = {
 }
 # Browsers shouldn't frame the sign-in pages (clickjacking) or let them be sniffed.
 WANTED_HEADERS = {
-    "xFrameOptions": "DENY",
-    "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'none'; object-src 'none';",
+    # Only Keycloak's own pages may frame it: its account page checks the sign-in in a hidden frame of its own
+    "xFrameOptions": "SAMEORIGIN",
+    "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';",
     "xContentTypeOptions": "nosniff",
     "xRobotsTag": "none",
     "xXSSProtection": "1; mode=block",
@@ -132,9 +136,11 @@ def wanted_requirement(execution: dict, parent: str):
     provider, name, subflow = execution.get("providerId"), execution.get("displayName", ""), execution.get("authenticationFlow")
     if provider in ("auth-cookie", "identity-provider-redirector") or (subflow and execution["level"] == 0 and name.endswith(" Organization")):
         return "DISABLED"
-    if provider == "conditional-user-configured" and parent.endswith("Conditional OTP"):
+    # Keycloak 26.0 calls the second step "Conditional OTP"; from 26.3 it is "Conditional 2FA" (with more conditions)
+    second_step = ("Conditional OTP", "Conditional 2FA")
+    if provider in ("conditional-user-configured", "conditional-credential") and parent.endswith(second_step):
         return "DISABLED"   # the code is asked of everyone, not only of those who already set one up
-    if provider == "auth-otp-form" or (subflow and (name.endswith("Conditional OTP") or name.endswith(" forms"))):
+    if provider == "auth-otp-form" or (subflow and (name.endswith(second_step) or name.endswith(" forms"))):
         return "REQUIRED"
     return None
 
@@ -203,7 +209,8 @@ def ensure_reference(token: str, execution: dict, reference: str, check_only: bo
     config_id = execution.get("authenticationConfig")
     current = call("GET", f"/admin/realms/{REALM}/authentication/config/{config_id}", token) if config_id else None
     have = (current or {}).get("config") or {}
-    if all(have.get(k) == v for k, v in wanted.items()):
+    # Newer Keycloak shows these values masked ("**********"): a key that is there is then taken as set by this script
+    if all(have.get(k) in (v, "**********") for k, v in wanted.items()):
         return []
     if not check_only:
         if current:
