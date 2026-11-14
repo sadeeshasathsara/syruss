@@ -10,14 +10,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.v1.sysadmin.access import Staff, record, require_staff
+from app.api.v1.sysadmin.access import Staff, check_sign_in, record, require_staff
+from app.api.v1.sysadmin.approvals import act, risky
 from app.core.auth import Identity, get_identity
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.core.platform_permissions import PLATFORM_GRANTS, PLATFORM_ROLES
 from app.models.identity import User
 from app.models.platform import PlatformStaff, PlatformStaffInvitation
-from app.services import staff_service
+from app.services import platform_controls, staff_offboarding, staff_service
 
 router = APIRouter(prefix="/staff")
 
@@ -35,6 +36,13 @@ class StaffMember(BaseModel):
     added_at: Optional[datetime] = None
     last_seen_at: Optional[datetime] = None
     status: str = "active"
+    # Their use of the admin app, and what follows from it (offboarding and access reviews); None for the deployment's owners
+    last_active_at: Optional[datetime] = None
+    reviewed_at: Optional[datetime] = None
+    reviewed_by_name: Optional[str] = None
+    review_due_at: Optional[datetime] = None
+    review_due: bool = False
+    removal_at: Optional[datetime] = None
 
 
 class ChangeRole(BaseModel):
@@ -42,12 +50,14 @@ class ChangeRole(BaseModel):
     reason: Optional[str] = Field(None, max_length=500)
 
 
-def _member(user: Optional[User], user_id: str, role: str, *, from_config: bool, row: Optional[PlatformStaff] = None) -> StaffMember:
+def _member(user: Optional[User], user_id: str, role: str, *, from_config: bool, row: Optional[PlatformStaff] = None,
+            policy: Optional[Dict[str, int]] = None) -> StaffMember:
+    access = staff_offboarding.describe(row, policy or staff_offboarding.DEFAULT_POLICY) if row else {}
     return StaffMember(
         user_id=user_id, name=(user.display_name if user else None) or user_id, email=user.email if user else None, role=role,
         permissions=sorted(PLATFORM_GRANTS[role]), from_config=from_config, added_by=row.added_by if row else None,
         added_at=row.created_at if row else None, last_seen_at=user.last_seen_at if user else None,
-        status=user.status if user else "no account yet",
+        status=user.status if user else "no account yet", **access,
     )
 
 
@@ -78,9 +88,51 @@ async def list_staff(db: AsyncSession = Depends(get_db_session)) -> Dict[str, An
     rows = (await db.execute(select(PlatformStaff, User).join(User, User.id == PlatformStaff.user_id).order_by(PlatformStaff.created_at))).all()
     configured = sorted(settings.platform_admin_ids - {r.user_id for r, _ in rows})
     users = {u.id: u for u in (await db.execute(select(User).where(User.id.in_(configured)))).scalars()} if configured else {}
+    policy = await staff_offboarding.policy(db)
     items = [_member(users.get(uid), uid, "owner", from_config=True) for uid in configured]
-    items += [_member(u, r.user_id, r.role, from_config=False, row=r) for r, u in rows]
-    return {"items": items, "roles": PLATFORM_ROLES}
+    items += [_member(u, r.user_id, r.role, from_config=False, row=r, policy=policy) for r, u in rows]
+    return {"items": items, "roles": PLATFORM_ROLES, "policy": policy}
+
+
+# ---- unused and unneeded access (see services/staff_offboarding.py) ----------------------------------
+
+class Review(BaseModel):
+    note: Optional[str] = Field(None, max_length=500)
+
+
+@router.post("/{user_id}/review")
+async def review(user_id: str, body: Review, staff: Staff = Depends(require_staff("staff.manage")),
+                 db: AsyncSession = Depends(get_db_session)) -> StaffMember:
+    """An owner confirms this person still needs their platform access (not their own: another owner confirms that)."""
+    row = await _changeable(db, staff, user_id)
+    row.reviewed_at, row.reviewed_by_name = datetime.now(timezone.utc), staff.name
+    user = await db.get(User, user_id)
+    record(db, staff, "staff.reviewed", "user", user_id, reason=body.note, details={**_who(user), "role": row.role})
+    await db.commit()
+    return _member(user, user_id, row.role, from_config=False, row=row, policy=await staff_offboarding.policy(db))
+
+
+class PolicyIn(BaseModel):
+    inactive_days: int = Field(..., ge=0, le=365, description="Days without using the admin app before access is taken away (0: never)")
+    warn_days: int = Field(..., ge=0, le=30, description="How many days before that they are told")
+    review_days: int = Field(..., ge=0, le=365, description="How often an owner confirms each person still needs access (0: never)")
+    reason: str = Field(..., min_length=5, max_length=500)
+
+
+@router.put("/policy")
+async def set_policy(body: PolicyIn, staff: Staff = Depends(require_staff("staff.manage", recent=True)),
+                     db: AsyncSession = Depends(get_db_session)) -> Dict[str, int]:
+    if body.inactive_days and body.inactive_days < 14:
+        raise HTTPException(status_code=422, detail="Give people at least 14 days without the admin app before their access is taken away.")
+    if body.inactive_days and body.warn_days >= body.inactive_days:
+        raise HTTPException(status_code=422, detail="The warning has to come before access is taken away.")
+    if body.review_days and body.review_days < 30:
+        raise HTTPException(status_code=422, detail="Reviews can be at most monthly (30 days).")
+    value = body.model_dump(exclude={"reason"})
+    await platform_controls.save(db, staff_offboarding.POLICY, value, by_id=staff.user_id, by_name=staff.name)
+    record(db, staff, "staff.policy_changed", "platform", staff_offboarding.POLICY, reason=body.reason, details=value)
+    await db.commit()
+    return value
 
 
 class InviteIn(BaseModel):
@@ -104,20 +156,33 @@ async def invitations(db: AsyncSession = Depends(get_db_session)) -> List[Dict[s
     return [_invitation(i) for i in rows]
 
 
-@router.post("/invitations", status_code=201)
-async def invite(body: InviteIn, staff: Staff = Depends(require_staff("staff.manage", recent=True)),
-                 db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
-    """
-    Invites anyone to the staff by email: they need no Syruss account yet. The invitation is always emailed; the link
-    makes their sign-in a staff account (a customer account under it is deleted only after they confirm).
-    """
-    row, plain = await staff_service.invite(db, email=body.email, role=body.role, by_id=staff.user_id, by_name=staff.name, reason=body.reason,
+async def _invite(db: AsyncSession, staff: Staff, p: Dict[str, Any]) -> Dict[str, Any]:
+    row, plain = await staff_service.invite(db, email=p["email"], role=p["role"], by_id=staff.user_id, by_name=staff.name, reason=p["reason"],
                                             by_email=staff.email)
-    record(db, staff, "staff.invited", "invitation", row.id, reason=body.reason, details={"email": row.email, "role": row.role})
+    record(db, staff, "staff.invited", "invitation", row.id, reason=p["reason"], details={"email": row.email, "role": row.role})
     await db.commit()
     sent = await staff_service.send(row.id, plain)
     await db.refresh(row)
     return {**_invitation(row), "email_sent": sent, "link": staff_service.join_url(plain)}
+
+
+risky("staff.invite_owner", "staff.owners", "staff.manage")(_invite)
+
+
+@router.post("/invitations", status_code=201)
+async def invite(body: InviteIn, staff: Staff = Depends(require_staff("staff.manage", recent=True)),
+                 db: AsyncSession = Depends(get_db_session)) -> Any:
+    """
+    Invites anyone to the staff by email: they need no Syruss account yet. The invitation is always emailed; the link
+    makes their sign-in a staff account (a customer account under it is deleted only after they confirm). Inviting an
+    owner may need a second owner's approval.
+    """
+    payload = body.model_dump()
+    if body.role != "owner":
+        return await _invite(db, staff, payload)
+    email = body.email.strip().lower()
+    return await act(db, staff, "staff.invite_owner", payload, summary=f"Invite {email} as a platform owner",
+                     target_type="invitation", target_id=email, reason=body.reason)
 
 
 async def _pending(db: AsyncSession, invitation_id: str) -> PlatformStaffInvitation:
@@ -158,6 +223,7 @@ async def _invitee(identity: Identity = Depends(get_identity)) -> Identity:
     """Opened in the admin app, signed in through its client (password and one-time code)."""
     if settings.OIDC_ADMIN_CLIENT and identity.client_id != settings.OIDC_ADMIN_CLIENT:
         raise HTTPException(status_code=403, detail={"code": "admin_app_required", "message": "Open the invitation in the Syruss admin app."})
+    check_sign_in(identity)
     return identity
 
 
@@ -218,26 +284,40 @@ async def _email_of(db: AsyncSession, user_id: str) -> Optional[str]:
     return user.email if user else None
 
 
-@router.patch("/{user_id}")
-async def change_role(user_id: str, body: ChangeRole, staff: Staff = Depends(require_staff("staff.manage", recent=True)),
-                      db: AsyncSession = Depends(get_db_session)) -> StaffMember:
+@risky("staff.change_owner_role", "staff.owners", "staff.manage")
+async def _change_role(db: AsyncSession, staff: Staff, p: Dict[str, Any]) -> StaffMember:
+    user_id, role, reason = p["user_id"], p["role"], p.get("reason")
     row = await _changeable(db, staff, user_id)
-    if row.role == "owner" and body.role != "owner" and await _owners_left(db, user_id) == 0:
+    if row.role == "owner" and role != "owner" and await _owners_left(db, user_id) == 0:
         raise HTTPException(status_code=409, detail="The platform needs at least one owner.")
-    before, row.role = row.role, body.role
+    before, row.role = row.role, role
     user = await db.get(User, user_id)
-    record(db, staff, "staff.role_changed", "user", user_id, reason=body.reason, details={**_who(user), "from": before, "to": body.role})
+    record(db, staff, "staff.role_changed", "user", user_id, reason=reason, details={**_who(user), "from": before, "to": role})
     await db.commit()
-    if before != body.role:
-        await staff_service.tell(user.email if user else None, f"Your platform staff role is now {body.role.title()}",
-                                 f"{staff.name} changed your role from {before.title()} to {body.role.title()}: {PLATFORM_ROLES.get(body.role, '')}"
-                                 + (f" Why: {body.reason}" if body.reason else ""))
+    if before != role:
+        await staff_service.tell(user.email if user else None, f"Your platform staff role is now {role.title()}",
+                                 f"{staff.name} changed your role from {before.title()} to {role.title()}: {PLATFORM_ROLES.get(role, '')}"
+                                 + (f" Why: {reason}" if reason else ""))
     return _member(user, user_id, row.role, from_config=False, row=row)
 
 
-@router.delete("/{user_id}", status_code=204)
-async def remove_staff(user_id: str, reason: Optional[str] = None, staff: Staff = Depends(require_staff("staff.manage", recent=True)),
-                       db: AsyncSession = Depends(get_db_session)) -> None:
+@router.patch("/{user_id}")
+async def change_role(user_id: str, body: ChangeRole, staff: Staff = Depends(require_staff("staff.manage", recent=True)),
+                      db: AsyncSession = Depends(get_db_session)) -> Any:
+    """A new role. Making someone an owner, or no longer one, may need a second owner's approval."""
+    row = await _changeable(db, staff, user_id)
+    payload = {"user_id": user_id, "role": body.role, "reason": body.reason}
+    if "owner" not in (row.role, body.role) or row.role == body.role:
+        return await _change_role(db, staff, payload)
+    user = await db.get(User, user_id)
+    who = user.display_name if user else user_id
+    summary = f"Make {who} a platform owner" if body.role == "owner" else f"Change {who} from owner to {body.role.title()}"
+    return await act(db, staff, "staff.change_owner_role", payload, summary=summary, target_type="user", target_id=user_id, reason=body.reason)
+
+
+@risky("staff.remove_owner", "staff.owners", "staff.manage")
+async def _remove(db: AsyncSession, staff: Staff, p: Dict[str, Any]) -> None:
+    user_id, reason = p["user_id"], p.get("reason")
     row = await _changeable(db, staff, user_id)
     if row.role == "owner" and await _owners_left(db, user_id) == 0:
         raise HTTPException(status_code=409, detail="The platform needs at least one owner.")
@@ -248,3 +328,17 @@ async def remove_staff(user_id: str, reason: Optional[str] = None, staff: Staff 
     await staff_service.tell(user.email if user else None, "You're no longer on the Syruss platform staff",
                              f"{staff.name} removed you from the platform staff. The admin app no longer opens for this address."
                              + (f" Why: {reason}" if reason else ""), with_link=False)
+
+
+@router.delete("/{user_id}", status_code=204, response_model=None)
+async def remove_staff(user_id: str, reason: Optional[str] = None, staff: Staff = Depends(require_staff("staff.manage", recent=True)),
+                       db: AsyncSession = Depends(get_db_session)) -> Any:
+    """Takes someone off the staff at once; removing an owner may need a second owner's approval."""
+    row = await _changeable(db, staff, user_id)
+    payload = {"user_id": user_id, "reason": reason}
+    if row.role != "owner":
+        return await _remove(db, staff, payload)
+    user = await db.get(User, user_id)
+    who = user.display_name if user else user_id
+    return await act(db, staff, "staff.remove_owner", payload, summary=f"Remove {who} (an owner) from the staff",
+                     target_type="user", target_id=user_id, reason=reason)

@@ -116,15 +116,15 @@ async def send(invitation_id: str, plain: str) -> bool:
         return sent
 
 
-async def tell(email: Optional[str], title: str, body: str, with_link: bool = True) -> None:
-    """An email to a staff member about their place on the staff. Never raises."""
+async def tell(email: Optional[str], title: str, body: str, with_link: bool = True, path: str = "/overview") -> None:
+    """An email to a staff member (their place on the staff, an approval), linking to a page of the admin app. Never raises."""
     if not email:
         return
     from app.services.notifications import STAFF_UPDATE, Recipient, notify
     try:
         data: Dict[str, Any] = {"title": title, "body": body}
         if with_link:
-            data["url"] = settings.PUBLIC_ADMIN_URL.rstrip("/") + "/overview"
+            data["url"] = settings.PUBLIC_ADMIN_URL.rstrip("/") + path
         await notify(STAFF_UPDATE, Recipient(email=email), data, channels={"email"})
     except Exception:  # noqa: BLE001
         pass
@@ -222,7 +222,7 @@ async def accept(db: AsyncSession, row: PlatformStaffInvitation, identity: Ident
                     last_name=(last or "")[:100] or "Staff")
         db.add(user)
         await db.flush()
-    member = PlatformStaff(user_id=user.id, role=row.role, added_by=row.invited_by)
+    member = PlatformStaff(user_id=user.id, role=row.role, added_by=row.invited_by, last_active_at=now)
     db.add(member)
     row.status, row.accepted_by, row.accepted_at = "accepted", user.id, now
     db.add(PlatformAuditEntry(actor_id=user.id, actor_name=user.display_name, action="staff.joined", target_type="user", target_id=user.id,

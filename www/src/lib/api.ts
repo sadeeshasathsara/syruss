@@ -91,6 +91,25 @@ async function request<T>(path: string, init: RequestInit & { workspaceId?: stri
 
 const json = (body: unknown) => JSON.stringify(body);
 
+export interface SupportGrant {
+  id: string;
+  staff: string;
+  reason: string;
+  opened_at: string;
+  until: string;
+  open: boolean;
+  ended_at: string | null;
+  /** Who ended it early (support, or someone here); null when it ran out. */
+  ended_by: string | null;
+}
+
+export interface SupportAccess {
+  allowed: boolean;
+  can_manage: boolean;
+  open: SupportGrant[];
+  recent: SupportGrant[];
+}
+
 export const api = {
   screens: {
     list: (workspaceId: string) => request<ScreenSummary[]>("/screens", { workspaceId }),
@@ -424,6 +443,13 @@ export const api = {
     view: (token: string) => request<InvitationPreview>(`/invitations/${encodeURIComponent(token)}`),
     accept: (token: string) =>
       request<{ workspace: { id: string; slug: string }; role: Role }>(`/invitations/${encodeURIComponent(token)}/accept`, { method: "POST" }),
+  },
+
+  // Syruss support's access to the organization's content: whether it may open it, who has it open, and before
+  supportAccess: {
+    get: () => request<SupportAccess>("/organization/support-access"),
+    set: (allowed: boolean) => request<SupportAccess>("/organization/support-access", { method: "PUT", body: json({ allowed }) }),
+    end: (id: string) => request<SupportAccess>(`/organization/support-access/${encodeURIComponent(id)}/end`, { method: "POST" }),
   },
 
   // What Syruss is telling everyone now: announcements and maintenance (for the banner at the top of every page)

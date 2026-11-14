@@ -16,6 +16,8 @@ class Identity(BaseModel):
     auth_time: Optional[int] = None
     # The app the token was issued to (the token's authorized party, `azp`)
     client_id: Optional[str] = None
+    # How they proved who they are, as the identity provider reports it (the token's amr: "pwd", "otp", ...)
+    amr: List[str] = Field(default_factory=list)
 
 
 class AuthContext(BaseModel):
