@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/format";
 import type { LiveState } from "@/lib/live";
 import type { Grant } from "@/lib/types";
+import { Problem } from "@/components/ui/Problem";
 
 export const field = "h-8 rounded-control border border-control bg-sheet px-2.5 text-body text-ink outline-none focus-visible:border-accent disabled:opacity-60";
 
@@ -86,7 +87,7 @@ export function ContentAccess({ tenantId, organization, grant }: { tenantId: str
           </div>
         </form>
       )}
-      {open.error && <p className="text-meta text-negative">{open.error.message}</p>}
+      {open.error && <Problem error={open.error} />}
     </div>
   );
 }
@@ -108,7 +109,7 @@ export function ReasonAction({ label, busyLabel, confirmLabel, onRun, variant = 
         <Button type="submit" size="sm" variant={variant} disabled={reason.trim().length < 5 || run.isPending}>{run.isPending ? busyLabel : confirmLabel}</Button>
         <Button size="sm" onClick={() => setAsking(false)}>Cancel</Button>
       </div>
-      {run.error && <p className="text-meta text-negative @2xl:basis-full">{run.error.message}</p>}
+      {run.error && <Problem error={run.error} className="@2xl:basis-full" />}
     </form>
   );
 }

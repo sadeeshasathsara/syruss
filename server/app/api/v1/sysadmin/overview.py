@@ -35,7 +35,10 @@ EVENTS_LATE_AFTER = timedelta(minutes=5)
 async def me(staff: Staff = Depends(current_staff)) -> Dict[str, Any]:
     """You, as the platform staff sees you: what the admin app shows and hides follows from this."""
     return {**staff.model_dump(exclude={"auth_time", "ip"}), "role_name": staff.role.title(),
-            "roles": PLATFORM_ROLES, "permission_names": PLATFORM_PERMISSIONS}
+            "roles": PLATFORM_ROLES, "permission_names": PLATFORM_PERMISSIONS,
+            # The admin app signs out after idle_minutes without use; the sign-in itself ends at session_ends_at
+            "session": {"idle_minutes": settings.STAFF_IDLE_MINUTES,
+                        "ends_at": datetime.fromtimestamp((staff.auth_time or 0) + settings.STAFF_SESSION_HOURS * 3600, timezone.utc)}}
 
 
 @router.get("/stats", dependencies=[Depends(require_staff())])

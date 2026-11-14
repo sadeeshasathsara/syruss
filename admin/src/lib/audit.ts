@@ -18,6 +18,26 @@ export function describeAction(a: StaffAction): string {
       return `withdrew the staff invitation to ${d.email ?? "someone"}`;
     case "staff.joined":
       return `joined the staff as ${role(d.role)}${d.customer_account_deleted ? " (their customer account was deleted)" : ""}`;
+    case "staff.reviewed":
+      return `confirmed ${who} still needs platform access`;
+    case "staff.offboarded":
+      return `took ${who} off the staff after a long time without using the admin app`;
+    case "staff.policy_changed":
+      return "changed when unused staff access is taken away and how often access is reviewed";
+    case "approval.requested":
+      return `asked a second owner to approve: ${d.summary ?? "a risky action"}`;
+    case "approval.approved":
+      return `approved ${d.requested_by ?? "someone"}'s request: ${d.summary ?? "a risky action"}`;
+    case "approval.rejected":
+      return `turned down ${d.requested_by ?? "someone"}'s request: ${d.summary ?? "a risky action"}`;
+    case "approval.cancelled":
+      return `withdrew their request: ${d.summary ?? "a risky action"}`;
+    case "approval.failed":
+      return `approved ${d.requested_by ?? "someone"}'s request, but it couldn't be carried out: ${d.summary ?? "a risky action"}`;
+    case "approvals.on":
+      return "turned on the second owner's approval for risky actions";
+    case "approvals.off":
+      return "turned off the second owner's approval";
     case "lesson.added":
       return "added a platform lesson for the agent";
     case "lesson.active":
