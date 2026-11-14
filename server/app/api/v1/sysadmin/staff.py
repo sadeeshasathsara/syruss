@@ -1,6 +1,7 @@
 """
-The platform staff: who they are and what role each has. People join by an emailed invitation (they need no account
-first); only someone who may manage staff (an owner) invites, changes or removes, after a fresh sign-in. Every change is
+The platform staff: who they are and what role each has. Nobody is added from here: people are invited from the server
+(python -m app.invite_staff, or `syruss staff add`), which also makes their sign-in. Owners change roles, remove people,
+withdraw invitations and review access here, after a fresh sign-in. Every change is
 in the platform audit log and is emailed to the person it is about. Owners named in PLATFORM_ADMIN_USER_IDS are listed but
 can't be changed here: the deployment sets them, so the platform can never be left without an owner.
 """
@@ -135,12 +136,6 @@ async def set_policy(body: PolicyIn, staff: Staff = Depends(require_staff("staff
     return value
 
 
-class InviteIn(BaseModel):
-    email: str = Field(..., max_length=255, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-    role: Role
-    reason: str = Field(..., min_length=5, max_length=500)
-
-
 def _invitation(i: PlatformStaffInvitation) -> Dict[str, Any]:
     expired = i.status == "pending" and i.expires_at < datetime.now(timezone.utc)
     return {"id": i.id, "email": i.email, "role": i.role, "status": "expired" if expired else i.status, "expires_at": i.expires_at,
@@ -156,53 +151,11 @@ async def invitations(db: AsyncSession = Depends(get_db_session)) -> List[Dict[s
     return [_invitation(i) for i in rows]
 
 
-async def _invite(db: AsyncSession, staff: Staff, p: Dict[str, Any]) -> Dict[str, Any]:
-    row, plain = await staff_service.invite(db, email=p["email"], role=p["role"], by_id=staff.user_id, by_name=staff.name, reason=p["reason"],
-                                            by_email=staff.email)
-    record(db, staff, "staff.invited", "invitation", row.id, reason=p["reason"], details={"email": row.email, "role": row.role})
-    await db.commit()
-    sent = await staff_service.send(row.id, plain)
-    await db.refresh(row)
-    return {**_invitation(row), "email_sent": sent, "link": staff_service.join_url(plain)}
-
-
-risky("staff.invite_owner", "staff.owners", "staff.manage")(_invite)
-
-
-@router.post("/invitations", status_code=201)
-async def invite(body: InviteIn, staff: Staff = Depends(require_staff("staff.manage", recent=True)),
-                 db: AsyncSession = Depends(get_db_session)) -> Any:
-    """
-    Invites anyone to the staff by email: they need no Syruss account yet. The invitation is always emailed; the link
-    makes their sign-in a staff account (a customer account under it is deleted only after they confirm). Inviting an
-    owner may need a second owner's approval.
-    """
-    payload = body.model_dump()
-    if body.role != "owner":
-        return await _invite(db, staff, payload)
-    email = body.email.strip().lower()
-    return await act(db, staff, "staff.invite_owner", payload, summary=f"Invite {email} as a platform owner",
-                     target_type="invitation", target_id=email, reason=body.reason)
-
-
 async def _pending(db: AsyncSession, invitation_id: str) -> PlatformStaffInvitation:
     row = await db.get(PlatformStaffInvitation, invitation_id)
     if row is None or row.status != "pending":
         raise HTTPException(status_code=404, detail="No invitation waiting with that id.")
     return row
-
-
-@router.post("/invitations/{invitation_id}/resend")
-async def resend(invitation_id: str, staff: Staff = Depends(require_staff("staff.manage", recent=True)),
-                 db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
-    """Emails it again with a fresh link and a fresh week; the old link stops working."""
-    row = await _pending(db, invitation_id)
-    plain = staff_service.renew(row)
-    record(db, staff, "staff.invitation_resent", "invitation", row.id, details={"email": row.email, "role": row.role})
-    await db.commit()
-    sent = await staff_service.send(row.id, plain)
-    await db.refresh(row)
-    return {**_invitation(row), "email_sent": sent, "link": staff_service.join_url(plain)}
 
 
 @router.delete("/invitations/{invitation_id}", status_code=204)
@@ -274,8 +227,11 @@ async def accept_invitation(token: str, body: AcceptIn, identity: Identity = Dep
     user = await db.get(User, member.user_id)
     await staff_service.tell(user.email, "You're on the Syruss platform staff",
                              f"You joined the platform staff as {member.role.title()}, invited by {row.invited_by_name}. Sign in to the admin app with this address.")
-    await staff_service.tell(row.invited_by_email or await _email_of(db, row.invited_by), f"{user.display_name} joined the platform staff",
-                             f"{user.display_name} ({user.email}) accepted your invitation and is on the staff as {member.role.title()}.")
+    # The person who invited them, or, for an invitation from the server, every owner
+    inviter = row.invited_by_email or await _email_of(db, row.invited_by)
+    for email in [inviter] if inviter else await staff_offboarding.owner_emails(db, without=user.id):
+        await staff_service.tell(email, f"{user.display_name} joined the platform staff",
+                                 f"{user.display_name} ({user.email}) accepted the invitation and is on the staff as {member.role.title()}.")
     return {"role": member.role}
 
 

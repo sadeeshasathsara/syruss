@@ -12,6 +12,7 @@ from typing import List, Optional
 from scripts.changeset import build_changeset_parser, cmd_add, cmd_apply, cmd_check, cmd_guard, cmd_status, cmd_table, cmd_write
 from scripts.registry import get_all_services, get_service_names
 from scripts.runner import run_services
+from scripts.staff import build_staff_parser, cmd_add as staff_add
 
 
 def suggest_correction(word: str, candidates: List[str], entity_type: str = "command") -> str:
@@ -73,6 +74,7 @@ def build_cli_parser() -> SyrussArgumentParser:
             f"  syruss start                 Start all services in production mode\n"
             f"  syruss changeset write -b www=minor -m \"Feature description\"\n"
             f"  syruss changeset status      Check pending changesets and projected versions\n"
+            f"  syruss staff add ana@company.com --role support   Add someone to the platform staff\n"
         ),
     )
 
@@ -95,6 +97,11 @@ def build_cli_parser() -> SyrussArgumentParser:
     cs_sub = p_cs.add_subparsers(dest="changeset_action")
     build_changeset_parser(cs_sub)
 
+    # 4. staff <subcommand>
+    p_staff = top_sub.add_parser("staff", help="Platform staff: add someone (the admin app adds nobody)")
+    staff_sub = p_staff.add_subparsers(dest="staff_action")
+    build_staff_parser(staff_sub)
+
     return parser
 
 
@@ -102,9 +109,9 @@ def main(custom_args: Optional[List[str]] = None) -> int:
     raw_args = custom_args if custom_args is not None else sys.argv[1:]
 
     # Early check for typo in top-level command
-    known_top = ["start", "run", "changeset", "--help", "-h"]
+    known_top = ["start", "run", "changeset", "staff", "--help", "-h"]
     if raw_args and not raw_args[0].startswith("-") and raw_args[0] not in known_top:
-        suggestion = suggest_correction(raw_args[0], ["start", "run", "changeset"])
+        suggestion = suggest_correction(raw_args[0], ["start", "run", "changeset", "staff"])
         sys.stderr.write(f"[ERROR] Unknown command '{raw_args[0]}'.{suggestion}\n")
         return 2
 
@@ -160,6 +167,11 @@ def main(custom_args: Optional[List[str]] = None) -> int:
         handler = dispatch.get(action)
         if handler:
             return handler(args)
+    elif args.top_command == "staff":
+        if getattr(args, "staff_action", None) == "add":
+            return staff_add(args)
+        parser.parse_args(["staff", "--help"])
+        return 0
 
     parser.print_help()
     return 0

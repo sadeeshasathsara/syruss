@@ -174,6 +174,13 @@ def ensure_admin_sign_in(token: str, check_only: bool) -> list:
         differed.append(f"client {ADMIN_CLIENT}: signs in through the '{ADMIN_FLOW}' flow")
         client["authenticationFlowBindingOverrides"] = {**(client.get("authenticationFlowBindingOverrides") or {}), "browser": flows[ADMIN_FLOW]["id"]}
         changed = True
+    # Keycloak's emailed setup link for a new staff sign-in (python -m app.invite_staff) leads back to the invitation
+    wanted_uris = next((c.get("redirectUris", []) for c in realm_clients() if c["clientId"] == ADMIN_CLIENT), [])
+    missing = [u for u in wanted_uris if u not in (client.get("redirectUris") or [])]
+    if missing:
+        differed.append(f"client {ADMIN_CLIENT}: may return to {', '.join(missing)}")
+        client["redirectUris"] = (client.get("redirectUris") or []) + missing
+        changed = True
     attributes = client.get("attributes") or {}
     for key, value in ADMIN_CLIENT_ATTRIBUTES.items():
         if attributes.get(key) != value:

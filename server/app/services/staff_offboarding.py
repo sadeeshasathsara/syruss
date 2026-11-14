@@ -44,7 +44,7 @@ def removal_at(row: PlatformStaff, p: Dict[str, int]) -> Optional[datetime]:
     return last_active(row) + timedelta(days=p["inactive_days"]) if p["inactive_days"] else None
 
 
-async def _owner_emails(db: AsyncSession, without: Optional[str] = None) -> List[str]:
+async def owner_emails(db: AsyncSession, without: Optional[str] = None) -> List[str]:
     stored = (await db.execute(select(PlatformStaff.user_id).where(PlatformStaff.role == "owner"))).scalars().all()
     ids = (set(stored) | settings.platform_admin_ids) - {without}
     if not ids:
@@ -90,7 +90,7 @@ async def run(db: AsyncSession, now: Optional[datetime] = None) -> None:
                        f"You hadn't used the admin app for {p['inactive_days']} days, so your access was taken away. "
                        "Ask a platform owner if you still need it.", with_link=False)
         names = ", ".join(f"{u.display_name} ({u.email})" for u in removed)
-        for email in await _owner_emails(db):
+        for email in await owner_emails(db):
             await tell(email, "Unused platform staff access was taken away",
                        f"Taken off the staff after {p['inactive_days']} days without using the admin app: {names}.", path="/staff")
     await _remind_reviews(db, p, now)
@@ -109,7 +109,7 @@ async def _remind_reviews(db: AsyncSession, p: Dict[str, int], now: datetime) ->
         return
     await platform_controls.save(db, REMINDED, {"at": now.isoformat(), "due": len(due)}, by_id=SYSTEM["actor_id"], by_name=SYSTEM["actor_name"])
     await db.commit()
-    for email in await _owner_emails(db):
+    for email in await owner_emails(db):
         await tell(email, f"Access review: {len(due)} on the platform staff to confirm",
                    f"{len(due)} {'person has' if len(due) == 1 else 'people have'} had platform access for {p['review_days']} days or more since "
                    "anyone confirmed they still need it. Open the Staff page and confirm each one, or remove them.", path="/staff")

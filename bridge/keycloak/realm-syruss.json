@@ -129,7 +129,7 @@
       "serviceAccountsEnabled": false,
       "rootUrl": "${SYRUSS_ADMIN_URL}",
       "baseUrl": "${SYRUSS_ADMIN_URL}",
-      "redirectUris": ["${SYRUSS_ADMIN_URL}/api/auth/callback"],
+      "redirectUris": ["${SYRUSS_ADMIN_URL}/api/auth/callback", "${SYRUSS_ADMIN_URL}/join/*"],
       "webOrigins": ["${SYRUSS_ADMIN_URL}"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
