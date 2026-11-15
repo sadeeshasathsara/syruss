@@ -17,9 +17,21 @@
 | **admin** | `0.19.0-dev.1` | 2026-11-15 | [What changed](#admin-0190-dev1) |
 | **agent** | `0.13.0-dev.1` | 2026-11-15 | [What changed](#agent-0130-dev1) |
 | **mail** | `0.6.0-dev.1` | 2026-11-15 | [What changed](#mail-060-dev1) |
-| **server** | `0.27.0-dev.1` | 2026-11-15 | [What changed](#server-0270-dev1) |
+| **server** | `0.28.0-dev.1` | 2026-11-15 | [What changed](#server-0280-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
-| **www** | `0.17.2-dev.1` | 2026-11-15 | [What changed](#www-0172-dev1) |
+| **www** | `0.17.3-dev.1` | 2026-11-15 | [What changed](#www-0173-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### server (0.28.0-dev.1)
+- **Documents sent by email now arrive through the mail service.** An owner gives the **Document inbound** job a mailbox that can read (Google, Microsoft or any IMAP server) in the admin app, and each email channel's address becomes that mailbox with a tag, like `docs+<token>@yourdomain`. The mail service reads the mailbox and hands each message over on Kafka; every attached file becomes a document of the channel it was addressed to, under the same rules as any other document (allowed senders, the SPF/DKIM requirement, file checks, duplicate protection).
+- **The server's own mail receiver is gone**, with `INTAKE_SMTP_PORT`, `INTAKE_SMTP_HOST` and `INTAKE_EMAIL_DOMAIN`: the server runs no mail listener and holds no mail setting. Email channels made before show their new address on their page; the old `token@intake-domain` addresses stop working.
+- Refused mail is written to the channel's activity with the reason. Nothing is mailed back to the sender, since the From address of unwanted mail is often forged.
+
+### www (0.17.3-dev.1)
+- **Documents sent by email now arrive through the mail service.** An owner gives the **Document inbound** job a mailbox that can read (Google, Microsoft or any IMAP server) in the admin app, and each email channel's address becomes that mailbox with a tag, like `docs+<token>@yourdomain`. The mail service reads the mailbox and hands each message over on Kafka; every attached file becomes a document of the channel it was addressed to, under the same rules as any other document (allowed senders, the SPF/DKIM requirement, file checks, duplicate protection).
+- **The server's own mail receiver is gone**, with `INTAKE_SMTP_PORT`, `INTAKE_SMTP_HOST` and `INTAKE_EMAIL_DOMAIN`: the server runs no mail listener and holds no mail setting. Email channels made before show their new address on their page; the old `token@intake-domain` addresses stop working.
+- Refused mail is written to the channel's activity with the reason. Nothing is mailed back to the sender, since the From address of unwanted mail is often forged.
 
 ## [2026-11-15] - Release via dev
 
