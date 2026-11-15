@@ -451,25 +451,63 @@ async def end_announcement(announcement_id: str, staff: Staff = Depends(require_
 
 @router.get("/search", dependencies=[VIEW])
 async def search(q: str = Query(..., min_length=2, max_length=120), db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
-    """Organizations and people by name, address or email; invoices by number; and documents, runs or anything else by id."""
-    text = q.strip()
-    like = "%" + text.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-    orgs = (await db.execute(select(Tenant).where(or_(
-        func.lower(Tenant.name).like(like, escape="\\"), func.lower(Tenant.slug).like(like, escape="\\"), Tenant.id == text))
-        .order_by(Tenant.created_at.desc()).limit(8))).scalars().all()
-    people = (await db.execute(select(User).where(or_(
-        func.lower(User.email).like(like, escape="\\"), func.lower(User.first_name + " " + User.last_name).like(like, escape="\\"), User.id == text))
-        .order_by(User.created_at.desc()).limit(8))).scalars().all()
-    invoices = (await db.execute(select(Invoice).where(func.lower(Invoice.number).like(like, escape="\\")).order_by(Invoice.issued_at.desc()).limit(6))).scalars().all()
-    document = await db.get(Document, text)
-    run = (await db.execute(select(Run).where(or_(Run.id == text, Run.run_id == text, Run.event_id == text)).limit(1))).scalar_one_or_none()
-    return {
-        "organizations": [{"id": t.id, "name": t.name, "slug": t.slug, "status": t.status} for t in orgs],
-        "people": [{"id": u.id, "name": u.display_name, "email": u.email, "status": u.status} for u in people],
-        "invoices": [{"id": i.id, "number": i.number, "status": i.status, "tenant_id": i.tenant_id} for i in invoices],
-        "documents": [{"id": document.id, "tenant_id": document.tenant_id, "status": document.status.value}] if document else [],
-        "runs": [{"id": run.id, "tenant_id": run.tenant_id, "status": run.status}] if run else [],
-    }
+    """
+    One box for the whole platform: organizations, people, documents (file name, the sender's reference, its key),
+    agent runs, support tickets (number, subject, requester), invoices, workspaces and staff. Any id finds its thing.
+    Exact and prefix matches come first, then the newest; each group is capped.
+    """
+    from app.models.support import SupportTicket
+    from app.services import search as find
+    s = find.Query(q)
+    text = s.text
+
+    rank = s.rank(Tenant.name, Tenant.slug)
+    orgs = (await db.execute(select(Tenant).where(or_(s.matches(Tenant.name, Tenant.slug), Tenant.id == text))
+                             .order_by(rank, Tenant.created_at.desc()).limit(6))).scalars().all()
+    full_name = User.first_name + " " + User.last_name
+    people = (await db.execute(select(User).where(or_(s.matches(User.email, full_name), User.id == text))
+                               .order_by(s.rank(User.email, full_name), User.created_at.desc()).limit(6))).scalars().all()
+    documents = (await db.execute(select(Document).where(or_(
+        s.matches(Document.original_filename, Document.external_id, Document.identified_key), Document.id == text))
+        .order_by(case((Document.id == text, 0), else_=1), s.rank(Document.identified_key, Document.original_filename, Document.external_id),
+                  Document.created_at.desc()).limit(6))).scalars().all()
+    runs = (await db.execute(select(Run).where(or_(Run.id == text, Run.run_id == text, Run.event_id == text, Run.document_id == text))
+                             .order_by(Run.started_at.desc()).limit(5))).scalars().all()
+    ticket_cols = (SupportTicket.number, SupportTicket.subject, SupportTicket.requester_email, SupportTicket.requester_name)
+    tickets = (await db.execute(select(SupportTicket).where(SupportTicket.merged_into.is_(None), or_(s.matches(*ticket_cols), SupportTicket.id == text))
+                                .order_by(s.rank(*ticket_cols), SupportTicket.created_at.desc()).limit(6))).scalars().all()
+    invoices = (await db.execute(select(Invoice).where(or_(s.matches(Invoice.number), Invoice.id == text))
+                                 .order_by(s.rank(Invoice.number), Invoice.issued_at.desc().nulls_last()).limit(5))).scalars().all()
+    workspaces = (await db.execute(select(Workspace).where(or_(s.matches(Workspace.name, Workspace.slug), Workspace.id == text))
+                                   .order_by(s.rank(Workspace.name, Workspace.slug), Workspace.created_at.desc()).limit(5))).scalars().all()
+    staff = (await db.execute(select(PlatformStaff, User).join(User, User.id == PlatformStaff.user_id)
+                              .where(or_(s.matches(User.email, full_name), User.id == text))
+                              .order_by(s.rank(User.email, full_name)).limit(5))).all()
+
+    tenant_ids = {x.tenant_id for x in (*documents, *runs, *invoices, *workspaces) if x.tenant_id} | {t.tenant_id for t in tickets if t.tenant_id}
+    names = dict((await db.execute(select(Tenant.id, Tenant.name).where(Tenant.id.in_(tenant_ids)))).all()) if tenant_ids else {}
+    org = lambda tid: names.get(tid) if tid else None  # noqa: E731
+    status = lambda v: (getattr(v, "value", v) or "").lower() or None  # noqa: E731
+
+    return find.answer(s, [
+        find.group("organizations", "Organizations", [find.item(t.id, t.name, href=f"/accounts/organizations/{t.id}", detail=t.slug,
+                                                                status=t.status if t.status != "active" else None) for t in orgs]),
+        find.group("people", "People", [find.item(u.id, u.display_name, href=f"/accounts/people/{u.id}", detail=u.email,
+                                                  status=u.status if u.status != "active" else None) for u in people]),
+        find.group("documents", "Documents", [find.item(d.id, d.identified_key or d.original_filename, href=f"/documents/{d.id}",
+                                                        detail=find.joined(d.original_filename if d.identified_key else None, d.external_id, org(d.tenant_id)),
+                                                        status=status(d.status)) for d in documents]),
+        find.group("runs", "Agent runs", [find.item(r.id, f"Run {r.id[:8]}", href=f"/runs/{r.id}",
+                                                    detail=find.joined(r.profile, org(r.tenant_id)), status=status(r.status)) for r in runs]),
+        find.group("tickets", "Support tickets", [find.item(t.id, f"{t.number} · {t.subject}", href=f"/support/tickets/{t.id}",
+                                                            detail=find.joined(t.requester_name, t.requester_email, org(t.tenant_id)), status=t.status)
+                                                  for t in tickets]),
+        find.group("invoices", "Invoices", [find.item(i.id, i.number or "Draft invoice", href=f"/billing/invoices/{i.id}",
+                                                      detail=org(i.tenant_id), status=i.status) for i in invoices]),
+        find.group("workspaces", "Workspaces", [find.item(w.id, w.name, href=f"/accounts/organizations/{w.tenant_id}", detail=org(w.tenant_id),
+                                                          status=None if w.is_active else "inactive") for w in workspaces]),
+        find.group("staff", "Staff", [find.item(u.id, u.display_name, href="/staff", detail=find.joined(u.email, row.role)) for row, u in staff]),
+    ])
 
 
 # ---- security -------------------------------------------------------------------------------------
