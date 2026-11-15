@@ -16,9 +16,14 @@
 | :--- | :--- | :--- | :--- |
 | **admin** | `0.11.0-dev.1` | 2026-11-15 | [What changed](#admin-0110-dev1) |
 | **agent** | `0.11.1-dev.1` | 2026-11-15 | [What changed](#agent-0111-dev1) |
-| **server** | `0.19.1-dev.1` | 2026-11-15 | [What changed](#server-0191-dev1) |
+| **server** | `0.19.2-dev.1` | 2026-11-15 | [What changed](#server-0192-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
 | **www** | `0.14.0-dev.1` | 2026-11-15 | [What changed](#www-0140-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### server (0.19.2-dev.1)
+- **`get_db_session` is typed as what it is**, an async iterator of sessions. Pylance reported it as invalid (`reportInvalidTypeForm`). Behaviour doesn't change.
 
 ## [2026-11-15] - Release via dev
 
