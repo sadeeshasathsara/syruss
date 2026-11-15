@@ -8,6 +8,7 @@ import { Announcements } from "./Announcements";
 import { NotificationBell, NotificationToasts } from "./NotificationBell";
 import { SearchTrigger } from "./CommandPalette";
 import { OfflineBanner } from "./OfflineBanner";
+import { AppVersion } from "./AppVersion";
 import { OrgSearch } from "./Search";
 import { useShell } from "./ShellContext";
 import { ThemeToggle } from "./ThemeToggle";
@@ -47,6 +48,7 @@ export function AppFrame({
         {/* Sidebar (≥1024) */}
         <aside className="hidden w-[228px] flex-none flex-col gap-4 overflow-y-auto px-3 pb-3 pt-2 scrollbar-thin lg:flex">
           {sidebar}
+          <AppVersion />
         </aside>
 
         {/* Compact top bar (<1024) */}
@@ -113,7 +115,7 @@ export function AppFrame({
             <ThemeToggle />
             <SheetClose label="Close navigation" />
           </div>
-          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4">{sidebar}</div>
+          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4">{sidebar}<AppVersion /></div>
         </Sheet>
 
         {/* Chat sheet when it cannot be docked */}
