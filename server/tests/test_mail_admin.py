@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.models.platform import PlatformAuditEntry
 from app.models.support import SupportTicket
-from app.services import mail_service
+from app.services import mail_identity, mail_service
 from app.services.notifications.mail_relay import collect_waiting
 from tests.conftest import AsyncSessionLocal, make_staff, person
 
@@ -29,6 +29,8 @@ class FakeMailService:
         body = json.loads(request.content) if request.content else None
         self.calls.append((request.method, request.url.path, body))
         path = request.url.path
+        if path == "/identity":
+            return httpx.Response(200, json={"from_address": "no-reply@syruss.test", "support_address": "help@syruss.test"})
         if path == "/status":
             return httpx.Response(200, json={"google": True, "purposes": {
                 "support": {"account_id": "google-1", "address": "help@syruss.test", "routed": True, "needs": ["read", "send"], "reads": True}}})
@@ -59,7 +61,9 @@ def fake(monkeypatch):
     monkeypatch.setattr(settings, "MAIL_BACKEND", "service")
     service = FakeMailService()
     monkeypatch.setattr(mail_service, "transport", httpx.MockTransport(service))
-    return service
+    mail_identity.forget()
+    yield service
+    mail_identity.forget()
 
 
 async def test_owners_set_mail_up_and_every_change_is_audited(client, fake):

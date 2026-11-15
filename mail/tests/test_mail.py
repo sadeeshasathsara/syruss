@@ -9,8 +9,8 @@ from sqlalchemy import update
 from mail.accounts import MemoryAccount, SmtpImapAccount, SmtpServer, ImapServer, account_from_row
 from mail.accounts.base import Capability, MailError, MailNotPermitted, Outbound
 from mail.accounts.mime import build
-from mail.config import MailSettings, check_config
-from mail.delivery import backoff
+from mail.config import MailSettings, check_config, settings
+from mail.delivery import Delivery, backoff, with_defaults
 from mail.router import Router
 from mail.store import AccountRow, JobRow, RouteRow, seal, unseal
 from mail.worker import MailWorker
@@ -127,6 +127,31 @@ async def test_a_job_is_sent_once_and_not_kept(store, delivery, fallback):
     async with store.session() as s:
         row = await s.get(JobRow, "job-1")
     assert row.status == "sent" and row.attempts == 1 and row.payload is None and row.account_id == "env"
+
+
+async def test_the_sender_and_reply_address_come_from_this_service_unless_the_job_sets_them(store, delivery, fallback, monkeypatch):
+    monkeypatch.setattr(settings, "MAIL_FROM_NAME", "Syruss")
+    monkeypatch.setattr(settings, "MAIL_REPLY_TO", "")
+    monkeypatch.setattr(settings, "SUPPORT_FROM_NAME", "Syruss Support")
+    monkeypatch.setattr(settings, "SUPPORT_EMAIL_ADDRESS", "help@example.com")
+    app_mail = with_defaults(job())
+    assert app_mail.sender_name == "Syruss" and app_mail.reply_to is None
+    monkeypatch.setattr(settings, "MAIL_REPLY_TO", "team@example.com")
+    assert with_defaults(job()).reply_to == "team@example.com"
+    support = with_defaults(job(purpose="support"))
+    assert support.sender_name == "Syruss Support" and support.reply_to == "help@example.com"
+    monkeypatch.setattr(settings, "SUPPORT_EMAIL_ADDRESS", "")
+    assert with_defaults(job(purpose="support")).reply_to == settings.MAIL_FROM          # no support address: the From address
+    # What the job says wins
+    own = with_defaults(job(sender_name="Pat", reply_to="pat@example.com"))
+    assert own.sender_name == "Pat" and own.reply_to == "pat@example.com"
+    # And it is what is sent
+    monkeypatch.setattr(settings, "SUPPORT_EMAIL_ADDRESS", "help@example.com")
+    await MailWorker(delivery).take(job(id="job-2").model_dump_json().encode())
+    assert fallback.sent[-1].sender_name == "Syruss" and fallback.sent[-1].reply_to == "team@example.com"
+    mailbox = MemoryAccount(id="env", address="help@example.com", name="Support", granted=Capability.SEND | Capability.READ)
+    await MailWorker(Delivery(store, Router(store, mailbox))).take(job(id="job-3", purpose="support").model_dump_json().encode())
+    assert mailbox.sent[-1].sender_name == "Syruss Support" and mailbox.sent[-1].reply_to == "help@example.com"
 
 
 async def test_failures_are_tried_again_later_then_given_up(store, delivery, fallback, monkeypatch):

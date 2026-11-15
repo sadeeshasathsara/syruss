@@ -38,6 +38,13 @@ A purpose uses the account routed to it. With no route, or while that account ne
 everything the purpose needs, it falls back to the account from the environment (`MAIL_SMTP_*`, `MAIL_FROM`), which is
 also how a fresh install sends its first emails.
 
+## Who mail is from
+
+This service owns the sender and the support identity; no other service has settings for them. `MAIL_FROM_NAME` and
+`MAIL_REPLY_TO` fill in the name and reply address of any job that doesn't set its own, and support mail is sent as
+`SUPPORT_FROM_NAME` and answered at `SUPPORT_EMAIL_ADDRESS` (empty: `MAIL_FROM`). The server asks for the two addresses it
+needs, `MAIL_FROM` and the support address, at `GET /identity` when it starts and every few minutes after.
+
 ## Delivery
 
 `delivery.py` handles each job:

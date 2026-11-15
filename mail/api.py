@@ -3,6 +3,7 @@ The mail service's internal API. Only the server calls it (Bearer MAIL_SERVICE_T
 admin app's Email page reaches it through the server, which checks who may do what and keeps the audit log.
 No answer ever carries a password or a token.
 
+    GET    /identity                   the address app mail comes from and the support address (the server uses both)
     GET    /status                     each purpose: the account it uses now, whether that is its own, can it read
     GET    /accounts                   the account from the environment and the connected ones
     POST   /accounts/imap              connect a mailbox on any mail server (SMTP to send, IMAP to read)
@@ -54,6 +55,12 @@ def build_api(store: Store, router: Router) -> FastAPI:
     @app.get("/health")
     async def health() -> Dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/identity", dependencies=guard)
+    async def identity() -> Dict[str, str]:
+        """What the server needs to know about our mail: the From address, and the support mailbox's address (its message
+        ids end at its domain, and mail from either is ours, never a customer's)."""
+        return {"from_address": settings.MAIL_FROM, "support_address": settings.SUPPORT_EMAIL_ADDRESS or settings.MAIL_FROM}
 
     @app.get("/status", dependencies=guard)
     async def status() -> Dict[str, Any]:

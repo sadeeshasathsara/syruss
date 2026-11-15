@@ -47,6 +47,13 @@ class MailSettings(BaseSettings):
     MAIL_SMTP_TIMEOUT_SECONDS: int = 15
     MAIL_FROM: str = "no-reply@syruss.local"
     MAIL_FROM_NAME: str = "Syruss"
+    # What mail says about itself, for the server and for every message that doesn't say otherwise (the server asks for
+    # these at GET /identity and puts none of them in its own environment). MAIL_REPLY_TO: where replies to app mail go
+    # (empty: to the From address). SUPPORT_EMAIL_ADDRESS: the support mailbox as people write to it (empty: MAIL_FROM);
+    # support mail is sent in the name SUPPORT_FROM_NAME and answered at that address.
+    MAIL_REPLY_TO: str = ""
+    SUPPORT_EMAIL_ADDRESS: str = ""
+    SUPPORT_FROM_NAME: str = "Syruss Support"
 
     # The account from the environment can also read a mailbox (IMAP, read-only), for purposes that read (support) until
     # an account connected in the admin app takes over. Empty host: it doesn't read.

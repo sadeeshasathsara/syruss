@@ -47,7 +47,7 @@ async def test_mail_is_queued_sealed_published_once_and_dropped(service):
     assert await relay.publish_pending() == 0  # never published twice
     topic, key, job = producer.sent[0]
     assert topic == settings.MAIL_OUTBOUND_TOPIC and key == row.id and set(job) == JOB_KEYS
-    assert job["id"] == row.id and job["text"] == "Your code is 482913" and job["sender_name"] == settings.MAIL_FROM_NAME
+    assert job["id"] == row.id and job["text"] == "Your code is 482913" and job["sender_name"] is None and job["reply_to"] is None  # the mail service fills in its own
     assert base64.b64decode(job["attachments"][0]["data_b64"]) == b"a,b\n1,2\n" and job["meta"] == {"invitation": "inv_1"}
     async with AsyncSessionLocal() as db:
         row = await db.get(MailOutbox, row.id)
