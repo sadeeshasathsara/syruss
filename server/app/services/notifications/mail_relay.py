@@ -1,5 +1,5 @@
 """
-The server's side of the mail service (mail/):
+The server's side of the mail service (mail/), for sending and receiving mail (setup and the directory are services/mail_bus.py):
 
     MailRelay   publishes queued mail (mail_outbox) on Kafka (mail.outbound), oldest first, and drops each message once
                 it is published. Safe in several server processes (SKIP LOCKED). While Kafka is down mail waits here.
@@ -172,65 +172,56 @@ class MailEvents:
 
 # ---- mail read from mailboxes -------------------------------------------------------------------------
 
-async def collect(item_id: str, purpose: str) -> bool:
-    """Takes in one message the mail service read (support: added to its ticket, or a new one), then lets it go there.
-    False when it couldn't be taken now (it stays waiting and is tried again)."""
-    from app.services import mail_service
+async def acknowledge(item_id: str) -> None:
+    """Tells the mail service it can let this email go (it publishes one nobody acknowledges again)."""
+    from app.services.mail_bus import bus
+    await bus.send(settings.MAIL_INBOUND_ACKS_TOPIC, item_id, json.dumps({"id": item_id}).encode())
+
+
+_unhandled: set = set()
+
+
+async def take_in(item_id: str, job: str, raw: bytes, too_large: bool = False) -> bool:
+    """Takes in one email the mail service read: support mail is added to its ticket (or opens one), then it is acknowledged.
+    Returns False when nothing here handles that job yet: it isn't acknowledged, so the mail service keeps it and offers it again.
+    Raises when it couldn't be taken in now (also not acknowledged: it comes again)."""
     from app.services.support import mailbox as support_mailbox
-    try:
-        raw = await mail_service.inbound_raw(item_id)
-    except mail_service.MailServiceError as e:
-        if e.status == 404:
-            return True  # already taken in by another server process
-        logger.warning("Couldn't collect inbound mail %s: %s", item_id, e)
-        return False
-    if purpose == "support":
+    if too_large:
+        logger.warning("Inbound mail %s for '%s' was too big to carry; the sender should send it smaller", item_id, job)
+    elif job == "support":
         async with AsyncSessionLocal() as db:
             await support_mailbox.handle(db, raw)
     else:
-        logger.warning("Inbound mail %s for '%s': nothing here reads that purpose; dropped", item_id, purpose)
-    await mail_service.inbound_done(item_id)
+        if item_id not in _unhandled:
+            _unhandled.add(item_id)
+            logger.info("Inbound mail %s for '%s': nothing here handles that job yet; it waits at the mail service", item_id, job)
+        return False
+    await acknowledge(item_id)
     return True
 
 
-async def collect_waiting(db=None, now=None) -> int:
-    """The scheduler's sweep: anything read but not announced (or announced while no server listened)."""
-    if settings.MAIL_BACKEND.lower() != "service":
-        return 0
-    from app.services import mail_service
-    try:
-        waiting = await mail_service.inbound()
-    except mail_service.MailServiceError:
-        return 0
-    taken = 0
-    for item in waiting:
-        try:
-            taken += int(await collect(item["id"], item["purpose"]))
-        except Exception:  # noqa: BLE001
-            logger.exception("Couldn't take in inbound mail %s", item.get("id"))
-    return taken
-
-
 class MailInbound(MailEvents):
-    """Takes in each message as soon as the mail service announces it (mail.inbound)."""
+    """Takes in each email as the mail service publishes it (mail.inbound): the email's own bytes, its job in the headers."""
 
     async def _run(self) -> None:
         while True:
             try:
                 self._consumer = AIOKafkaConsumer(settings.MAIL_INBOUND_TOPIC, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
-                                                  group_id="core-mail-inbound", enable_auto_commit=False, auto_offset_reset="earliest")
+                                                  group_id="core-mail-inbound", enable_auto_commit=False, auto_offset_reset="earliest",
+                                                  max_partition_fetch_bytes=30_000_000, fetch_max_bytes=60_000_000)
                 await self._consumer.start()
                 async for message in self._consumer:
                     try:
-                        event = json.loads(message.value)
-                        await collect(event["id"], event.get("purpose", ""))
-                    except Exception:  # noqa: BLE001  (the sweep tries it again later)
-                        logger.exception("Couldn't take in announced inbound mail")
+                        headers = {k: v.decode() for k, v in (message.headers or [])}
+                        await take_in(headers.get("id") or message.key.decode(), headers.get("job", ""), message.value or b"",
+                                      too_large=headers.get("too_large") == "1")
+                    except Exception:  # noqa: BLE001  (not acknowledged: the mail service publishes it again)
+                        logger.exception("Couldn't take in inbound mail")
                     await self._consumer.commit()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Inbound mail announcements unavailable (%s); trying again shortly", exc)
+                logger.warning("Inbound mail unavailable (%s); trying again shortly", exc)
                 if self._consumer:
                     try:
                         await self._consumer.stop()

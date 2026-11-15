@@ -28,7 +28,6 @@ from app.models.template import DocumentTemplate
 from app.services import data_lifecycle, graph_service, memory_service, object_index, run_watch, settings_service, staff_offboarding, workspace_events
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
 from app.services.billing import dunning, service as billing
-from app.services.notifications.mail_relay import collect_waiting as collect_inbound_mail
 from app.services.support import live as support_live, sla as support_sla
 
 logger = logging.getLogger("core.scheduler")
@@ -238,7 +237,7 @@ async def tick(now: Optional[datetime] = None) -> None:
     """One pass over every published workspace; each workspace's jobs commit on their own."""
     # the platform's own, across every workspace (renewals after periods have rolled on)
     for watch in (run_watch.mark_lost, run_watch.prune_steps, billing.roll_periods, dunning.run, data_lifecycle.purge_closed,
-                  collect_inbound_mail, support_sla.run, support_live.expire,
+                  support_sla.run, support_live.expire,
                   staff_offboarding.run):
         async with AsyncSessionLocal() as db:
             try:
