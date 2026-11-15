@@ -127,7 +127,7 @@ async def test_mail_read_from_the_support_mailbox_becomes_a_ticket_once_and_is_a
 
 
 async def test_mail_nothing_here_handles_yet_waits_at_the_mail_service(client, mail):
-    assert await take_in("in-9", "documents", RAW) is False and mail.published == []              # not acknowledged: it is offered again later
+    assert await take_in("in-9", "partners", RAW) is False and mail.published == []              # not acknowledged: it is offered again later
     assert await take_in("in-10", "support", b"", too_large=True) is True                           # too big: reported, then acknowledged
     assert mail.published[-1][1] == "in-10"
 

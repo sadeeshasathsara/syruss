@@ -83,7 +83,7 @@ def _channel_dict(c: IntakeChannel, stats: Dict[str, Any], keys: List[ApiKey]) -
                    "sender_allowlist": cfg.get("sender_allowlist", []), "require_authentication": bool(cfg.get("require_authentication"))},
         "endpoint": f"{_base()}/intake/documents" if c.kind == "api" else None,
         "address": intake_email.address_for(c), "sftp": _sftp_info(c),
-        "receiver_ready": {"api": True, "email": bool(settings.INTAKE_SMTP_PORT), "sftp": bool(settings.INTAKE_SFTP_PORT)}[c.kind],
+        "receiver_ready": {"api": True, "email": intake_email.mailbox() is not None, "sftp": bool(settings.INTAKE_SFTP_PORT)}[c.kind],
         "stats": stats, "keys": [_key_dict(k) for k in keys],
     }
 
@@ -139,7 +139,7 @@ async def developer_info(access: Access = Depends(require("integrations.manage")
     return {"base_url": _base(), "intake_url": f"{_base()}/intake/documents", "accepts": [t for t in prefs.allowed_types if t in SUPPORTED],
             "max_file_mb": prefs.max_file_mb, "upload_minutes": settings.INTAKE_UPLOAD_MINUTES, "workspace": access.scope.template.name,
             "trusts_proxy_headers": settings.TRUST_PROXY_HEADERS,
-            "email": {"enabled": bool(settings.INTAKE_SMTP_PORT and settings.INTAKE_EMAIL_DOMAIN), "domain": settings.INTAKE_EMAIL_DOMAIN},
+            "email": {"enabled": intake_email.mailbox() is not None, "mailbox": intake_email.mailbox()},
             "sftp": {"enabled": bool(settings.INTAKE_SFTP_PORT), "host": intake_sftp.public_host(), "port": settings.INTAKE_SFTP_PORT}}
 
 
@@ -174,8 +174,8 @@ async def create_channel(body: ChannelIn, access: Access = Depends(require("inte
     config = _clean_config(body.config)
     password = None
     if body.kind == "email":
-        if not settings.INTAKE_SMTP_PORT or not settings.INTAKE_EMAIL_DOMAIN:
-            raise HTTPException(status_code=409, detail="E-mail intake is not switched on for this server. Ask whoever runs it to set INTAKE_SMTP_PORT and INTAKE_EMAIL_DOMAIN.")
+        if intake_email.mailbox() is None:
+            raise HTTPException(status_code=409, detail="E-mail intake is not switched on for this server. Ask whoever runs it to choose a mailbox for the Document inbound job (Email, in the admin app).")
         config["email_token"] = f"{slug[:16].strip('-') or 'inbox'}-{secrets.token_hex(4)}"
     elif body.kind == "sftp":
         if not settings.INTAKE_SFTP_PORT:

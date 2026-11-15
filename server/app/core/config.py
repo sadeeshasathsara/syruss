@@ -191,9 +191,6 @@ class Settings(BaseSettings):
     INTAKE_UPLOAD_MINUTES: int = 15                        # how long a presigned upload link works
     CLAMAV_HOST: str = ""                                  # when set, every intake file is scanned by clamd before it is stored
     CLAMAV_PORT: int = 3310
-    INTAKE_SMTP_PORT: int = 0                              # 0 = no built-in email receiver
-    INTAKE_SMTP_HOST: str = "0.0.0.0"
-    INTAKE_EMAIL_DOMAIN: str = "intake.syruss.local"       # the domain whose MX points at the receiver
     INTAKE_SFTP_PORT: int = 0                              # 0 = no built-in SFTP server
     INTAKE_SFTP_HOST: str = "0.0.0.0"
     INTAKE_SFTP_HOST_KEY: str = ""                         # path of the server's host key (created on first start when missing)

@@ -12,7 +12,6 @@ from app.core.database import AsyncSessionLocal, engine
 from app.core.migrations import migrate
 from app.services.agent_events import agent_event_relay
 from app.services.delivery_service import delivery_worker
-from app.services.intake.email import email_receiver
 from app.services.intake.sftp import sftp_receiver
 from app.services.live.bridge import kafka_ws_bridge
 from app.services.scheduler import scheduler
@@ -50,11 +49,9 @@ async def lifespan(_: FastAPI):
     await kafka_ws_bridge.start()
     await scheduler.start()
     delivery_worker.start()
-    await email_receiver.start()
     await sftp_receiver.start()
     yield
     await sftp_receiver.stop()
-    await email_receiver.stop()
     await delivery_worker.stop()
     await scheduler.stop()
     await kafka_ws_bridge.stop()
