@@ -168,7 +168,10 @@ function ChatPane({ id, online }: { id: string; online: { id: string; name: stri
   }, !live);
   useEffect(() => () => clearTimeout(typingTimer.current), []);
   const bottom = useRef<HTMLLIElement>(null);
-  useEffect(() => bottom.current?.scrollIntoView({ block: "end" }), [chat.data?.messages.length, typing]);
+  // Braces: scrollIntoView returns a Promise in newer browsers, and an effect may only return its clean-up
+  useEffect(() => {
+    bottom.current?.scrollIntoView({ block: "end" });
+  }, [chat.data?.messages.length, typing]);
 
   if (chat.isError) return <Problem error={chat.error} />;
   const c = chat.data;

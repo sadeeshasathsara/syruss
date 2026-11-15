@@ -48,6 +48,8 @@
     var pressed = event.submitter || form.querySelector("[type=submit]");
     var cancelling = pressed && /cancel/i.test(pressed.name || pressed.id || "");
     var label = cancelling ? "Cancelling…" : LABELS[form.id] || "Please wait…";
+    // The sign-in form with no email field is confirming who is there (see login.ftl), not signing in
+    if (form.id === "kc-form-login" && !form.querySelector("[name=username]")) label = "Checking…";
     setTimeout(function () {
       form.querySelectorAll("button[type=submit], input[type=submit], button:not([type])").forEach(function (button) {
         if (button === pressed) setLabel(button, label);
