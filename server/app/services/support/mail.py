@@ -1,5 +1,6 @@
 """
-Ticket email, from the support address: "we've got it" when a ticket opens, each staff answer, and "solved".
+Ticket email, from the support address: "we've got it" when a ticket opens, each staff answer, and "solved". It goes out
+through the mail service's "support" purpose (the account connected for support sends it from its own address).
 
 Every email carries the ticket's tag in its subject ("[#T-1042] …") and a Message-ID with the ticket number in it
 (<t-1042.9f3c…@domain>), and answers the earlier ones (In-Reply-To, References): mail programs thread the conversation,
@@ -32,13 +33,6 @@ def _domain() -> str:
 
 def new_message_id(ticket: SupportTicket) -> str:
     return f"<{ticket.number.lower()}.{secrets.token_hex(8)}@{_domain()}>"
-
-
-def _smtp() -> Optional[transport.SmtpServer]:
-    if not settings.SUPPORT_SMTP_HOST:
-        return None
-    return transport.SmtpServer(settings.SUPPORT_SMTP_HOST, settings.SUPPORT_SMTP_PORT, settings.SUPPORT_SMTP_USERNAME,
-                                settings.SUPPORT_SMTP_PASSWORD, settings.SUPPORT_SMTP_SECURITY)
 
 
 def subject_of(ticket: SupportTicket, reply: bool) -> str:
@@ -79,8 +73,9 @@ async def send(ticket: SupportTicket, template: str, *, message: Optional[Suppor
                 await db.commit()
         await transport.send(transport.EmailMessage(
             to=ticket.requester_email, subject=subject_of(ticket, reply), text=parts["text"], html=parts["html"],
-            sender=(settings.SUPPORT_FROM_NAME, support_address()), reply_to=support_address(), message_id=own_id,
-            in_reply_to=refs[-1] if refs else None, references=refs or None, automatic=template != "support_reply", smtp=_smtp()))
+            purpose="support", sender_name=settings.SUPPORT_FROM_NAME, reply_to=support_address(), message_id=own_id,
+            in_reply_to=refs[-1] if refs else None, references=refs or None, automatic=template != "support_reply",
+            meta={"ticket": ticket.number, "template": template}))
         return True
     except Exception as exc:  # noqa: BLE001  (the ticket stands; the email is a courtesy)
         logger.warning("Ticket email %s for %s failed: %s", template, ticket.number, exc)

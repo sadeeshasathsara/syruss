@@ -96,7 +96,7 @@ services:
 
   keycloak:
     <<: *app
-    networks: [auth, public]
+    networks: [auth, public, mail-relay]
     # Production-mode build with the realm and theme inside, made by CI from bridge/keycloak
     image: ghcr.io/sadeeshasathsara/syruss/keycloak:test
     depends_on:
@@ -171,6 +171,23 @@ services:
       - kafka
     mem_limit: 256m
 
+  mail:
+    # Every email Syruss sends goes through here (mail/): the only holder of mail credentials
+    <<: [*app, *read-only]
+    tmpfs: ["/tmp:size=32m,mode=1777", "/home/syruss:size=16m,mode=1777"]
+    networks: [data, mail-egress, mail-relay]
+    image: ghcr.io/sadeeshasathsara/syruss/mail:test
+    env_file: env/mail.env
+    environment:
+      ENV: test
+      MAIL_RELAY_HOST: 0.0.0.0  # Keycloak's way in: only the mail-relay network reaches it
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    mem_limit: 128m
+
   www:
     <<: [*app, *read-only]
     tmpfs: ["/tmp:size=64m,mode=1777", "/app/.next/cache:size=128m,mode=1777"]
@@ -218,6 +235,8 @@ networks:
   auth: {internal: true}     # Keycloak and its database
   files: {}                  # object storage's published port (presigned downloads through Caddy)
   agent-egress: {}           # the agent's way out to the model provider
+  mail-egress: {}            # the mail service's way out to the mail provider
+  mail-relay: {internal: true}  # Keycloak to the mail service's SMTP door, and nothing else
 
 volumes:
   postgres_data:

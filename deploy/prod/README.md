@@ -17,23 +17,26 @@ nothing is built on it. The folder holds everything the server needs besides its
 2. Copy this folder to `~/syruss-deploy`. Create `env/` beside it, readable only by you (`chmod 700 env`):
    - `stack.env`: `POSTGRES_*`, `MINIO_ROOT_*`, `KAFKA_CLUSTER_ID`, `KEYCLOAK_*`, `KC_HOSTNAME`, `SYRUSS_*_URL`, the three
      client secrets. Use long random values (`openssl rand -base64 32`), never the development ones.
-   - `server.env`, `agent.env`, `www.env`, `site.env`, `admin.env`: start from each service's `.env.example`. The
+   - `server.env`, `agent.env`, `mail.env`, `www.env`, `site.env`, `admin.env`: start from each service's `.env.example`.
+     `mail.env` holds the only mail credentials (`MAIL_SMTP_*`, the fallback account), `MAIL_SECRETS_KEY` and the relay
+     password Keycloak signs in with (`MAIL_RELAY_PASSWORD`). The
      compose file sets `ENV=production`, and then the server and the agent refuse to start while a development value is
      left, and say which: the database, storage and token passwords; `SECRETS_ENCRYPTION_KEY`; the public addresses
      (`OIDC_ISSUER`, `PUBLIC_SITE_URL`, `PUBLIC_APP_URL`, `PUBLIC_ADMIN_URL`, `PUBLIC_API_URL`) and `CORS_ORIGINS`, which
      must be https and not localhost; `MAIL_FROM` at a real domain; the signing keys (`AGENT_TOKEN_PRIVATE_KEY` for the
      server, `AGENT_TOKEN_PUBLIC_KEY` for the agent). The test server (`ENV=test`) checks the same.
    - Live Stripe keys and the webhook secret (webhook URL `https://api.<domain>/api/v1/billing/webhooks/stripe`), the
-     model provider on a paid tier, `MODEL_PRICES`, and `SMTP_*` from a mail provider with SPF, DKIM and DMARC set up.
+     model provider on a paid tier, `MODEL_PRICES`, and the mail service's `MAIL_SMTP_*` (in `mail.env`) from a mail provider with SPF, DKIM and DMARC set up.
    - The support mailbox in `server.env`: `SUPPORT_EMAIL_ADDRESS`, and `SUPPORT_IMAP_*` so replies from customers reach
-     their tickets (`SUPPORT_SMTP_*` too if it sends through a different server). See `server/.env.example`.
+     their tickets. Ticket answers go out through the mail service's support account. See `server/.env.example`.
 3. `echo 'SYRUSS_DOMAIN=<domain>' | sudo tee -a /etc/default/caddy`, copy the `Caddyfile` to `/etc/caddy/`, reload Caddy.
 4. `docker compose --env-file env/stack.env pull && docker compose --env-file env/stack.env up -d`.
 5. Harden the Keycloak realm on the server itself (Caddy keeps `/admin` closed from outside):
    `KEYCLOAK_URL=http://127.0.0.1:8080 KEYCLOAK_ADMIN=... KEYCLOAK_ADMIN_PASSWORD=... python3 harden.py` (from `bridge/keycloak`).
    Run it again after upgrading: it also makes staff sign-ins report their one-time code, which the server requires.
-6. Give Keycloak the mail server (it emails new staff their set-up link): `python3 harden.py --smtp` as in step 5, with
-   `SMTP_*` in `server.env`. Then add the first platform owner, with the Keycloak admin login for this one command:
+6. Point Keycloak's email at the mail service (it emails new staff their set-up link): `KEYCLOAK_SMTP_HOST=mail
+   MAIL_RELAY_PASSWORD=... MAIL_FROM=... python3 harden.py --smtp` as in step 5, with the same `MAIL_RELAY_PASSWORD` and
+   `MAIL_FROM` as `mail.env`. Then add the first platform owner, with the Keycloak admin login for this one command:
    `docker compose --env-file env/stack.env exec -e KEYCLOAK_URL=http://keycloak:8080 -e KEYCLOAK_ADMIN=... -e KEYCLOAK_ADMIN_PASSWORD=... server python -m app.invite_staff you@company.com`.
    It makes their sign-in (Keycloak emails a link to choose a password and set up the one-time code) and emails the
    invitation (its link is printed too). Use an address with no Syruss customer account: a staff account only opens the

@@ -80,7 +80,8 @@ async def test_the_overview_counts_the_platform_and_checks_each_service(client):
     assert set(stats) == {"organizations", "people", "workspaces", "documents", "agent", "deliveries"}
     health = (await client.get(f"{API}/health", headers=ADMIN_APP)).json()
     services = {s["key"]: s for s in health["services"]}
-    assert list(services) == ["database", "storage", "sign_in", "events", "agent"]
+    assert list(services) == ["database", "storage", "sign_in", "events", "agent", "mail"]
+    assert services["mail"]["status"] == "degraded" and "memory" in services["mail"]["detail"]  # tests keep mail in memory
     assert services["database"]["status"] == "ok" and services["storage"]["status"] == "ok"
     assert all(s["status"] in ("ok", "degraded", "down") and isinstance(s["latency_ms"], int) for s in services.values())
 
