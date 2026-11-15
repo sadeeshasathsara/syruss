@@ -10,6 +10,7 @@ import { Problem } from "@/components/ui/Problem";
 import { api } from "@/lib/api";
 import { ago, cn } from "@/lib/format";
 import type { MailAccount, MailDirection, MailJobDef, MailJobSettings, MailOverview } from "@/lib/types";
+import { Select } from "@/components/ui/Select";
 
 const DIRECTION: Record<MailDirection, string> = { send: "Sends", read: "Reads", both: "Sends and reads" };
 // The built-in jobs first, in this order; the ones added here after them
@@ -73,14 +74,14 @@ function Job({ id, job, o }: { id: string; job: MailJobDef; o: MailOverview }) {
           </p>
           {job.description && <p className="truncate text-meta text-muted" title={job.description}>{job.description}</p>}
         </div>
-        <select aria-label={`Mailbox for ${job.label}`} className={cn(field, "w-full min-w-0 truncate")} disabled={route.isPending}
-          value={job.routed ? (job.account_id ?? "env") : "env"} onChange={(e) => route.mutate(e.target.value === "env" ? null : e.target.value)}>
+        <Select aria-label={`Mailbox for ${job.label}`} className="w-full min-w-0 truncate" disabled={route.isPending}
+          value={job.routed ? (job.account_id ?? "env") : "env"} onValueChange={(v) => route.mutate(v === "env" ? null : v)}>
           {o.accounts.map((a) => (
             <option key={a.id} value={a.from_environment ? "env" : a.id} disabled={!canServe(a, job)}>
               {a.address}{a.from_environment ? " · default" : ""}{canServe(a, job) ? "" : " · can't"}
             </option>
           ))}
-        </select>
+        </Select>
         <div className="flex flex-col items-start gap-0.5">
           <Pill tone={status.tone}>{status.label}</Pill>
           {activity && <span className="text-meta text-muted">{activity}</span>}
@@ -159,9 +160,9 @@ function NewJob({ taken }: { taken: string[] }) {
             <input value={label} className={cn(field, "w-56")} placeholder="Partner updates" onChange={(e) => setLabel(e.target.value)} />
           </label>
           <label className="flex flex-col gap-1 text-meta text-muted">It
-            <select value={direction} className={field} onChange={(e) => setDirection(e.target.value as MailDirection)}>
+            <Select value={direction} onValueChange={(v) => setDirection(v as MailDirection)}>
               <option value="send">Sends</option><option value="read">Reads</option><option value="both">Sends and reads</option>
-            </select>
+            </Select>
           </label>
           <label className="flex min-w-48 flex-1 flex-col gap-1 text-meta text-muted">What it is for (optional)
             <input value={description} className={field} onChange={(e) => setDescription(e.target.value)} />

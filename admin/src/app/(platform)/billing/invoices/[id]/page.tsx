@@ -15,6 +15,7 @@ import { api } from "@/lib/api";
 import { KIND_OF_INVOICE, METHOD_LABEL, SUBMISSION_STATUS, day, invoiceStatus, money } from "@/lib/billing";
 import { dateTime } from "@/lib/format";
 import type { Invoice, Party } from "@/lib/types";
+import { Select } from "@/components/ui/Select";
 
 export default function InvoicePage() {
   const { id } = useParams<{ id: string }>();
@@ -240,9 +241,9 @@ function PaymentForm({ i, methods, onDone }: { i: Invoice; methods: { key: strin
         onRun={(reason) => api.billing.recordPayment(i.id, { method, amount_cents: cents, received_on: receivedOn, reference: reference.trim() || undefined, reason })}>
         <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
           <Label text="How it was paid">
-            <select value={method} onChange={(e) => setMethod(e.target.value)} className={field}>
+            <Select value={method} onValueChange={(v) => setMethod(v)}>
               {methods.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
-            </select>
+            </Select>
           </Label>
           <Label text={`Amount (${i.currency})`}><MoneyInput cents={cents} onChange={setCents} /></Label>
           <Label text="Received on"><input type="date" value={receivedOn} onChange={(e) => setReceivedOn(e.target.value)} className={field} /></Label>
@@ -269,10 +270,10 @@ function CreditForm({ i, onDone }: { i: Invoice; onDone: () => void }) {
         <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
           <Label text={`Amount (at most ${money(left, i.currency)})`}><MoneyInput cents={cents} onChange={setCents} /></Label>
           <Label text="Give it back from a payment (optional)">
-            <select value={paymentId} onChange={(e) => setPaymentId(e.target.value)} className={field}>
+            <Select value={paymentId} onValueChange={(v) => setPaymentId(v)}>
               <option value="">No refund: take it off what is owed</option>
               {(i.payments ?? []).map((p) => <option key={p.id} value={p.id}>{money(p.amount_cents, p.currency)} · {METHOD_LABEL[p.method] ?? p.method}{p.reference ? ` · ${p.reference}` : ""}</option>)}
-            </select>
+            </Select>
           </Label>
           {payment && payment.method !== "card" && (
             <Label text="How it was given back (transfer or receipt number)"><input value={reference} onChange={(e) => setReference(e.target.value)} className={field} /></Label>

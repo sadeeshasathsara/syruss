@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import { ago, cn } from "@/lib/format";
 import type { StaffMember, StaffPolicy, StaffRole } from "@/lib/types";
 import { Problem } from "@/components/ui/Problem";
+import { Select } from "@/components/ui/Select";
 
 const ROLES: StaffRole[] = ["owner", "operator", "support", "billing", "viewer"];
 const title = (r: string) => r.charAt(0).toUpperCase() + r.slice(1);
@@ -203,9 +204,9 @@ function Row({ member: m, editable, self, onDone }: { member: StaffMember; edita
           <Button size="sm" onClick={() => review.mutate()} disabled={review.isPending}>{review.isPending ? "Confirming…" : "Still needs access"}</Button>
         )}
         {editable ? (
-          <select aria-label={`Role of ${m.name}`} value={m.role} disabled={change.isPending} onChange={(e) => change.mutate(e.target.value as StaffRole)} className={field}>
+          <Select aria-label={`Role of ${m.name}`} value={m.role} disabled={change.isPending} onValueChange={(v) => change.mutate(v as StaffRole)}>
             {ROLES.map((r) => <option key={r} value={r}>{title(r)}</option>)}
-          </select>
+          </Select>
         ) : (
           <Pill tone={m.role === "owner" ? "accent" : "neutral"}>{title(m.role)}</Pill>
         )}
