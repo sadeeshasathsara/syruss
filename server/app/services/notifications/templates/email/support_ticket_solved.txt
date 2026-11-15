@@ -1,0 +1,7 @@
+Your request is solved
+
+Hi {{ name }}, we've marked your request solved. If anything is still wrong, reply to this email and it opens again.
+
+Ticket: {{ ticket }}
+Subject: {{ subject }}
+{% if url %}Open the ticket: {{ url }}{% endif %}

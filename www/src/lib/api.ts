@@ -111,6 +111,31 @@ export interface SupportAccess {
   recent: SupportGrant[];
 }
 
+export type TicketStatus = "new" | "open" | "pending" | "solved" | "closed";
+
+export interface SupportTicket {
+  id: string;
+  number: string;
+  subject: string;
+  category: string;
+  status: TicketStatus;
+  channel: "agent" | "app" | "email";
+  requester_name: string;
+  created_at: string;
+  updated_at: string;
+  solved_at: string | null;
+}
+
+export interface SupportMessage {
+  id: string;
+  author_kind: "customer" | "staff" | "agent" | "system";
+  author_name: string;
+  body: string;
+  via: "app" | "email" | "agent";
+  created_at: string;
+  files: { id: string; filename: string; content_type: string; size: number }[];
+}
+
 export const api = {
   screens: {
     list: (workspaceId: string) => request<ScreenSummary[]>("/screens", { workspaceId }),
@@ -447,6 +472,29 @@ export const api = {
   },
 
   // Syruss support's access to the organization's content: whether it may open it, who has it open, and before
+  // Help & support: tickets with the Syruss team (the agent can open one from a chat too)
+  support: {
+    tickets: (status?: "active" | "done") => request<{ items: SupportTicket[]; can_see_all: boolean }>(`/support/tickets${status ? `?status=${status}` : ""}`),
+    ticket: (id: string) => request<SupportTicket & { messages: SupportMessage[] }>(`/support/tickets/${encodeURIComponent(id)}`),
+    open: (body: { subject: string; body: string; category: string; files: File[] }) => {
+      const form = new FormData();
+      form.set("subject", body.subject);
+      form.set("body", body.body);
+      form.set("category", body.category);
+      body.files.forEach((f) => form.append("files", f));
+      return request<SupportTicket>("/support/tickets", { method: "POST", body: form });
+    },
+    reply: (id: string, body: string, files: File[]) => {
+      const form = new FormData();
+      form.set("body", body);
+      files.forEach((f) => form.append("files", f));
+      return request<SupportMessage>(`/support/tickets/${encodeURIComponent(id)}/messages`, { method: "POST", body: form });
+    },
+    close: (id: string) => request<SupportTicket>(`/support/tickets/${encodeURIComponent(id)}/close`, { method: "POST" }),
+    fileUrl: (ticketId: string, fileId: string, org: string) =>
+      `/api/v1/support/tickets/${encodeURIComponent(ticketId)}/files/${encodeURIComponent(fileId)}?org=${encodeURIComponent(org)}`,
+  },
+
   supportAccess: {
     get: () => request<SupportAccess>("/organization/support-access"),
     set: (allowed: boolean) => request<SupportAccess>("/organization/support-access", { method: "PUT", body: json({ allowed }) }),

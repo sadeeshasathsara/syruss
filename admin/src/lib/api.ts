@@ -5,6 +5,7 @@ import type {
   Grant, GrantList, Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
   StaffActionPage, StaffInvitation, StaffList, StaffMe, StaffMember, StaffRole, JoinView, SystemLesson,
   Approval, ApprovalList, ApprovalRule, StaffPolicy,
+  SavedReply, SupportSettings, SupportSummary, Ticket, TicketDetail, TicketMessage,
 } from "./types";
 import { loadPage } from "./navigate";
 
@@ -101,6 +102,33 @@ export const api = {
     review: (userId: string, note?: string) =>
       request<StaffMember>(`/staff/${encodeURIComponent(userId)}/review`, { method: "POST", body: json({ note: note || null }) }),
     setPolicy: (body: StaffPolicy & { reason: string }) => request<StaffPolicy>("/staff/policy", { method: "PUT", body: json(body) }),
+  },
+  support: {
+    summary: () => request<SupportSummary>("/support/summary"),
+    tickets: (params: Record<string, string | undefined>) => request<{ items: Ticket[] }>(`/support/tickets?${query(params)}`),
+    ticket: (id: string) => request<TicketDetail>(`/support/tickets/${encodeURIComponent(id)}`),
+    answer: (id: string, body: { body: string; internal: boolean; then?: "pending" | "solved"; files: File[] }) => {
+      const form = new FormData();
+      form.set("body", body.body);
+      form.set("internal", String(body.internal));
+      if (body.then) form.set("then", body.then);
+      body.files.forEach((f) => form.append("files", f));
+      return request<TicketMessage>(`/support/tickets/${encodeURIComponent(id)}/messages`, { method: "POST", body: form });
+    },
+    change: (id: string, body: { status?: string; priority?: string; category?: string; assignee_id?: string }) =>
+      request<Ticket>(`/support/tickets/${encodeURIComponent(id)}`, { method: "PATCH", body: json(body) }),
+    merge: (id: string, into: string) => request<Ticket>(`/support/tickets/${encodeURIComponent(id)}/merge`, { method: "POST", body: json({ into }) }),
+    fileUrl: (ticketId: string, fileId: string) => `${API}/support/tickets/${encodeURIComponent(ticketId)}/files/${encodeURIComponent(fileId)}`,
+    staff: () => request<{ id: string; name: string }[]>("/support/staff"),
+    savedReplies: () => request<SavedReply[]>("/support/saved-replies"),
+    addSavedReply: (body: { title: string; body: string; shortcut?: string | null }) =>
+      request<SavedReply>("/support/saved-replies", { method: "POST", body: json(body) }),
+    editSavedReply: (id: string, body: { title: string; body: string; shortcut?: string | null }) =>
+      request<SavedReply>(`/support/saved-replies/${encodeURIComponent(id)}`, { method: "PATCH", body: json(body) }),
+    removeSavedReply: (id: string) => request<void>(`/support/saved-replies/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    settings: () => request<SupportSettings>("/support/settings"),
+    setSettings: (body: Omit<SupportSettings, "mailbox"> & { reason: string }) =>
+      request<unknown>("/support/settings", { method: "PUT", body: json(body) }),
   },
   approvals: {
     list: (status: "pending" | "done" | "rejected" | "cancelled" | "failed" | "all" = "pending") => request<ApprovalList>(`/approvals?status=${status}`),

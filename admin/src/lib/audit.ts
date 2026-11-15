@@ -38,6 +38,20 @@ export function describeAction(a: StaffAction): string {
       return "turned on the second owner's approval for risky actions";
     case "approvals.off":
       return "turned off the second owner's approval";
+    case "support.answered":
+      return `answered support ticket ${d.number ?? ""}`.trim();
+    case "support.noted":
+      return `added a note to support ticket ${d.number ?? ""}`.trim();
+    case "support.changed":
+      return `changed support ticket ${d.number ?? ""}`.trim();
+    case "support.merged":
+      return `merged support ticket ${d.number ?? ""} into ${d.into ?? "another"}`;
+    case "support.saved_reply_added":
+    case "support.saved_reply_changed":
+    case "support.saved_reply_removed":
+      return `${a.action.endsWith("added") ? "added" : a.action.endsWith("removed") ? "removed" : "changed"} the saved reply "${d.title ?? ""}"`;
+    case "support.targets_changed":
+      return "changed the support service targets";
     case "lesson.added":
       return "added a platform lesson for the agent";
     case "lesson.active":

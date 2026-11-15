@@ -9,7 +9,7 @@ import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage as MimeMessage
 from email.utils import formataddr, formatdate, make_msgid
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,23 @@ class EmailMessage:
     reply_to: Optional[str] = None
     # (file name, bytes, "type/subtype") for each file sent along
     attachments: Optional[List[tuple]] = None
+    # A message in a conversation (support tickets): who it is from, its own id, and the earlier messages it answers,
+    # so mail programs thread it. A person's reply isn't marked automatic.
+    sender: Optional[Tuple[str, str]] = None        # (name, address); the app's MAIL_FROM when not set
+    message_id: Optional[str] = None
+    in_reply_to: Optional[str] = None
+    references: Optional[List[str]] = None
+    automatic: bool = True
+    smtp: Optional["SmtpServer"] = None              # another mail server (the support mailbox's), else SMTP_*
+
+
+@dataclass(frozen=True)
+class SmtpServer:
+    host: str
+    port: int
+    username: str
+    password: str
+    security: str = "starttls"
 
 
 # Messages "sent" by the memory backend (tests read these).
@@ -36,12 +53,18 @@ outbox: List[EmailMessage] = []
 
 def _mime(message: EmailMessage) -> MimeMessage:
     mime = MimeMessage()
-    mime["From"] = formataddr((settings.MAIL_FROM_NAME, settings.MAIL_FROM))
+    name, address = message.sender or (settings.MAIL_FROM_NAME, settings.MAIL_FROM)
+    mime["From"] = formataddr((name, address))
     mime["To"] = message.to
     mime["Subject"] = message.subject
     mime["Date"] = formatdate(localtime=False)
-    mime["Message-ID"] = make_msgid(domain=settings.MAIL_FROM.rpartition("@")[2] or None)
-    mime["Auto-Submitted"] = "auto-generated"  # keeps out-of-office replies from answering back
+    mime["Message-ID"] = message.message_id or make_msgid(domain=address.rpartition("@")[2] or None)
+    if message.in_reply_to:
+        mime["In-Reply-To"] = message.in_reply_to
+    if message.references:
+        mime["References"] = " ".join(message.references[-20:])
+    if message.automatic:
+        mime["Auto-Submitted"] = "auto-generated"  # keeps out-of-office replies from answering back
     reply_to = message.reply_to or settings.MAIL_REPLY_TO
     if reply_to:
         mime["Reply-To"] = reply_to
@@ -53,19 +76,19 @@ def _mime(message: EmailMessage) -> MimeMessage:
     return mime
 
 
-def _deliver_smtp(mime: MimeMessage) -> None:
-    security = settings.SMTP_SECURITY.lower()
+def _deliver_smtp(mime: MimeMessage, via: Optional[SmtpServer] = None) -> None:
+    via = via or SmtpServer(settings.SMTP_HOST, settings.SMTP_PORT, settings.SMTP_USERNAME, settings.SMTP_PASSWORD, settings.SMTP_SECURITY)
+    security = via.security.lower()
     try:
         if security == "ssl":
-            server = smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=settings.SMTP_TIMEOUT_SECONDS,
-                                      context=ssl.create_default_context())
+            server = smtplib.SMTP_SSL(via.host, via.port, timeout=settings.SMTP_TIMEOUT_SECONDS, context=ssl.create_default_context())
         else:
-            server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=settings.SMTP_TIMEOUT_SECONDS)
+            server = smtplib.SMTP(via.host, via.port, timeout=settings.SMTP_TIMEOUT_SECONDS)
         with server:
             if security == "starttls":
                 server.starttls(context=ssl.create_default_context())
-            if settings.SMTP_USERNAME:
-                server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            if via.username:
+                server.login(via.username, via.password)
             server.send_message(mime)
     except smtplib.SMTPAuthenticationError as e:
         raise EmailError("The mail server refused our sign-in.") from e
@@ -82,7 +105,7 @@ async def send(message: EmailMessage) -> None:
     elif backend == "console":
         logger.info("Email to %s\nSubject: %s\n\n%s", message.to, message.subject, message.text)
     elif backend == "smtp":
-        await asyncio.to_thread(_deliver_smtp, _mime(message))
+        await asyncio.to_thread(_deliver_smtp, _mime(message), message.smtp)
         logger.info("Email sent to %s (%s)", message.to, message.subject)
     else:
         raise EmailError(f"Unknown MAIL_BACKEND '{settings.MAIL_BACKEND}'.")

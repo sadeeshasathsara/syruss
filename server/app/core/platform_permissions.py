@@ -11,6 +11,7 @@ PLATFORM_PERMISSIONS = {
     "operations.manage": "Requeue stuck documents, replay deliveries, run scheduled jobs and switch the agent off",
     "billing.manage": "Change plans, limits, credits and trials",
     "support.access": "Open a customer's documents and agent traces, for a stated reason and a limited time",
+    "support.respond": "Answer support tickets and live chats, and keep the saved replies",
     "staff.manage": "Add platform staff, change their roles and remove them",
     "system.manage": "Platform settings, maintenance mode and the development tools",
 }
@@ -26,7 +27,7 @@ PLATFORM_ROLES = {
 PLATFORM_GRANTS = {
     "owner": set(PLATFORM_PERMISSIONS),
     "operator": {"platform.view", "tenants.manage", "users.manage", "workspaces.manage", "operations.manage", "system.manage"},
-    "support": {"platform.view", "support.access"},
-    "billing": {"platform.view", "billing.manage"},
+    "support": {"platform.view", "support.access", "support.respond"},
+    "billing": {"platform.view", "billing.manage", "support.respond"},
     "viewer": {"platform.view"},
 }

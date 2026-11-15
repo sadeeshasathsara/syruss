@@ -1,0 +1,11 @@
+We have your request {{ ticket }}
+
+Hi {{ name }}, thanks for getting in touch. The Syruss team will answer you here, by email, and in the app.
+
+Ticket: {{ ticket }}
+Subject: {{ subject }}
+{% if body %}
+{{ body }}
+{% endif %}
+To add anything, just reply to this email.
+{% if url %}Open the ticket: {{ url }}{% endif %}
