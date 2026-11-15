@@ -241,7 +241,7 @@ class MailBus:
         return base64.b64encode(box_seal(base64.b64decode(public), json.dumps(secrets).encode())).decode()
 
     def overview(self) -> Dict[str, Any]:
-        """What the admin app's Email page shows, from the directory: each job's account, every account (no secrets), Google's state."""
+        """What the admin app's Email page shows, from the directory: each job's account, every account (no secrets), which providers can be connected."""
         jobs = {}
         for j in self.entries("job:"):
             account = j.get("account") or {}
@@ -253,7 +253,10 @@ class MailBus:
         accounts = []
         for a in sorted(self.entries("account:"), key=lambda a: (not a.get("from_environment"), a.get("created_at") or "")):
             accounts.append({**a, "config": a.get("hosts", {}), "purposes": a.get("jobs", [])})
-        return {"purposes": jobs, "google": bool((self.meta.get("providers") or {}).get("google")), "accounts": accounts,
+        providers = {p: (v if isinstance(v, dict) else {"configured": bool(v)}) for p, v in (self.meta.get("providers") or {}).items()}
+        for p in ("google", "microsoft"):
+            providers.setdefault(p, {"configured": False})
+        return {"purposes": jobs, "google": bool(providers["google"].get("configured")), "providers": providers, "accounts": accounts,
                 "key": {"fingerprint": self.meta.get("fingerprint"), "public_key": self.meta.get("public_key")}}
 
 

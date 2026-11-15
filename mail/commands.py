@@ -23,7 +23,8 @@ anything else this module publishes ever holds a secret: passwords arrive sealed
     job.create / job.update / job.delete                                            {key, label, direction, ...}
     jobs.log                          the delivery log                              {status?, limit?}
     job.retry                         send a given-up message again                 {id}
-    oauth.google.start / .finish      connect Google                                {jobs, redirect_uri} / {code, state, redirect_uri}
+    oauth.<provider>.start / .finish  connect Google or Microsoft                   {jobs, redirect_uri} / {code (sealed), state, redirect_uri}
+    provider_app.set / .clear         the OAuth app a provider gave Syruss            {provider, client_id, tenant?, sealed: {client_secret}} / {provider}
 """
 import base64
 import json
@@ -31,7 +32,7 @@ import logging
 import time
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-from mail import sealing
+from mail import apps, sealing
 from mail.config import settings
 from mail.operations import OperationError, Operations
 from mail.store import Store
@@ -42,7 +43,7 @@ Changed = Callable[[], Awaitable[None]]
 
 # Changes that make the directory stale (the others only read)
 CHANGES = {"account.add_imap", "account.remove", "account.test", "job.route", "job.create", "job.update", "job.delete",
-           "oauth.google.finish", "directory.refresh"}
+           "oauth.google.finish", "oauth.microsoft.finish", "provider_app.set", "provider_app.clear", "directory.refresh"}
 
 
 def canonical(envelope: Dict[str, Any]) -> bytes:
@@ -65,9 +66,12 @@ class Commands:
             "job.delete": self._job_delete,
             "jobs.log": self._log,
             "job.retry": self._retry,
-            "oauth.google.start": self._google_start,
-            "oauth.google.finish": self._google_finish,
+            "provider_app.set": self._app_set,
+            "provider_app.clear": self._app_clear,
         }
+        for provider in apps.PROVIDERS:
+            self.handlers[f"oauth.{provider}.start"] = self._oauth_start(provider)
+            self.handlers[f"oauth.{provider}.finish"] = self._oauth_finish(provider)
 
     async def handle(self, raw: bytes) -> Optional[Dict[str, Any]]:
         """One message from mail.commands. Returns the reply it published, or None when there was nobody to answer."""
@@ -181,10 +185,24 @@ class Commands:
     async def _retry(self, payload, by):
         return await self.ops.retry(str(payload.get("id", "")))
 
-    async def _google_start(self, payload, by):
-        return {"url": await self.ops.google_start([str(j) for j in payload.get("jobs") or []], str(payload.get("redirect_uri", "")), by)}
+    def _oauth_start(self, provider: str):
+        async def start(payload, by):
+            return {"url": await self.ops.oauth_start(provider, [str(j) for j in payload.get("jobs") or []], str(payload.get("redirect_uri", "")), by)}
+        return start
 
-    async def _google_finish(self, payload, by):
+    def _oauth_finish(self, provider: str):
+        async def finish(payload, by):
+            secret = await self._sealed(payload)
+            code = str(secret.get("code") or payload.get("code") or "")
+            return await self.ops.oauth_finish(provider, code, str(payload.get("state", "")), str(payload.get("redirect_uri", "")), by)
+        return finish
+
+    async def _app_set(self, payload, by):
         secret = await self._sealed(payload)
-        code = str(secret.get("code") or payload.get("code") or "")
-        return await self.ops.google_finish(code, str(payload.get("state", "")), str(payload.get("redirect_uri", "")), by)
+        await self.ops.app_set(str(payload.get("provider", "")), str(payload.get("client_id", "")), str(secret.get("client_secret", "")),
+                               str(payload.get("tenant", "")))
+        return {}
+
+    async def _app_clear(self, payload, by):
+        await self.ops.app_clear(str(payload.get("provider", "")))
+        return {}
