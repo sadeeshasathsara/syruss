@@ -14,7 +14,7 @@ from mail.delivery import backoff
 from mail.router import Router
 from mail.store import AccountRow, JobRow, RouteRow, seal, unseal
 from mail.worker import MailWorker
-from tests.conftest import job
+from mail.tests.conftest import job
 
 
 # ---- the interface -----------------------------------------------------------------------------------
