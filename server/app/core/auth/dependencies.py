@@ -68,6 +68,8 @@ def deployment_problems() -> list:
         problems.append("CORS_ORIGINS must list only the apps' public https addresses")
     if settings.MAIL_FROM.endswith((".local", ".localhost", ".test")):
         problems.append("MAIL_FROM must be an address at a real domain")
+    if len(settings.MAIL_SERVICE_TOKEN) < 24:
+        problems.append("MAIL_SERVICE_TOKEN must be a long random value (the same as in mail.env)")
     return problems
 
 

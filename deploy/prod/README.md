@@ -18,8 +18,10 @@ nothing is built on it. The folder holds everything the server needs besides its
    - `stack.env`: `POSTGRES_*`, `MINIO_ROOT_*`, `KAFKA_CLUSTER_ID`, `KEYCLOAK_*`, `KC_HOSTNAME`, `SYRUSS_*_URL`, the three
      client secrets. Use long random values (`openssl rand -base64 32`), never the development ones.
    - `server.env`, `agent.env`, `mail.env`, `www.env`, `site.env`, `admin.env`: start from each service's `.env.example`.
-     `mail.env` holds the only mail credentials (`MAIL_SMTP_*`, the fallback account), `MAIL_SECRETS_KEY` and the relay
-     password Keycloak signs in with (`MAIL_RELAY_PASSWORD`). The
+     `mail.env` holds the only mail credentials (`MAIL_SMTP_*` and `MAIL_IMAP_*`, the fallback account),
+     `MAIL_SECRETS_KEY`, the relay password Keycloak signs in with (`MAIL_RELAY_PASSWORD`), the Google OAuth client
+     (`GOOGLE_MAIL_CLIENT_*`, redirect URI `https://admin.<domain>/email/google`) and `MAIL_SERVICE_TOKEN`, which
+     `server.env` must have too. Connect mailboxes afterwards in the admin app's Email page. The
      compose file sets `ENV=production`, and then the server and the agent refuse to start while a development value is
      left, and say which: the database, storage and token passwords; `SECRETS_ENCRYPTION_KEY`; the public addresses
      (`OIDC_ISSUER`, `PUBLIC_SITE_URL`, `PUBLIC_APP_URL`, `PUBLIC_ADMIN_URL`, `PUBLIC_API_URL`) and `CORS_ORIGINS`, which
@@ -27,8 +29,9 @@ nothing is built on it. The folder holds everything the server needs besides its
      server, `AGENT_TOKEN_PUBLIC_KEY` for the agent). The test server (`ENV=test`) checks the same.
    - Live Stripe keys and the webhook secret (webhook URL `https://api.<domain>/api/v1/billing/webhooks/stripe`), the
      model provider on a paid tier, `MODEL_PRICES`, and the mail service's `MAIL_SMTP_*` (in `mail.env`) from a mail provider with SPF, DKIM and DMARC set up.
-   - The support mailbox in `server.env`: `SUPPORT_EMAIL_ADDRESS`, and `SUPPORT_IMAP_*` so replies from customers reach
-     their tickets. Ticket answers go out through the mail service's support account. See `server/.env.example`.
+   - The support mailbox: `SUPPORT_EMAIL_ADDRESS` in `server.env`, and the mailbox itself connected in the admin app's
+     Email page for Support (Google, or any server with IMAP): the mail service sends ticket answers from it and reads
+     customers' replies.
 3. `echo 'SYRUSS_DOMAIN=<domain>' | sudo tee -a /etc/default/caddy`, copy the `Caddyfile` to `/etc/caddy/`, reload Caddy.
 4. `docker compose --env-file env/stack.env pull && docker compose --env-file env/stack.env up -d`.
 5. Harden the Keycloak realm on the server itself (Caddy keeps `/admin` closed from outside):

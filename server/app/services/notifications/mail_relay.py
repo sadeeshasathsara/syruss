@@ -170,5 +170,76 @@ class MailEvents:
                 await asyncio.sleep(10)
 
 
+# ---- mail read from mailboxes -------------------------------------------------------------------------
+
+async def collect(item_id: str, purpose: str) -> bool:
+    """Takes in one message the mail service read (support: added to its ticket, or a new one), then lets it go there.
+    False when it couldn't be taken now (it stays waiting and is tried again)."""
+    from app.services import mail_service
+    from app.services.support import mailbox as support_mailbox
+    try:
+        raw = await mail_service.inbound_raw(item_id)
+    except mail_service.MailServiceError as e:
+        if e.status == 404:
+            return True  # already taken in by another server process
+        logger.warning("Couldn't collect inbound mail %s: %s", item_id, e)
+        return False
+    if purpose == "support":
+        async with AsyncSessionLocal() as db:
+            await support_mailbox.handle(db, raw)
+    else:
+        logger.warning("Inbound mail %s for '%s': nothing here reads that purpose; dropped", item_id, purpose)
+    await mail_service.inbound_done(item_id)
+    return True
+
+
+async def collect_waiting(db=None, now=None) -> int:
+    """The scheduler's sweep: anything read but not announced (or announced while no server listened)."""
+    if settings.MAIL_BACKEND.lower() != "service":
+        return 0
+    from app.services import mail_service
+    try:
+        waiting = await mail_service.inbound()
+    except mail_service.MailServiceError:
+        return 0
+    taken = 0
+    for item in waiting:
+        try:
+            taken += int(await collect(item["id"], item["purpose"]))
+        except Exception:  # noqa: BLE001
+            logger.exception("Couldn't take in inbound mail %s", item.get("id"))
+    return taken
+
+
+class MailInbound(MailEvents):
+    """Takes in each message as soon as the mail service announces it (mail.inbound)."""
+
+    async def _run(self) -> None:
+        while True:
+            try:
+                self._consumer = AIOKafkaConsumer(settings.MAIL_INBOUND_TOPIC, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                                                  group_id="core-mail-inbound", enable_auto_commit=False, auto_offset_reset="earliest")
+                await self._consumer.start()
+                async for message in self._consumer:
+                    try:
+                        event = json.loads(message.value)
+                        await collect(event["id"], event.get("purpose", ""))
+                    except Exception:  # noqa: BLE001  (the sweep tries it again later)
+                        logger.exception("Couldn't take in announced inbound mail")
+                    await self._consumer.commit()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Inbound mail announcements unavailable (%s); trying again shortly", exc)
+                if self._consumer:
+                    try:
+                        await self._consumer.stop()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self._consumer = None
+                await asyncio.sleep(10)
+
+
 mail_relay = MailRelay()
 mail_events = MailEvents()
+mail_inbound = MailInbound()

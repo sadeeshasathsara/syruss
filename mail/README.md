@@ -4,8 +4,11 @@ Every email Syruss sends goes through this service. It is the only place that ho
 thing that talks to mail providers.
 
 ```
-server ──(mail.outbound, Kafka)──▶ mail ──▶ the account routed to the purpose (SMTP, …)
-server ◀──(mail.events, Kafka)──── mail     sent / retrying / dead, for each job
+server   ──(mail.outbound, Kafka)──────▶ mail ──▶ the account routed to the purpose (Google, SMTP)
+Keycloak ──(SMTP, internal network)────▶ mail     its own emails, through the same accounts
+server   ◀──(mail.events, Kafka)─────── mail     sent / retrying / dead, for each job
+server   ◀──(mail.inbound + the API)─── mail ◀── mailboxes it reads (support), from where it left off
+server   ──(internal API, a token)─────▶ mail     the admin app's Email page: accounts, routes, Google, the log
 ```
 
 ## The interface
@@ -17,6 +20,7 @@ them.
 
 | Kind | Sends | Reads |
 |---|---|---|
+| `GmailAccount` (`accounts/gmail.py`) | Gmail API (`gmail.send`) | Gmail API (`gmail.readonly`), from a history id |
 | `SmtpImapAccount` (`accounts/smtp_imap.py`) | SMTP | IMAP, read-only (the mailbox is never changed) |
 | `ConsoleAccount`, `MemoryAccount` (`accounts/local.py`) | logs it / keeps it | tests only |
 
@@ -42,6 +46,23 @@ also how a fresh install sends its first emails.
 - **Refused addresses** are given up at once.
 - **Crash recovery:** a job held by a process that died mid-send is taken again once its lease runs out.
 - **What's kept:** the message itself only until the job is done. The delivery log keeps the recipient, subject and outcome, never the text.
+
+## Connecting accounts
+
+The admin app's **Email** page (owners only) talks to the internal API (`api.py`) through the server:
+- **Accounts:** add a mailbox on any mail server, or set up Google mail.
+- **Purposes:** choose which account each purpose uses.
+- **Checks:** test an account.
+- **Delivery log:** see what was sent, and send again mail that was given up.
+
+**Connecting Google** (`google.py`) asks only for the permissions the chosen purposes need, and saves what Google actually granted. When Google stops accepting the sign-in (access removed, password changed, or the 7-day limit of an OAuth app still in testing), the account is marked "Needs reconnecting" and its purposes fall back to the account from the environment.
+
+## Reading mailboxes
+
+`inbound.py` reads each purpose that reads (support) every `MAIL_POLL_SECONDS`:
+- **Read-only:** the mailbox is opened for reading only.
+- **From where it left off:** a cursor is kept per account and purpose. The first read only notes where the mailbox is.
+- **Handed to the server:** each new message is kept and announced on `mail.inbound`. The server collects it through the API and turns it into a ticket reply. A scheduler sweep collects anything an announcement missed.
 
 ## Running it
 

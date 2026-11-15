@@ -20,7 +20,7 @@ from app.services.storage_service import storage_service
 from app.services import system_lessons
 from app.services.billing import catalog as billing_catalog
 from app.core.auth import validate_auth_config
-from app.services.notifications.mail_relay import mail_events, mail_relay
+from app.services.notifications.mail_relay import mail_events, mail_inbound, mail_relay
 from app.core.security_headers import Maintenance, RequestSizeLimit, SecurityHeaders
 from app.core.permissions import ensure_system_roles
 
@@ -42,6 +42,7 @@ async def lifespan(_: FastAPI):
     await agent_event_relay.start()
     await mail_relay.start()
     await mail_events.start()
+    await mail_inbound.start()
     await kafka_ws_bridge.start()
     await scheduler.start()
     delivery_worker.start()
@@ -53,6 +54,7 @@ async def lifespan(_: FastAPI):
     await delivery_worker.stop()
     await scheduler.stop()
     await kafka_ws_bridge.stop()
+    await mail_inbound.stop()
     await mail_events.stop()
     await mail_relay.stop()
     await agent_event_relay.stop()

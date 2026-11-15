@@ -5,7 +5,7 @@ import type {
   Grant, GrantList, Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
   StaffActionPage, StaffInvitation, StaffList, StaffMe, StaffMember, StaffRole, JoinView, SystemLesson,
   Approval, ApprovalList, ApprovalRule, StaffPolicy,
-  LiveChat, LiveMessage, LiveQueue, Presence, SavedReply, SupportSettings, SupportSummary, Ticket, TicketDetail, TicketMessage,
+  LiveChat, LiveMessage, LiveQueue, MailImapInput, MailJob, MailOverview, MailPurpose, Presence, SavedReply, SupportSettings, SupportSummary, Ticket, TicketDetail, TicketMessage,
 } from "./types";
 import { loadPage } from "./navigate";
 
@@ -141,6 +141,20 @@ export const api = {
       ticket: (id: string) => request<{ id: string; number: string }>(`/support/live/chats/${encodeURIComponent(id)}/ticket`, { method: "POST" }),
       end: (id: string) => request<unknown>(`/support/live/chats/${encodeURIComponent(id)}/end`, { method: "POST" }),
     },
+  },
+  mail: {
+    overview: () => request<MailOverview>("/mail/overview"),
+    jobs: (status?: string) => request<MailJob[]>(`/mail/jobs?${query({ status, limit: "100" })}`),
+    retry: (id: string) => request<unknown>(`/mail/jobs/${encodeURIComponent(id)}/retry`, { method: "POST" }),
+    addImap: (body: MailImapInput) => request<unknown>("/mail/accounts/imap", { method: "POST", body: json(body) }),
+    test: (id: string, purpose?: MailPurpose) =>
+      request<{ ok: boolean; detail: string }>(`/mail/accounts/${encodeURIComponent(id)}/test?${query({ purpose })}`, { method: "POST" }),
+    remove: (id: string) => request<void>(`/mail/accounts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    route: (purpose: MailPurpose, accountId: string | null) =>
+      request<unknown>(`/mail/routes/${purpose}`, { method: "PUT", body: json({ account_id: accountId }) }),
+    googleStart: (purposes: MailPurpose[]) => request<{ url: string }>("/mail/google/start", { method: "POST", body: json({ purposes }) }),
+    googleFinish: (code: string, state: string) =>
+      request<{ id: string; address: string; granted: string[]; purposes: MailPurpose[] }>("/mail/google/finish", { method: "POST", body: json({ code, state }) }),
   },
   approvals: {
     list: (status: "pending" | "done" | "rejected" | "cancelled" | "failed" | "all" = "pending") => request<ApprovalList>(`/approvals?status=${status}`),
