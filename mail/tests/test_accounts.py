@@ -16,7 +16,7 @@ from mail.config import settings
 from mail.inbound import Reader
 from mail.router import Router
 from mail.store import AccountRow, InboundRow, JobRow, seal
-from tests.conftest import job
+from mail.tests.conftest import job
 
 TOKEN = "service-token-for-tests-1234567890"
 
