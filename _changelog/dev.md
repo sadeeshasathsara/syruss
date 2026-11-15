@@ -14,12 +14,32 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.17.0-dev.1` | 2026-11-15 | [What changed](#admin-0170-dev1) |
+| **admin** | `0.18.0-dev.1` | 2026-11-15 | [What changed](#admin-0180-dev1) |
 | **agent** | `0.13.0-dev.1` | 2026-11-15 | [What changed](#agent-0130-dev1) |
-| **mail** | `0.5.0-dev.1` | 2026-11-15 | [What changed](#mail-050-dev1) |
-| **server** | `0.26.0-dev.1` | 2026-11-15 | [What changed](#server-0260-dev1) |
+| **mail** | `0.6.0-dev.1` | 2026-11-15 | [What changed](#mail-060-dev1) |
+| **server** | `0.27.0-dev.1` | 2026-11-15 | [What changed](#server-0270-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
 | **www** | `0.17.2-dev.1` | 2026-11-15 | [What changed](#www-0172-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### admin (0.18.0-dev.1)
+- **Outlook and Microsoft 365 mailboxes can be connected with a button.** Email › Accounts has **Connect with Microsoft** beside Google: you sign in, approve only sending and, where a job reads, reading, and no app password is involved. The mail service sends through Microsoft Graph, reads new mail by delta query, and keeps the new refresh token Microsoft hands out after each refresh.
+- **Google and Microsoft apps are set in the admin app.** The new **Email › Provider apps** tab takes each app's client id (and Microsoft's tenant) and its secret, which is sealed in the browser to the mail service's key and never shown again. The redirect address to register is shown there. Google's environment settings still work until an app is saved.
+- **The Jobs list is cleaner:** one aligned table of job, mailbox and a one-word status, with the settings behind a row's arrow.
+- **Audit log:** connecting a Microsoft mailbox and setting or removing a provider app read in plain words.
+
+### mail (0.6.0-dev.1)
+- **Outlook and Microsoft 365 mailboxes can be connected with a button.** Email › Accounts has **Connect with Microsoft** beside Google: you sign in, approve only sending and, where a job reads, reading, and no app password is involved. The mail service sends through Microsoft Graph, reads new mail by delta query, and keeps the new refresh token Microsoft hands out after each refresh.
+- **Google and Microsoft apps are set in the admin app.** The new **Email › Provider apps** tab takes each app's client id (and Microsoft's tenant) and its secret, which is sealed in the browser to the mail service's key and never shown again. The redirect address to register is shown there. Google's environment settings still work until an app is saved.
+- **The Jobs list is cleaner:** one aligned table of job, mailbox and a one-word status, with the settings behind a row's arrow.
+- **Audit log:** connecting a Microsoft mailbox and setting or removing a provider app read in plain words.
+
+### server (0.27.0-dev.1)
+- **Outlook and Microsoft 365 mailboxes can be connected with a button.** Email › Accounts has **Connect with Microsoft** beside Google: you sign in, approve only sending and, where a job reads, reading, and no app password is involved. The mail service sends through Microsoft Graph, reads new mail by delta query, and keeps the new refresh token Microsoft hands out after each refresh.
+- **Google and Microsoft apps are set in the admin app.** The new **Email › Provider apps** tab takes each app's client id (and Microsoft's tenant) and its secret, which is sealed in the browser to the mail service's key and never shown again. The redirect address to register is shown there. Google's environment settings still work until an app is saved.
+- **The Jobs list is cleaner:** one aligned table of job, mailbox and a one-word status, with the settings behind a row's arrow.
+- **Audit log:** connecting a Microsoft mailbox and setting or removing a provider app read in plain words.
 
 ## [2026-11-15] - Release via dev
 
