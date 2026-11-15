@@ -18,6 +18,7 @@ import { ITEM_STATUS, KIND_LABEL, amount, itemSummary, money, price } from "@/li
 import { cn } from "@/lib/format";
 import type { CatalogItem, CatalogKind, MoneySummary, OrgBillingRow } from "@/lib/types";
 import { Select } from "@/components/ui/Select";
+import { usePreservedState } from "@/lib/resume";
 
 export type BillingView = "organizations" | "invoices" | "payments" | "catalog" | "settings";
 
@@ -162,7 +163,7 @@ function Catalog() {
   const can = me.can("billing.manage");
   const setup = useQuery({ queryKey: ["billing", "setup"], queryFn: api.billing.setup, staleTime: 300_000 });
   const items = useQuery({ queryKey: ["billing", "catalog"], queryFn: () => api.billing.catalog() });
-  const [editing, setEditing] = useState<Editing>(null);
+  const [editing, setEditing] = usePreservedState<Editing>("billing.plans.editing", null);
   const labels = useMemo(() => Object.fromEntries((setup.data?.limits ?? []).map((l) => [l.key, l])), [setup.data]);
   const grouped = useMemo(() => {
     const byKind: Record<CatalogKind, Record<string, CatalogItem[]>> = { plan: {}, addon: {}, credits: {} };
@@ -221,9 +222,9 @@ function Catalog() {
 }
 
 function MovePlan({ from, plans }: { from: CatalogItem; plans: CatalogItem[] }) {
-  const [open, setOpen] = useState(false);
-  const [to, setTo] = useState(plans[0]?.id ?? "");
-  const [later, setLater] = useState(true);
+  const [open, setOpen] = usePreservedState("billing.move.open", false);
+  const [to, setTo] = usePreservedState("billing.move.to", plans[0]?.id ?? "");
+  const [later, setLater] = usePreservedState("billing.move.later", true);
   if (!plans.length) return null;
   if (!open) return <Button size="sm" onClick={() => setOpen(true)}>Move its organizations…</Button>;
   return (
