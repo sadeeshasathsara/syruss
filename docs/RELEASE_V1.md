@@ -98,7 +98,7 @@ workflow and `CHANGELOG.md`; the `_changelog/` files and the current `package.ym
   - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, using live keys and a webhook pointing at production
   - the model provider: `LLM_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `CHAT_MODEL`, on a paid tier (the free tier allows 15 requests a minute)
   - `MODEL_PRICES`, so runs show what they cost
-  - `SMTP_*` for e-mail
+  - `MAIL_SMTP_*` (in the mail service's `mail.env`) for e-mail
 - [ ] Keycloak realm for production, hardened with `bridge/keycloak/harden.py`.
 - [ ] Syruss's own billing details filled in (invoices cannot be issued without them).
 - [x] Backup and restore scripts (`deploy/prod/backup.sh`, `restore.sh`), both tried against a local copy.

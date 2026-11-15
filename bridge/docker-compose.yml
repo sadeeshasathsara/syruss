@@ -104,6 +104,8 @@ services:
     image: quay.io/keycloak/keycloak:26.7@sha256:37dbaf6f0722c9ec246335f36e1ef8b2e6cb960f7c27e0d8c615121a3d475a85
     container_name: doc_intel_keycloak
     <<: *hardened
+    # Its email goes to the mail service running on this machine (python -m mail): harden.py --smtp points it there
+    extra_hosts: ["host.docker.internal:host-gateway"]
     command: ["start-dev", "--import-realm", "--http-port=8080"]
     depends_on:
       keycloak-db:
