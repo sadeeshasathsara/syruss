@@ -211,3 +211,16 @@ async def test_the_server_sets_an_app_through_a_signed_command_with_the_secret_s
     snapshot = await Directory(store, Router(store, fallback), lambda *a: None).snapshot()
     assert snapshot["meta"]["providers"]["microsoft"]["configured"] and "from-the-browser" not in json.dumps(snapshot)
     await apps.clear(store, "microsoft")
+
+
+async def test_microsoft_can_come_from_the_environment_and_the_dashboard_takes_precedence(store, fallback, monkeypatch):
+    apps._cache.clear()
+    assert not apps.configured("microsoft")
+    monkeypatch.setattr(settings, "MICROSOFT_MAIL_CLIENT_ID", "env-ms-id")
+    monkeypatch.setattr(settings, "MICROSOFT_MAIL_CLIENT_SECRET", "env-ms-secret")
+    monkeypatch.setattr(settings, "MICROSOFT_MAIL_TENANT", "contoso.com")
+    assert apps.describe("microsoft") == {"configured": True, "from_environment": True, "tenant": "contoso.com"}
+    assert oauth.start("microsoft", ["notifications"], "x", by="u").startswith("https://login.microsoftonline.com/contoso.com/oauth2/v2.0/authorize?")
+    await Operations(store, Router(store, fallback)).app_set("microsoft", "dash-id", "dash-secret", "")
+    assert apps.get("microsoft")["client_id"] == "dash-id" and apps.describe("microsoft")["from_environment"] is False
+    await apps.clear(store, "microsoft")

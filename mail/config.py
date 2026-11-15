@@ -80,6 +80,14 @@ class MailSettings(BaseSettings):
     GOOGLE_MAIL_CLIENT_ID: str = ""
     GOOGLE_MAIL_CLIENT_SECRET: str = ""
 
+    # Microsoft mail (accounts/graph.py): an app registration in Microsoft Entra, with a Web redirect URI of
+    # <PUBLIC_ADMIN_URL>/email/microsoft, the delegated Graph permissions Mail.Send and Mail.Read, and a client secret (its Value).
+    # MICROSOFT_MAIL_TENANT: common (work and personal accounts, the default), organizations, consumers, or a directory id or domain.
+    # Empty id or secret: Microsoft can only be set in the admin app (Email, Provider apps), where it takes precedence.
+    MICROSOFT_MAIL_CLIENT_ID: str = ""
+    MICROSOFT_MAIL_CLIENT_SECRET: str = ""
+    MICROSOFT_MAIL_TENANT: str = ""
+
     # The SMTP door for Keycloak (relay.py): Keycloak sends its emails here with this login, From MAIL_FROM, and they
     # leave through the "accounts" purpose's account. Reachable only on the internal network (deploy/*: the mail-relay
     # network; on your machine 127.0.0.1, and Keycloak's container reaches it as host.docker.internal). 0: switched off.

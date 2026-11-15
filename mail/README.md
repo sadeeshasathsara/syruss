@@ -87,7 +87,7 @@ The admin app's **Email** page (owners only) sends signed commands through the s
 - **Checks:** test an account.
 - **Delivery log:** see what was sent, and send again mail that was given up.
 
-**Connecting Google or Microsoft** (`oauth.py`) asks only for the permissions the chosen jobs need, and saves what the provider actually granted. Their OAuth apps (client id and secret, plus Microsoft's tenant) are set in the admin app's **Provider apps** tab and kept sealed here (`apps.py`); Google's can still come from `GOOGLE_MAIL_CLIENT_*`. Microsoft rotates refresh tokens, and each new one is saved at once (`accounts/graph.py`). When a provider stops accepting the sign-in (access removed, password changed, or Google's 7-day limit for an app in testing), the account is marked "Needs reconnecting" and its jobs wait until it is connected again.
+**Connecting Google or Microsoft** (`oauth.py`) asks only for the permissions the chosen jobs need, and saves what the provider actually granted. Their OAuth apps (client id and secret, plus Microsoft's tenant) are set in the admin app's **Provider apps** tab and kept sealed here (`apps.py`); Either can instead come from `GOOGLE_MAIL_CLIENT_*` or `MICROSOFT_MAIL_CLIENT_*` (and `MICROSOFT_MAIL_TENANT`) in the environment; the dashboard takes precedence. Microsoft rotates refresh tokens, and each new one is saved at once (`accounts/graph.py`). When a provider stops accepting the sign-in (access removed, password changed, or Google's 7-day limit for an app in testing), the account is marked "Needs reconnecting" and its jobs wait until it is connected again.
 
 ## Reading mailboxes
 
