@@ -38,3 +38,19 @@ def test_a_public_key_given_on_one_line_is_read(monkeypatch):
         token_check.verify(make_event("document.submitted", {}))
     finally:
         token_check._public_key.cache_clear()
+
+
+def test_the_test_server_and_production_refuse_development_defaults():
+    from agentic_framework.config import AgentSettings, check_config, deployment_problems
+    dev = AgentSettings(_env_file=None)
+    check_config(dev)  # someone's machine: the defaults are fine
+    for env in ("test", "production"):
+        deployed = AgentSettings(_env_file=None, ENV=env)
+        problems = " ".join(deployment_problems(deployed))
+        assert "POSTGRES_PASSWORD" in problems and "AGENT_TOKEN_PUBLIC_KEY" in problems
+        with pytest.raises(RuntimeError, match=f"as {env}"):
+            check_config(deployed)
+    ready = AgentSettings(_env_file=None, ENV="test", POSTGRES_PASSWORD="a-real-password", AGENT_TOKEN_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----")
+    check_config(ready)
+    with pytest.raises(RuntimeError, match="ENV must be one of"):
+        check_config(AgentSettings(_env_file=None, ENV="prod"))

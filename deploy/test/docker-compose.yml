@@ -136,6 +136,8 @@ services:
     networks: [data, public]
     image: ghcr.io/sadeeshasathsara/syruss/server:test
     env_file: env/server.env
+    environment:
+      ENV: test  # refuses development values (app/core/auth/dependencies.deployment_problems)
     depends_on:
       postgres:
         condition: service_healthy
@@ -160,6 +162,8 @@ services:
     networks: [data, agent-egress]
     image: ghcr.io/sadeeshasathsara/syruss/agent:test
     env_file: env/agent.env
+    environment:
+      ENV: test
     depends_on:
       - server
       - kafka

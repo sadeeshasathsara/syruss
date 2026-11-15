@@ -17,8 +17,12 @@ nothing is built on it. The folder holds everything the server needs besides its
 2. Copy this folder to `~/syruss-deploy`. Create `env/` beside it, readable only by you (`chmod 700 env`):
    - `stack.env`: `POSTGRES_*`, `MINIO_ROOT_*`, `KAFKA_CLUSTER_ID`, `KEYCLOAK_*`, `KC_HOSTNAME`, `SYRUSS_*_URL`, the three
      client secrets. Use long random values (`openssl rand -base64 32`), never the development ones.
-   - `server.env`, `agent.env`, `www.env`, `site.env`, `admin.env`: start from each service's `.env.example`. The server
-     refuses to start in production without https addresses, its own signing keys and `SECRETS_ENCRYPTION_KEY`.
+   - `server.env`, `agent.env`, `www.env`, `site.env`, `admin.env`: start from each service's `.env.example`. The
+     compose file sets `ENV=production`, and then the server and the agent refuse to start while a development value is
+     left, and say which: the database, storage and token passwords; `SECRETS_ENCRYPTION_KEY`; the public addresses
+     (`OIDC_ISSUER`, `PUBLIC_SITE_URL`, `PUBLIC_APP_URL`, `PUBLIC_ADMIN_URL`, `PUBLIC_API_URL`) and `CORS_ORIGINS`, which
+     must be https and not localhost; `MAIL_FROM` at a real domain; the signing keys (`AGENT_TOKEN_PRIVATE_KEY` for the
+     server, `AGENT_TOKEN_PUBLIC_KEY` for the agent). The test server (`ENV=test`) checks the same.
    - Live Stripe keys and the webhook secret (webhook URL `https://api.<domain>/api/v1/billing/webhooks/stripe`), the
      model provider on a paid tier, `MODEL_PRICES`, and `SMTP_*` from a mail provider with SPF, DKIM and DMARC set up.
    - The support mailbox in `server.env`: `SUPPORT_EMAIL_ADDRESS`, and `SUPPORT_IMAP_*` so replies from customers reach
