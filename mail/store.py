@@ -30,7 +30,7 @@ class AccountRow(Base):
     """A mailbox connected in the admin app. The one from the environment isn't stored: it is built from settings."""
     __tablename__ = "mail_accounts"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    kind: Mapped[str] = mapped_column(String(20), nullable=False)          # smtp_imap | gmail
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)          # smtp_imap | gmail | graph
     address: Mapped[str] = mapped_column(String(320), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)   # hosts and ports: nothing secret
@@ -164,6 +164,12 @@ class Store:
         """The provider stopped accepting this account's sign-in: it needs connecting again."""
         async with self.session() as s:
             await s.execute(update(AccountRow).where(AccountRow.id == account_id).values(status="needs_reconnect", last_error=why))
+            await s.commit()
+
+    async def save_secret(self, account_id: str, secret: Dict[str, Any]) -> None:
+        """Keeps a new sealed secret for an account (a provider that rotates refresh tokens gives a new one after a refresh)."""
+        async with self.session() as s:
+            await s.execute(update(AccountRow).where(AccountRow.id == account_id).values(secret=seal(secret)))
             await s.commit()
 
     # ---- jobs ------------------------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 """
 Email (the admin app's /email page), the staff's side of the mail service (mail/): which accounts Syruss sends and reads mail through,
-which account each job uses, jobs of its own, connecting Google, and the delivery log.
+which account each job uses, jobs of its own, connecting Google or Microsoft, the apps they are connected through, and the delivery log.
 
 Everything goes over Kafka (services/mail_bus.py): what the page shows is the mail service's own directory, and each change is a signed
 command the mail service carries out and answers. Owners only (staff.manage): the delivery log shows customers' addresses, and
@@ -25,8 +25,13 @@ READ = require_staff("staff.manage")
 CHANGE = require_staff("staff.manage", recent=True)
 
 
-def redirect_uri() -> str:
-    return settings.PUBLIC_ADMIN_URL.rstrip("/") + "/email/google"
+Provider = Literal["google", "microsoft"]
+
+
+def redirect_uri(provider: str = "google") -> str:
+    """Where a provider sends the person back to: the admin app's /email/<provider> page, which finishes the connection here.
+    It is the address to register as the redirect URI of the provider's OAuth app."""
+    return settings.PUBLIC_ADMIN_URL.rstrip("/") + f"/email/{provider}"
 
 
 async def _run(coro):
@@ -50,7 +55,10 @@ async def overview(staff: Staff = Depends(READ)) -> Dict[str, Any]:
     """Each job and its account now, every account (no secrets), the key secrets are sealed to, and whether Google can be connected."""
     if not await bus.ready():
         raise HTTPException(status_code=503, detail="The mail service hasn't been heard from. Is it running?")
-    return {**bus.overview(), "redirect_uri": redirect_uri()}
+    out = bus.overview()
+    for provider, info in out["providers"].items():
+        info["redirect_uri"] = redirect_uri(provider)
+    return {**out, "redirect_uri": redirect_uri("google")}
 
 
 @router.get("/jobs")
@@ -175,27 +183,57 @@ async def delete_job(key: str, staff: Staff = Depends(CHANGE), db: AsyncSession 
     await db.commit()
 
 
-class GoogleStartIn(BaseModel):
+class OAuthStartIn(BaseModel):
     purposes: List[str] = Field(..., min_length=1, max_length=20)
 
 
-@router.post("/google/start")
-async def google_start(body: GoogleStartIn, staff: Staff = Depends(CHANGE)) -> Dict[str, str]:
-    """Google's sign-in page, asking only for what the chosen jobs need. It comes back to the admin app's /email/google, which finishes here."""
-    return await _command("oauth.google.start", staff, {"jobs": body.purposes, "redirect_uri": redirect_uri()})
+@router.post("/{provider}/start")
+async def oauth_start(provider: Provider, body: OAuthStartIn, staff: Staff = Depends(CHANGE)) -> Dict[str, str]:
+    """The provider's sign-in page, asking only for what the chosen jobs need. It comes back to the admin app's /email/<provider>, which finishes here."""
+    return await _command(f"oauth.{provider}.start", staff, {"jobs": body.purposes, "redirect_uri": redirect_uri(provider)})
 
 
-class GoogleFinishIn(BaseModel):
+class OAuthFinishIn(BaseModel):
     code: str = Field(..., min_length=1, max_length=2048)
     state: str = Field(..., min_length=1, max_length=4096)
 
 
-@router.post("/google/finish")
-async def google_finish(body: GoogleFinishIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
-    done = await _command("oauth.google.finish", staff, {"state": body.state, "redirect_uri": redirect_uri(),
-                                                          "sealed": await _run(_seal({"code": body.code}))})
-    record(db, staff, "mail.google_connected", "mail_account", done["id"],
+@router.post("/{provider}/finish")
+async def oauth_finish(provider: Provider, body: OAuthFinishIn, staff: Staff = Depends(CHANGE),
+                       db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
+    done = await _command(f"oauth.{provider}.finish", staff, {"state": body.state, "redirect_uri": redirect_uri(provider),
+                                                               "sealed": await _run(_seal({"code": body.code}))})
+    record(db, staff, f"mail.{provider}_connected", "mail_account", done["id"],
            details={"address": done["address"], "granted": done["granted"], "purposes": done["purposes"]})
     await db.commit()
     await _settled()
     return done
+
+
+class AppIn(BaseModel):
+    client_id: str = Field(..., min_length=3, max_length=300)
+    tenant: str = Field("", max_length=100)                       # Microsoft only: common, organizations, consumers, or a directory
+    client_secret: str = Field("", max_length=500)                # plain: only for a caller that cannot seal it itself
+    sealed: Optional[str] = Field(None, max_length=4096)           # {"client_secret": ...} sealed to the mail service's key (the admin app's browser does this)
+
+
+@router.put("/apps/{provider}")
+async def set_app(provider: Provider, body: AppIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
+    """The OAuth app this provider gave Syruss (its client id and secret). The secret is sealed to the mail service's key, never kept
+    here, never shown again. Leave it blank to keep the one already set (when only the client id or tenant changed)."""
+    payload: Dict[str, Any] = {"provider": provider, "client_id": body.client_id.strip(), "tenant": body.tenant.strip()}
+    sealed = body.sealed or (await _run(_seal({"client_secret": body.client_secret})) if body.client_secret else None)
+    if sealed:
+        payload["sealed"] = sealed
+    await _command("provider_app.set", staff, payload)
+    record(db, staff, "mail.app_set", "mail_provider", provider, details={"client_id": payload["client_id"]})
+    await db.commit()
+    await _settled()
+    return await overview(staff)
+
+
+@router.delete("/apps/{provider}", status_code=204)
+async def clear_app(provider: Provider, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)) -> None:
+    await _command("provider_app.clear", staff, {"provider": provider})
+    record(db, staff, "mail.app_cleared", "mail_provider", provider)
+    await db.commit()

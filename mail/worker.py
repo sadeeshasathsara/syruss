@@ -12,7 +12,7 @@ from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from pydantic import ValidationError
 from mail.accounts.base import Outbound
 from mail.config import check_config, settings
-from mail import bus
+from mail import apps, bus
 from mail.commands import Commands
 from mail.delivery import Delivery
 from mail.directory import Directory
@@ -86,6 +86,7 @@ async def main() -> None:
     check_config(settings)
     store = Store()
     await store.init()
+    await apps.load(store)
     router = Router(store)
     await bus.ensure_topics()
     producer = AIOKafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, max_request_size=settings.MAIL_MAX_MESSAGE_BYTES + 1_000_000)

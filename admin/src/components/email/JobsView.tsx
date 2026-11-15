@@ -25,6 +25,8 @@ function canServe(account: MailAccount, job: MailJobDef): boolean {
   return job.needs.every((n) => account.granted.includes(n));
 }
 
+const COLUMNS = "grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_9rem_2rem] items-center gap-x-4";
+
 /** The jobs mail does and the mailbox each uses; jobs of your own can be added. */
 export function JobsView({ o }: { o: MailOverview }) {
   const keys = Object.keys(o.purposes).sort((a, b) => {
@@ -35,6 +37,9 @@ export function JobsView({ o }: { o: MailOverview }) {
   return (
     <>
       <Panel title="Jobs">
+        <div className={cn(COLUMNS, "border-b border-rule pb-2 text-meta text-muted max-md:hidden")}>
+          <span>Job</span><span>Mailbox</span><span>Status</span><span />
+        </div>
         <ul className="flex flex-col divide-y divide-rule">
           {keys.map((key) => <Job key={`${key}:${JSON.stringify(o.purposes[key].settings)}`} id={key} job={o.purposes[key]} o={o} />)}
         </ul>
@@ -44,57 +49,57 @@ export function JobsView({ o }: { o: MailOverview }) {
   );
 }
 
+/** One word for how a job is doing. */
+function statusOf(job: MailJobDef): { label: string; tone: "positive" | "warning" | "negative" | "neutral" } {
+  if (job.last_error) return { label: "Problem", tone: "negative" };
+  if (job.direction !== "send" && !job.reads) return { label: "Not reading", tone: "warning" };
+  if (!job.routed) return { label: "Default", tone: "neutral" };
+  return { label: "Working", tone: "positive" };
+}
+
 function Job({ id, job, o }: { id: string; job: MailJobDef; o: MailOverview }) {
   const refresh = useRefresh();
-  const [confirming, setConfirming] = useState(false);
+  const [open, setOpen] = useState(false);
   const route = useMutation({ mutationFn: (account: string | null) => api.mail.route(id, account), onSuccess: refresh });
-  const remove = useMutation({ mutationFn: () => api.mail.deleteJob(id), onSuccess: refresh });
-  const serving = o.accounts.find((a) => a.id === job.account_id);
+  const status = statusOf(job);
+  const activity = job.direction === "read" ? job.last_read_at && `Read ${ago(job.last_read_at).toLowerCase()}` : job.last_sent_at && `Sent ${ago(job.last_sent_at).toLowerCase()}`;
   return (
-    <li className="flex flex-col gap-2 py-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="flex flex-wrap items-center gap-2 text-body font-medium text-ink">
-            {job.label}
-            <Pill tone="neutral">{DIRECTION[job.direction]}</Pill>
-            {!job.system && <Pill tone="accent">Yours</Pill>}
+    <li className="py-3">
+      <div className={cn(COLUMNS, "max-md:grid-cols-1 max-md:gap-y-2")}>
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-body font-medium text-ink">
+            <span className="truncate">{job.label}</span>
+            <span className="shrink-0 text-meta font-normal text-muted">{DIRECTION[job.direction]}</span>
           </p>
-          {job.description && <p className="text-meta text-muted">{job.description}</p>}
+          {job.description && <p className="truncate text-meta text-muted" title={job.description}>{job.description}</p>}
         </div>
-        <select aria-label={`Mailbox for ${job.label}`} className={cn(field, "w-72")} disabled={route.isPending}
+        <select aria-label={`Mailbox for ${job.label}`} className={cn(field, "w-full min-w-0 truncate")} disabled={route.isPending}
           value={job.routed ? (job.account_id ?? "env") : "env"} onChange={(e) => route.mutate(e.target.value === "env" ? null : e.target.value)}>
           {o.accounts.map((a) => (
             <option key={a.id} value={a.from_environment ? "env" : a.id} disabled={!canServe(a, job)}>
-              {a.address}{a.from_environment ? " (from the environment)" : ""}{canServe(a, job) ? "" : ` (can't ${job.needs.filter((n) => !a.granted.includes(n)).join(" or ")})`}
+              {a.address}{a.from_environment ? " · default" : ""}{canServe(a, job) ? "" : " · can't"}
             </option>
           ))}
         </select>
-        {!job.routed && <Pill tone="neutral">Fallback</Pill>}
-        {job.reads && <Pill tone="positive">Reading</Pill>}
-        {(job.direction !== "send") && !job.reads && <Pill tone="warning">Not reading</Pill>}
+        <div className="flex flex-col items-start gap-0.5">
+          <Pill tone={status.tone}>{status.label}</Pill>
+          {activity && <span className="text-meta text-muted">{activity}</span>}
+        </div>
+        <button type="button" aria-label={open ? "Hide settings" : "Show settings"} aria-expanded={open} onClick={() => setOpen(!open)}
+          className="flex size-8 items-center justify-center rounded text-muted hover:bg-well hover:text-ink">
+          <span className={cn("transition-transform", open && "rotate-90")}>›</span>
+        </button>
       </div>
-      <p className="text-meta text-muted">
-        {serving ? `Through ${serving.address}. ` : ""}
-        {job.direction !== "read" && (job.last_sent_at ? `Last sent ${ago(job.last_sent_at).toLowerCase()}. ` : "Nothing sent yet. ")}
-        {job.direction !== "send" && (job.last_read_at ? `Last read ${ago(job.last_read_at).toLowerCase()}.` : "Not read yet.")}
-      </p>
-      {job.last_error && <p className="text-meta text-negative">{job.last_error}</p>}
-      <div className="flex flex-wrap items-start gap-3">
-        <Settings id={id} job={job} />
-        {!job.system && (confirming ? (
-          <span className="flex items-center gap-2 text-meta text-muted">Remove this job?
-            <Button size="sm" variant="danger" disabled={remove.isPending} onClick={() => remove.mutate()}>Yes, remove</Button>
-            <Button size="sm" onClick={() => setConfirming(false)}>No</Button>
-          </span>
-        ) : <Button size="sm" onClick={() => setConfirming(true)}>Remove</Button>)}
-      </div>
-      <Problem error={route.error ?? remove.error} />
+      {job.last_error && <p className="mt-1 text-meta text-negative">{job.last_error}</p>}
+      <Problem error={route.error} />
+      {open && <Settings id={id} job={job} />}
     </li>
   );
 }
 
 function Settings({ id, job }: { id: string; job: MailJobDef }) {
   const refresh = useRefresh();
+  const [confirming, setConfirming] = useState(false);
   const [v, setV] = useState({ sender_name: job.settings.sender_name ?? "", reply_to: job.settings.reply_to ?? "", poll_seconds: String(job.settings.poll_seconds ?? "") });
   const save = useMutation({
     mutationFn: () => {
@@ -104,25 +109,31 @@ function Settings({ id, job }: { id: string; job: MailJobDef }) {
     },
     onSuccess: refresh,
   });
+  const remove = useMutation({ mutationFn: () => api.mail.deleteJob(id), onSuccess: refresh });
   return (
-    <details className="min-w-0 flex-1 text-body">
-      <summary className="cursor-pointer text-meta text-muted hover:text-ink">Settings of this job</summary>
-      <form className="mt-2 flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
+    <div className="mt-3 rounded-lg bg-well p-3">
+      <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
         <label className="flex flex-col gap-1 text-meta text-muted">Sender name
           <input value={v.sender_name} className={cn(field, "w-48")} placeholder="Syruss" onChange={(e) => setV({ ...v, sender_name: e.target.value })} />
         </label>
         <label className="flex flex-col gap-1 text-meta text-muted">Replies go to
-          <input value={v.reply_to} className={cn(field, "w-56")} placeholder="the sender's address" onChange={(e) => setV({ ...v, reply_to: e.target.value })} />
+          <input value={v.reply_to} className={cn(field, "w-56")} placeholder="The sender" onChange={(e) => setV({ ...v, reply_to: e.target.value })} />
         </label>
         {job.reads && (
-          <label className="flex flex-col gap-1 text-meta text-muted">Read every (seconds)
-            <input type="number" min={15} value={v.poll_seconds} className={cn(field, "w-28")} placeholder="60" onChange={(e) => setV({ ...v, poll_seconds: e.target.value })} />
+          <label className="flex flex-col gap-1 text-meta text-muted">Read every (s)
+            <input type="number" min={15} value={v.poll_seconds} className={cn(field, "w-24")} placeholder="60" onChange={(e) => setV({ ...v, poll_seconds: e.target.value })} />
           </label>
         )}
-        <Button type="submit" size="sm" disabled={save.isPending}>{save.isPending ? "Saving…" : "Save"}</Button>
+        <Button type="submit" size="sm" variant="primary" disabled={save.isPending}>{save.isPending ? "Saving…" : "Save"}</Button>
+        {!job.system && (confirming ? (
+          <span className="flex items-center gap-2 text-meta text-muted">Remove?
+            <Button size="sm" variant="danger" disabled={remove.isPending} onClick={() => remove.mutate()}>Yes</Button>
+            <Button size="sm" onClick={() => setConfirming(false)}>No</Button>
+          </span>
+        ) : <Button size="sm" onClick={() => setConfirming(true)}>Remove job</Button>)}
       </form>
-      <Problem error={save.error} />
-    </details>
+      <Problem error={save.error ?? remove.error} />
+    </div>
   );
 }
 

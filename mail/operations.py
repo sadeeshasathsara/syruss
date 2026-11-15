@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import delete, select
 
-from mail import google
+from mail import apps, oauth
 from mail.accounts import ENV_ACCOUNT_ID, account_from_row
 from mail.accounts.base import MailNotPermitted
 from mail.purposes import Job, JobError, clean_settings, validate_new
@@ -33,7 +33,7 @@ class Operations:
         row = await self.store.account(account_id)
         if row is None:
             raise OperationError("No such mail account.")
-        return row, account_from_row(row, unseal(row.secret), on_lost=self.store.lost)
+        return row, account_from_row(row, unseal(row.secret), on_lost=self.store.lost, on_secret=self.store.save_secret)
 
     async def add_imap(self, *, by: str, address: str, name: str, config: Dict[str, Any], secret: Dict[str, str], jobs: List[str]) -> AccountRow:
         if not config.get("smtp_host") and not config.get("imap_host"):
@@ -74,7 +74,7 @@ class Operations:
             async with self.store.session() as s:
                 r = await s.get(AccountRow, row.id)
                 r.checked_at, r.last_error = datetime.now(timezone.utc), None if result.ok else result.detail
-                if result.ok and r.status == "needs_reconnect" and r.kind != "gmail":
+                if result.ok and r.status == "needs_reconnect" and r.kind not in oauth.KINDS:
                     r.status = "active"
                 await s.commit()
         return {"ok": result.ok, "detail": result.detail}
@@ -83,8 +83,9 @@ class Operations:
         row, _ = await self._account(account_id)
         if row is None:
             raise OperationError("The account from the environment isn't removed here.")
-        if row.kind == "gmail":
-            await google.revoke(unseal(row.secret).get("refresh_token", ""))
+        if row.kind in oauth.KINDS:
+            await oauth.revoke(oauth.KINDS[row.kind], unseal(row.secret).get("refresh_token", ""))
+            oauth.forget_tokens(row.id)
         async with self.store.session() as s:
             await s.execute(delete(RouteRow).where(RouteRow.account_id == row.id))
             await s.execute(delete(CursorRow).where(CursorRow.account_id == row.id))
@@ -169,24 +170,46 @@ class Operations:
             await s.commit()
         return {"id": job_id, "status": "retrying"}
 
-    # ---- Google --------------------------------------------------------------------------------------------
+    # ---- Google and Microsoft ------------------------------------------------------------------------------
 
     async def _needs(self) -> Dict[str, Any]:
         return {j.key: j.needs for j in await self.store.jobs()}
 
-    async def google_start(self, jobs: List[str], redirect_uri: str, by: str) -> str:
+    async def oauth_start(self, provider: str, jobs: List[str], redirect_uri: str, by: str) -> str:
         try:
-            return google.start(jobs, redirect_uri, by, await self._needs())
-        except google.ConnectError as e:
+            return oauth.start(provider, jobs, redirect_uri, by, await self._needs())
+        except oauth.ConnectError as e:
             raise OperationError(str(e)) from e
 
-    async def google_finish(self, code: str, state: str, redirect_uri: str, by: str) -> Dict[str, Any]:
+    async def oauth_finish(self, provider: str, code: str, state: str, redirect_uri: str, by: str) -> Dict[str, Any]:
         try:
-            done = await google.finish(self.store, code=code, state=state, redirect_uri=redirect_uri, by=by)
-        except google.ConnectError as e:
+            done = await oauth.finish(self.store, provider=provider, code=code, state=state, redirect_uri=redirect_uri, by=by)
+        except oauth.ConnectError as e:
             raise OperationError(str(e)) from e
         async with self.store.session() as s:  # it serves what it was connected for
             for key in done["purposes"]:
                 await s.merge(RouteRow(purpose=key, account_id=done["id"]))
             await s.commit()
         return done
+
+    # ---- provider apps -------------------------------------------------------------------------------------
+
+    async def app_set(self, provider: str, client_id: str, client_secret: str, tenant: str = "") -> None:
+        if provider not in apps.PROVIDERS:
+            raise OperationError("Only Google and Microsoft apps can be set.")
+        client_id, tenant = client_id.strip(), tenant.strip()
+        if not client_id:
+            raise OperationError("Give the app's client id.")
+        existing = apps.get(provider)
+        if not client_secret:   # a blank secret keeps the one already there (only the id or tenant changed)
+            if existing is None or existing.get("from_environment"):
+                raise OperationError("Give the app's client secret.")
+            client_secret = existing["client_secret"]
+        if provider == "microsoft" and tenant and not all(c.isalnum() or c in ".-" for c in tenant):
+            raise OperationError("The tenant is 'common', 'organizations', 'consumers', or your directory's id or domain.")
+        await apps.save(self.store, provider, client_id, client_secret, tenant if provider == "microsoft" else "")
+
+    async def app_clear(self, provider: str) -> None:
+        if provider not in apps.PROVIDERS:
+            raise OperationError("Only Google and Microsoft apps can be set.")
+        await apps.clear(self.store, provider)

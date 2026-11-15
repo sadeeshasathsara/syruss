@@ -132,6 +132,12 @@ export function describeAction(a: StaffAction): string {
       return `connected the mailbox ${d.address ?? a.target_id}`;
     case "mail.google_connected":
       return `connected the Google mailbox ${d.address ?? a.target_id}`;
+    case "mail.microsoft_connected":
+      return `connected the Microsoft mailbox ${d.address ?? a.target_id}`;
+    case "mail.app_set":
+      return `set the ${a.target_id === "microsoft" ? "Microsoft" : "Google"} app used to connect mailboxes`;
+    case "mail.app_cleared":
+      return `removed the ${a.target_id === "microsoft" ? "Microsoft" : "Google"} app used to connect mailboxes`;
     case "mail.account_removed":
       return `removed the mailbox ${a.target_id}`;
     case "mail.route_changed":
