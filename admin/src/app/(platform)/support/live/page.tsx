@@ -3,7 +3,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, MessageSquare, User } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { field } from "@/components/ops/Bits";
 import { useStaff } from "@/components/shell/AdminFrame";
 import { usePresence } from "@/components/support/Presence";
 import { CustomerPanel, fillReply } from "@/components/support/Bits";
@@ -15,6 +14,7 @@ import { api } from "@/lib/api";
 import { ago, cn, dateTime } from "@/lib/format";
 import { useLive } from "@/lib/live";
 import type { LiveChat, LiveChatItem, LiveMessage, Presence } from "@/lib/types";
+import { Select } from "@/components/ui/Select";
 
 const TYPING_EVERY_MS = 3000;
 const TYPING_SHOWN_MS = 6000;
@@ -119,12 +119,12 @@ function PresencePicker({ status, onChange }: { status: Presence; onChange: (s: 
   return (
     <label className="flex items-center gap-2 text-meta text-muted">
       <span className={cn("size-2 rounded-full", status === "online" ? "bg-[var(--pill-positive-ink)]" : status === "away" ? "bg-[var(--pill-warning-ink)]" : "bg-faint")} aria-hidden />
-      <select aria-label="Your live chat status" value={status} disabled={saving} className={field}
-        onChange={async (e) => { setSaving(true); try { await onChange(e.target.value as Presence); } finally { setSaving(false); } }}>
+      <Select aria-label="Your live chat status" value={status} disabled={saving}
+        onValueChange={async (v) => { setSaving(true); try { await onChange(v as Presence); } finally { setSaving(false); } }}>
         <option value="online">Online: take chats</option>
         <option value="away">Away</option>
         <option value="offline">Offline</option>
-      </select>
+      </Select>
     </label>
   );
 }
@@ -281,10 +281,10 @@ function Actions({ chat, online }: { chat: LiveChat; online: { id: string; name:
           <Button size="sm" disabled={ticket.isPending} onClick={() => ticket.mutate()}>{ticket.isPending ? "Making a ticket…" : "Make a ticket to follow up"}</Button>
         )}
         <form className="flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); if (to) transfer.mutate(); }}>
-          <select aria-label="Hand this chat to" value={to} onChange={(e) => setTo(e.target.value)} className={cn(field, "min-w-0 flex-1")}>
+          <Select aria-label="Hand this chat to" value={to} onValueChange={(v) => setTo(v)} className="min-w-0 flex-1">
             <option value="">{online.length ? "Hand to…" : "Nobody else is online"}</option>
             {online.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+          </Select>
           <Button type="submit" size="sm" disabled={!to || transfer.isPending}>Hand over</Button>
         </form>
         <Button size="sm" variant="danger" disabled={end.isPending} onClick={() => end.mutate()}>End chat</Button>

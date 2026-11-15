@@ -17,6 +17,7 @@ import { api } from "@/lib/api";
 import { ITEM_STATUS, KIND_LABEL, amount, itemSummary, money, price } from "@/lib/billing";
 import { cn } from "@/lib/format";
 import type { CatalogItem, CatalogKind, MoneySummary, OrgBillingRow } from "@/lib/types";
+import { Select } from "@/components/ui/Select";
 
 export type BillingView = "organizations" | "invoices" | "payments" | "catalog" | "settings";
 
@@ -230,9 +231,9 @@ function MovePlan({ from, plans }: { from: CatalogItem; plans: CatalogItem[] }) 
       <StaffForm title={`Move every organization on ${from.name} v${from.version}`} submit="Move them" busy="Moving…" onDone={() => setOpen(false)} ready={!!to}
         onRun={(reason) => api.billing.move(from.id, { to_id: to, at_period_end: later, reason })}>
         <Label text="To">
-          <select value={to} onChange={(e) => setTo(e.target.value)} className={field}>
+          <Select value={to} onValueChange={(v) => setTo(v)}>
             {plans.map((p) => <option key={p.id} value={p.id}>{p.name} (v{p.version}, {price(p)})</option>)}
-          </select>
+          </Select>
         </Label>
         <label className="flex items-center gap-2 text-body text-ink"><input type="checkbox" checked={later} onChange={(e) => setLater(e.target.checked)} /> From each one&apos;s next period</label>
       </StaffForm>
