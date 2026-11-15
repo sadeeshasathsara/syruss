@@ -17,6 +17,15 @@ class MailSettings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
     MAIL_OUTBOUND_TOPIC: str = "mail.outbound"   # jobs to send, from the server
     MAIL_EVENTS_TOPIC: str = "mail.events"       # what happened to each job, back to the server
+    # The control plane (the server's signed commands and this service's answers) and the public state it keeps the
+    # server told of. Created at start-up with the settings each needs (bus.py).
+    MAIL_COMMANDS_TOPIC: str = "mail.commands"
+    MAIL_REPLIES_TOPIC: str = "mail.replies"
+    MAIL_DIRECTORY_TOPIC: str = "mail.directory"       # compacted: the latest state of each job and account
+    MAIL_INBOUND_ACKS_TOPIC: str = "mail.inbound.acks"  # the server saying it took a message in
+    MAIL_MAX_MESSAGE_BYTES: int = 25_000_000            # the largest email carried on Kafka
+    MAIL_TOPIC_REPLICAS: int = 1                        # one broker: 1. Raise it with the cluster.
+    DIRECTORY_REFRESH_SECONDS: int = 60                 # how often the directory is published again, whatever changed
     CONSUMER_GROUP: str = "mail"
 
     # Its own database (a separate database from the core server's, on the same Postgres)
@@ -31,9 +40,15 @@ class MailSettings(BaseSettings):
         return (f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
                 f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.MAIL_DB}")
 
-    # Seals the credentials of connected accounts (a Fernet key: python -c "from cryptography.fernet import Fernet;
-    # print(Fernet.generate_key().decode())"). Development derives one from a fixed phrase.
-    MAIL_SECRETS_KEY: str = ""
+    # Seals what is kept in the database: Fernet keys, comma-separated, NEWEST FIRST (python -m mail keygen). Add a key at
+    # the front to rotate: every older one still opens what it sealed. Development derives one from a fixed phrase.
+    MAIL_MASTER_KEYS: str = ""
+    MAIL_SECRETS_KEY: str = ""   # the single key before MAIL_MASTER_KEYS: still honoured, and still opens old data
+
+    # The server's public signing key (base64, 32 bytes). Only commands signed with the matching private key are carried
+    # out. Empty: no command is accepted.
+    MAIL_TRUSTED_SERVER_KEY: str = ""
+    COMMAND_MAX_AGE_SECONDS: int = 300
 
     # The account from the environment: the fallback every purpose uses until an account connected in the admin app
     # takes over (a fresh install sends sign-in codes and invitations before anyone can connect one).
@@ -111,8 +126,8 @@ def deployment_problems(s: MailSettings) -> list:
     problems = []
     if s.POSTGRES_PASSWORD == "postgrespassword":
         problems.append("POSTGRES_PASSWORD still has its development value")
-    if not s.MAIL_SECRETS_KEY:
-        problems.append("MAIL_SECRETS_KEY is not set")
+    if not (s.MAIL_MASTER_KEYS or s.MAIL_SECRETS_KEY):
+        problems.append("MAIL_MASTER_KEYS (or MAIL_SECRETS_KEY) is not set")
     if s.MAIL_BACKEND.lower() != "smtp":
         problems.append("MAIL_BACKEND must be smtp")
     if s.MAIL_SMTP_HOST in ("localhost", "127.0.0.1"):
