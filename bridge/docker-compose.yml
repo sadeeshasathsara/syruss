@@ -3,9 +3,9 @@
 # Locked down like the servers (deploy/prod), within what local development needs:
 #   - every port answers on this machine only (127.0.0.1), never on the Wi-Fi or office network: these services use
 #     development passwords (BIND_HOST=0.0.0.0 in bridge/.env opens them up again, for a VM that needs them)
-#   - no container keeps Linux capabilities (root powers) except the few the database images need to switch to their
-#     own user, none can gain privileges, and each has a process limit
-#   - MinIO runs as its own user, and every image is pinned to an exact version
+#   - no container runs as root, none keeps any Linux capability (root power) or can gain privileges, and each has a
+#     process limit
+#   - every image is pinned to an exact version
 
 x-hardened: &hardened
   restart: unless-stopped
@@ -13,9 +13,6 @@ x-hardened: &hardened
   security_opt: ["no-new-privileges:true"]
   pids_limit: 1024
 
-# Database images start as root only to fix their data folder's owner, then switch to their own user
-x-switches-user: &switches-user
-  cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
 
 services:
   postgres:
@@ -23,7 +20,9 @@ services:
     build: ./postgres
     image: doc_intel_postgres:16-vector-age
     container_name: doc_intel_postgres
-    <<: [*hardened, *switches-user]
+    # Runs as the image's postgres user from the start (its data folder belongs to it): never root
+    <<: *hardened
+    user: "70:70"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
@@ -39,11 +38,12 @@ services:
       retries: 5
 
   minio:
-    # Runs as its own user (see minio/Dockerfile): it takes ownership of its data, then drops root
     build: ./minio
     image: doc_intel_minio:local
     container_name: doc_intel_minio
-    <<: [*hardened, *switches-user]
+    # Runs as the image's minio user from the start (bridge/minio/Dockerfile gives it /data): never root
+    <<: *hardened
+    user: "100:101"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadminpassword}
@@ -82,7 +82,9 @@ services:
     # Keycloak's own database: identity data never shares a server with business data
     image: postgres:16-alpine@sha256:f377d590e5474681d4d7838635031a2b50647923b7abfa803ce9b5ff35d5c663
     container_name: doc_intel_keycloak_db
-    <<: [*hardened, *switches-user]
+    # Runs as the image's postgres user from the start (its data folder belongs to it): never root
+    <<: *hardened
+    user: "70:70"
     environment:
       POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
       POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak-change-me}
@@ -135,6 +137,7 @@ services:
     image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
     container_name: doc_intel_mailpit
     <<: *hardened
+    user: "65534:65534"  # nobody: it keeps mail in memory and a temporary file
     ports:
       - "${BIND_HOST:-127.0.0.1}:${MAILPIT_SMTP_PORT:-1025}:1025"
       - "${BIND_HOST:-127.0.0.1}:${MAILPIT_WEB_PORT:-8025}:8025"
