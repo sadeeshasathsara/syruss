@@ -12,10 +12,10 @@ Several server processes may run this at once: each change is a single UPDATE on
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from sqlalchemy import String, cast, func, select, update
+from sqlalchemy import String, cast, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
-from app.models.trace import AgentExecutionTrace as Run
+from app.models.trace import AgentExecutionTrace as Run, AgentPrompt
 from app.services import extraction_log
 from app.services.live import platform_feed
 from app.services.document_key import labels_for
@@ -60,6 +60,9 @@ async def prune_steps(db: AsyncSession, now: Optional[datetime] = None) -> int:
     cutoff = now - timedelta(days=settings.RUN_STEPS_RETENTION_DAYS)
     ids = (await db.execute(select(Run.id).where(Run.started_at < cutoff, cast(Run.steps, String) != "[]").limit(PRUNE_BATCH))).scalars().all()
     if ids:
-        await db.execute(update(Run).where(Run.id.in_(ids)).values(steps=[]))
+        await db.execute(update(Run).where(Run.id.in_(ids)).values(steps=[], briefing=None))
+        # System prompts no run refers to any more
+        await db.execute(delete(AgentPrompt).where(~AgentPrompt.hash.in_(
+            select(Run.system_prompt_hash).where(Run.system_prompt_hash.is_not(None)).distinct())))
         await db.commit()
     return len(ids)

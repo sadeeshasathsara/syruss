@@ -68,3 +68,22 @@ class AgentExecutionTrace(Base):
     input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     cost_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # None when the model's price isn't configured
+
+    # What the run was given before its first model call. The system prompt (the same for many runs) is kept once in
+    # agent_prompts, by its hash; the briefing is this run's own. Each step records only what was new, so any step's full
+    # input can be rebuilt from these (sysadmin/runs.py). The briefing is cleared with the steps after RUN_STEPS_RETENTION_DAYS.
+    system_prompt_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    briefing: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tools: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # The run of the same document just before this one, written when it starts and never changed: each document's runs
+    # form a linked list (the next run is the one whose previous_run_id is this run's id).
+    previous_run_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+
+
+class AgentPrompt(Base):
+    """A system prompt runs were given, kept once however many runs used it (by its sha256)."""
+    __tablename__ = "agent_prompts"
+
+    hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)

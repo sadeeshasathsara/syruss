@@ -1,9 +1,8 @@
 """
 Every agent run on the platform, in every organization and workspace: what is running now, what ran, how it went and
-what it cost, and for one run its event, its tries and what it changed.
-
-Facts for every staff member. What a run thought, read and wrote (its steps' content, the records and messages it
-produced) only with an access grant to its organization (support_access.py), and opening it is recorded.
+what it cost, and for one run everything: its event and tries, the prompt it was given, each step's answer, reasoning,
+tool calls and tokens, what it changed, and the runs of the same document before and after it. Every staff member sees
+all of it.
 """
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -11,14 +10,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Float, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.sysadmin.access import Staff, require_staff
-from app.api.v1.sysadmin.common import names, open_tenants, run_facts, step_facts
-from app.api.v1.sysadmin.support_access import open_content
+from app.api.v1.sysadmin.common import names, run_facts
 from app.core.database import get_db_session
 from app.models.audit import AuditLog
 from app.models.conversation import ChatMessage, Conversation
 from app.models.extraction_log import ExtractionLogEntry
 from app.models.outbox import AgentEventOutbox
-from app.models.trace import AgentExecutionTrace as Run
+from app.models.document import Document
+from app.models.trace import AgentExecutionTrace as Run, AgentPrompt
 from app.services.document_key import labels_for
 
 router = APIRouter()
@@ -70,14 +69,13 @@ def _filters(stmt, *, tenant_id, workspace_id, trigger, status, origin, source, 
 
 
 async def _labelled(db: AsyncSession, staff: Staff, runs: List[Run]) -> Dict[str, Any]:
-    """Runs as facts with their organizations and workspaces; document names only where the staff member has content open."""
-    opened = await open_tenants(db, staff)
-    labels = await labels_for(db, {r.document_id for r in runs if r.document_id and r.tenant_id in opened})
+    """Runs as facts with their organizations, workspaces and document names."""
+    labels = await labels_for(db, {r.document_id for r in runs if r.document_id})
     items = []
     for r in runs:
         item = run_facts(r)
-        item["content_open"] = r.tenant_id in opened
-        if item["content_open"] and r.document_id:
+        item["content_open"] = True
+        if r.document_id:
             item["document_name"] = labels.get(r.document_id)
         items.append(item)
     return {"items": items, **await names(db, {r.tenant_id for r in runs}, {r.template_id for r in runs})}
@@ -179,29 +177,50 @@ async def changes(db: AsyncSession, event_ids: List[str], *, content: bool) -> L
     return sorted(out, key=lambda x: x["at"])
 
 
+def _neighbour(r: Optional[Run]) -> Optional[Dict[str, Any]]:
+    return {"id": r.id, "trigger": r.profile, "status": r.status, "started_at": r.started_at, "attempt": r.attempt} if r else None
+
+
 @router.get("/runs/{trace_id}")
 async def get_run(trace_id: str, staff: Staff = Depends(require_staff()), db: AsyncSession = Depends(get_db_session)):
-    """One run: its facts, its event and every try of it, what it changed, and with content open its steps in full."""
+    """
+    One run in full: its facts, its event and every try of it, what it changed, the prompt it was given (the system
+    prompt, its briefing, its tools), every step (the model's answer and reasoning, each tool's input and result, the
+    step's tokens), and, for a document's run, the document and the runs before and after it (a linked list per
+    document: each run names the one before it).
+    """
     r = await db.get(Run, trace_id)
     if r is None:
         r = (await db.execute(select(Run).where(Run.run_id == trace_id).limit(1))).scalar_one_or_none()
     if r is None:
         raise HTTPException(status_code=404, detail="No such run.")
-    grant = await open_content(db, staff, r.tenant_id, "run", r.id)
     event = await db.get(AgentEventOutbox, r.event_id) if r.event_id else None
     tries = list((await db.execute(select(Run).where(Run.event_id == r.event_id).order_by(Run.started_at))).scalars().all()) if r.event_id else [r]
-    labels = await labels_for(db, {r.document_id} if r.document_id and grant else set())
-    steps = r.steps or []
+    labels = await labels_for(db, {r.document_id} if r.document_id else set())
+    previous = await db.get(Run, r.previous_run_id) if r.previous_run_id else None
+    following = (await db.execute(select(Run).where(Run.previous_run_id == r.id).order_by(Run.started_at).limit(1))).scalar_one_or_none()
+    position = None
+    document = None
+    if r.document_id:
+        ids = list((await db.execute(select(Run.id).where(Run.document_id == r.document_id).order_by(Run.started_at, Run.id))).scalars().all())
+        position = {"number": ids.index(r.id) + 1 if r.id in ids else None, "of": len(ids)}
+        doc = await db.get(Document, r.document_id)
+        if doc is not None:
+            document = {"id": doc.id, "name": labels.get(doc.id) or doc.original_filename, "content_type": doc.content_type,
+                        "size_bytes": doc.file_size_bytes, "page_count": doc.page_count, "status": doc.status.value}
+    system = (await db.get(AgentPrompt, r.system_prompt_hash)) if r.system_prompt_hash else None
     return {
-        "run": {**run_facts(r), "content_open": grant is not None, "document_name": labels.get(r.document_id or "")},
+        "run": {**run_facts(r), "content_open": True, "document_name": labels.get(r.document_id or "")},
         "event": event_dict(event),
         "tries": [run_facts(t) for t in tries],
-        "changes": await changes(db, [r.event_id] if r.event_id else [], content=grant is not None),
-        "steps": steps if grant else [step_facts(s) for s in steps],
-        "final_thought": r.final_thought if grant else None,
-        # The error is the platform's own (an exception, a timeout): shown to all staff, shortened without content open
-        "error": r.error_message if grant or not r.error_message else r.error_message[:300],
+        "changes": await changes(db, [r.event_id] if r.event_id else [], content=True),
+        "steps": r.steps or [],
+        "prompt": {"system": system.text if system else None, "system_hash": r.system_prompt_hash, "briefing": r.briefing,
+                   "tools": r.tools or []} if r.system_prompt_hash or r.briefing else None,
+        "final_thought": r.final_thought,
+        "error": r.error_message,
         "usage": r.usage,
-        "grant": {"id": grant.id, "expires_at": grant.expires_at, "reason": grant.reason} if grant else None,
+        "previous": _neighbour(previous), "next": _neighbour(following), "position": position, "document": document,
+        "grant": None,
         **await names(db, [r.tenant_id], [r.template_id]),
     }

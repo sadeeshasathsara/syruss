@@ -2,7 +2,7 @@ import type {
   BankAccountInfo, BillingPayment, BillingSettingsPage, BillingSetup, CatalogDraft, CatalogItem, CatalogKind, CreditNoteInfo, FollowUp, MoneySummary, OrganizationAccount, PersonAccount,
   Announcement, AtRisk, BusinessMetrics, OrgNote, OrganizationProfile, PersonProfile, PlatformControls, SearchResults, SecurityView, Severity, SwitchName,
   Invoice, OrgBilling, OrgBillingRow, PaymentFileInfo, SellerSettings, Submission, TaxRateInfo,
-  Grant, GrantList, Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
+  Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
   StaffActionPage, StaffInvitation, StaffList, StaffMe, StaffMember, StaffRole, JoinView, SystemLesson,
   Approval, ApprovalList, ApprovalRule, StaffPolicy,
   LiveChat, LiveMessage, LiveQueue, MailImapInput, MailJob, MailOverview, MailPurpose, Presence, SavedReply, SupportSettings, SupportSummary, Ticket, TicketDetail, TicketMessage,
@@ -191,11 +191,6 @@ export const api = {
   },
   queues: () => request<QueuesPage>("/queues"),
   names: (tenants: string[], workspaces: string[]) => request<Names>(`/names?${query({ tenants: tenants.join(","), workspaces: workspaces.join(",") })}`),
-  access: {
-    list: () => request<GrantList>("/access"),
-    open: (body: { tenant_id: string; reason: string; minutes: number }) => request<Grant>("/access", { method: "POST", body: json(body) }),
-    end: (id: string) => request<void>(`/access/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  },
   lessons: {
     list: () => request<{ items: SystemLesson[] }>("/lessons"),
     add: (content: string) => request<SystemLesson>("/lessons", { method: "POST", body: json({ content }) }),

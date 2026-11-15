@@ -7,11 +7,10 @@ import time
 from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import select, update
-from app.models.audit import AuditLog
 from app.models.platform import PlatformApproval, PlatformAuditEntry, PlatformSetting, PlatformStaff
 from app.models.tenant import Tenant
 from app.services import platform_controls, staff_offboarding
-from tests.conftest import AsyncSessionLocal, invite_staff, make_staff, person, register
+from tests.conftest import AsyncSessionLocal, invite_staff, make_staff, person
 from tests.test_billing import organization
 
 API = "/api/v1"
@@ -133,49 +132,6 @@ async def test_an_approval_is_not_carried_out_for_someone_who_may_no_longer_do_i
     failed = await client.post(f"{SYS}/approvals/{held['id']}/approve", headers=second, json={})
     assert failed.status_code == 409 and "may no longer" in failed.json()["detail"]
     assert (await client.get(f"{SYS}/approvals", headers=OWNER, params={"status": "failed"})).json()["items"][0]["id"] == held["id"]
-
-
-async def test_customers_decide_whether_support_opens_their_content_and_hear_when_it_does(client, mailbox):
-    member = person("usr_support_member", "Mo Member")
-    await register(member, "member")
-    assert (await client.put(f"{API}/organization/support-access", headers=member, json={"allowed": False})).status_code == 403
-    off = (await client.put(f"{API}/organization/support-access", json={"allowed": False})).json()
-    assert off["allowed"] is False and off["can_manage"] is True
-    try:
-        refused = await client.post(f"{SYS}/access", headers=OWNER, json={"tenant_id": "tenant_default", "reason": "Ticket 7: a record looks wrong"})
-        assert refused.status_code == 409 and refused.json()["detail"]["code"] == "support_access_off"
-
-        # Allowing it again asks for a recent sign-in.
-        stale = {"X-Auth-Time": str(int(time.time()) - 3600)}
-        assert (await client.put(f"{API}/organization/support-access", headers=stale, json={"allowed": True})).json()["detail"]["code"] == "reauth_required"
-        assert (await client.put(f"{API}/organization/support-access", json={"allowed": True})).json()["allowed"] is True
-
-        mailbox.clear()
-        grant = (await client.post(f"{SYS}/access", headers=OWNER, json={"tenant_id": "tenant_default", "reason": "Ticket 7: a record looks wrong"})).json()
-        told = [m for m in mailbox if m.to == "dev@syruss.test"]
-        assert told and told[0].subject.startswith("Syruss support opened") and told[0].subject.endswith("'s content")
-        assert "Ticket 7: a record looks wrong" in told[0].text
-        seen = (await client.get(f"{API}/organization/support-access", headers=member)).json()
-        assert [g["staff"] for g in seen["open"]] == ["Pat Platform"] and seen["can_manage"] is False
-
-        # Any owner or admin ends it at once; staff then see facts only.
-        assert (await client.post(f"{API}/organization/support-access/{grant['id']}/end", headers=member)).status_code == 403
-        ended = (await client.post(f"{API}/organization/support-access/{grant['id']}/end")).json()
-        assert ended["open"] == [] and ended["recent"][0]["ended_by"]
-        assert (await client.get(f"{SYS}/access", headers=OWNER)).json()["items"] == []
-
-        # Turning it off ends whatever is open.
-        await client.post(f"{SYS}/access", headers=OWNER, json={"tenant_id": "tenant_default", "reason": "Ticket 8: missing pages"})
-        await client.put(f"{API}/organization/support-access", json={"allowed": False})
-        assert (await client.get(f"{SYS}/access", headers=OWNER)).json()["items"] == []
-        async with AsyncSessionLocal() as db:  # each change is in the organization's own activity
-            events = (await db.execute(select(AuditLog.event_type).where(AuditLog.tenant_id == "tenant_default",
-                                                                        AuditLog.event_type.like("SUPPORT_ACCESS_%")))).scalars().all()
-        assert {"SUPPORT_ACCESS_STOPPED", "SUPPORT_ACCESS_ALLOWED", "SUPPORT_ACCESS_ENDED"} <= set(events)
-    finally:
-        async with AsyncSessionLocal() as db:
-            await db.execute(update(Tenant).where(Tenant.id == "tenant_default").values(support_access=True))
-            await db.commit()
 
 
 async def test_unused_access_is_taken_away_and_reviews_come_round(client, mailbox, clean_rules):

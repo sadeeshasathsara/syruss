@@ -10,7 +10,6 @@ Two levels, so staff see what is going on without reading customers' data:
   run:{run_id}     every event of one run as it happens, its thoughts and tool results included
   document:{id}    every event about one document
 
-Content listeners (run, document) are opened only with an access grant to the organization (sysadmin/support_access).
 
 Every server process sees every event (kafka_ws_bridge.deliver), so each one serves the listeners connected to it.
 A listener's queue is bounded: a slow one loses its oldest events and is told how many, it never holds the platform up.

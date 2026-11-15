@@ -18,7 +18,6 @@ from app.api.v1.knowledge_sources import router as knowledge_sources_router
 from app.api.v1.memories import router as memories_router
 from app.api.v1.organization import router as organization_router
 from app.api.v1.support import router as support_router
-from app.api.v1.support_access import router as support_access_router
 from app.api.v1.quality import router as quality_router
 from app.api.v1.questions import router as questions_router
 from app.api.v1.reviews import router as reviews_router
@@ -41,7 +40,6 @@ api_router = APIRouter()
 api_router.include_router(workspaces_router)
 api_router.include_router(organization_router)
 api_router.include_router(support_router)
-api_router.include_router(support_access_router)
 api_router.include_router(templates_router)
 api_router.include_router(documents_router)
 api_router.include_router(extractions_router)

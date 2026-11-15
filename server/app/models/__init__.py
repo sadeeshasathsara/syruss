@@ -34,7 +34,7 @@ from app.models.identity import OrgInvitation, OrgMember, User, WorkspaceRole, W
 from app.models.question import AgentQuestion, AgentQuestionStatus
 from app.models.outbox import AgentEventOutbox
 from app.models.audit import AuditLog
-from app.models.trace import AgentExecutionTrace
+from app.models.trace import AgentExecutionTrace, AgentPrompt
 from app.models.conversation import Conversation, ChatMessage
 from app.models.graph import EntitySighting
 from app.models.jobs import WorkspaceJob
