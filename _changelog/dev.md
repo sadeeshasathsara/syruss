@@ -19,7 +19,13 @@
 | **mail** | `0.7.1-dev.1` | 2026-11-15 | [What changed](#mail-071-dev1) |
 | **server** | `0.29.1-dev.1` | 2026-11-15 | [What changed](#server-0291-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
-| **www** | `0.17.3-dev.1` | 2026-11-15 | [What changed](#www-0173-dev1) |
+| **www** | `0.18.0-dev.1` | 2026-11-15 | [What changed](#www-0180-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### www (0.18.0-dev.1)
+- **An email channel's page is about email, not API keys.** It shows the channel's address with a copy button and a short note that anyone can send documents with an ordinary email (a person from their inbox, or a system that mails reports), with no key or sign-in. The "Keys" section, the API request example and the key dialog now appear only on API channels, so the "Keys are for API channels" error can no longer be reached from an email or SFTP channel.
+- **Who can email documents is now set on the page:** a list of allowed addresses or @domains (empty: anyone with the address), and an option to accept only mail that passes the sender's SPF or DKIM check. Both existed on the server but had no place in the app.
 
 ## [2026-11-15] - Release via dev
 
