@@ -19,7 +19,12 @@
 | **mail** | `0.2.0-dev.1` | 2026-11-15 | [What changed](#mail-020-dev1) |
 | **server** | `0.23.0-dev.1` | 2026-11-15 | [What changed](#server-0230-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
-| **www** | `0.17.1-dev.1` | 2026-11-15 | [What changed](#www-0171-dev1) |
+| **www** | `0.17.2-dev.1` | 2026-11-15 | [What changed](#www-0172-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### www (0.17.2-dev.1)
+- **`www/.env.example` lists `NEXT_PUBLIC_APP_VERSION`**, the setting behind the version shown under the sidebar (set by the release build; leave it unset locally).
 
 ## [2026-11-15] - Release via dev
 
