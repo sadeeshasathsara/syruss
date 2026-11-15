@@ -159,3 +159,28 @@ async def test_the_addresses_come_from_the_directory_and_are_never_guessed(bus, 
     mail_identity.forget()
     bus.state.clear()
     assert await mail_identity.ensure(required=True) == mail_identity.DEVELOPMENT      # a server without a mail service (local work, tests)
+
+
+async def test_a_directory_key_nobody_vouched_for_is_not_believed(bus, monkeypatch):
+    """Kafka has no login: with the mail service's public key set, the key secrets are sealed to is only believed when it is signed."""
+    from app.services.mail_bus import DIRECTORY_CONTEXT, ed25519
+    signer = ed25519.Ed25519PrivateKey.generate()
+    from cryptography.hazmat.primitives import serialization
+    monkeypatch.setattr(settings, "MAIL_SERVICE_PUBLIC_KEY", base64.b64encode(
+        signer.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)).decode())
+    genuine = {"public_key": "QUJD", "fingerprint": "AAAA-BBBB", "providers": {}}
+    genuine["signature"] = base64.b64encode(signer.sign(DIRECTORY_CONTEXT + b"|QUJD|AAAA-BBBB")).decode()
+
+    swapped = {**genuine, "public_key": "RVZJTA=="}                          # the attacker's key under the real signature
+    unsigned = {k: v for k, v in genuine.items() if k != "signature"}
+    stranger = {**genuine, "public_key": "RVZJTA==", "signature": base64.b64encode(
+        ed25519.Ed25519PrivateKey.generate().sign(DIRECTORY_CONTEXT + b"|RVZJTA==|AAAA-BBBB")).decode()}        # signed, by someone else
+    for forged in (swapped, unsigned, stranger):
+        await bus._directory("meta", json.dumps(forged).encode())
+        assert bus.meta == {}                                                  # not believed, so nothing can be sealed to it
+    with pytest.raises(MailBusError):
+        bus.seal({"smtp_password": "x"})
+    await bus._directory("meta", json.dumps(genuine).encode())
+    assert bus.meta["public_key"] == "QUJD"
+    await bus._directory("meta", json.dumps(swapped).encode())                 # a later forgery doesn't replace it
+    assert bus.meta["public_key"] == "QUJD"

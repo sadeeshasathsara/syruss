@@ -54,7 +54,8 @@ READY = {
     "OIDC_ISSUER": "https://login.example.com/realms/syruss", "PUBLIC_SITE_URL": "https://www.example.com",
     "PUBLIC_APP_URL": "https://app.example.com", "PUBLIC_ADMIN_URL": "https://admin.example.com",
     "PUBLIC_API_URL": "https://api.example.com", "CORS_ORIGINS": "https://app.example.com,https://www.example.com",
-    "MAIL_BACKEND": "service", "MAIL_COMMAND_SIGNING_KEY": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=", "REQUIRE_TRUSTED_DEVICE": True,
+    "MAIL_BACKEND": "service", "MAIL_COMMAND_SIGNING_KEY": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+    "MAIL_SERVICE_PUBLIC_KEY": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=", "REQUIRE_TRUSTED_DEVICE": True,
 }
 
 
