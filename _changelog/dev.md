@@ -14,12 +14,32 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.19.0-dev.1` | 2026-11-15 | [What changed](#admin-0190-dev1) |
+| **admin** | `0.19.1-dev.1` | 2026-11-15 | [What changed](#admin-0191-dev1) |
 | **agent** | `0.13.0-dev.1` | 2026-11-15 | [What changed](#agent-0130-dev1) |
-| **mail** | `0.6.0-dev.1` | 2026-11-15 | [What changed](#mail-060-dev1) |
-| **server** | `0.28.0-dev.1` | 2026-11-15 | [What changed](#server-0280-dev1) |
+| **mail** | `0.7.0-dev.1` | 2026-11-15 | [What changed](#mail-070-dev1) |
+| **server** | `0.29.0-dev.1` | 2026-11-15 | [What changed](#server-0290-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
 | **www** | `0.17.3-dev.1` | 2026-11-15 | [What changed](#www-0173-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### admin (0.19.1-dev.1)
+- **No mail password or server comes from an environment file any more.** `MAIL_SMTP_*` and `MAIL_IMAP_*` are gone from the mail service. Until a mailbox is connected (`python -m mail connect`, or the admin app's Email page), mail simply waits, without using up its tries, and goes out once one is. `MAIL_BACKEND` is now `none` (default), `console` or `memory`; the old `smtp` value is read as `none`, so set up your mailbox again with `python -m mail connect` (the README shows the local Mailpit command). A real server refuses to start with anything but `none`.
+- **Which mailbox serves a job is now part of the job** (the separate routes table is copied over once, then dropped). Jobs with no mailbox show "No mailbox" in the admin app.
+- **Kafka can use TLS and SASL.** `KAFKA_SECURITY_PROTOCOL`, `KAFKA_SASL_MECHANISM`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` and `KAFKA_SSL_CA_FILE` apply to every Kafka connection in the mail service and the server; off by default.
+- **Docs:** the mail README now has first-install steps, a Kafka security guide with the exact ACLs for the mail and server users, key rotation, and backup and restore; the deploy guide follows.
+
+### mail (0.7.0-dev.1)
+- **No mail password or server comes from an environment file any more.** `MAIL_SMTP_*` and `MAIL_IMAP_*` are gone from the mail service. Until a mailbox is connected (`python -m mail connect`, or the admin app's Email page), mail simply waits, without using up its tries, and goes out once one is. `MAIL_BACKEND` is now `none` (default), `console` or `memory`; the old `smtp` value is read as `none`, so set up your mailbox again with `python -m mail connect` (the README shows the local Mailpit command). A real server refuses to start with anything but `none`.
+- **Which mailbox serves a job is now part of the job** (the separate routes table is copied over once, then dropped). Jobs with no mailbox show "No mailbox" in the admin app.
+- **Kafka can use TLS and SASL.** `KAFKA_SECURITY_PROTOCOL`, `KAFKA_SASL_MECHANISM`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` and `KAFKA_SSL_CA_FILE` apply to every Kafka connection in the mail service and the server; off by default.
+- **Docs:** the mail README now has first-install steps, a Kafka security guide with the exact ACLs for the mail and server users, key rotation, and backup and restore; the deploy guide follows.
+
+### server (0.29.0-dev.1)
+- **No mail password or server comes from an environment file any more.** `MAIL_SMTP_*` and `MAIL_IMAP_*` are gone from the mail service. Until a mailbox is connected (`python -m mail connect`, or the admin app's Email page), mail simply waits, without using up its tries, and goes out once one is. `MAIL_BACKEND` is now `none` (default), `console` or `memory`; the old `smtp` value is read as `none`, so set up your mailbox again with `python -m mail connect` (the README shows the local Mailpit command). A real server refuses to start with anything but `none`.
+- **Which mailbox serves a job is now part of the job** (the separate routes table is copied over once, then dropped). Jobs with no mailbox show "No mailbox" in the admin app.
+- **Kafka can use TLS and SASL.** `KAFKA_SECURITY_PROTOCOL`, `KAFKA_SASL_MECHANISM`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` and `KAFKA_SSL_CA_FILE` apply to every Kafka connection in the mail service and the server; off by default.
+- **Docs:** the mail README now has first-install steps, a Kafka security guide with the exact ACLs for the mail and server users, key rotation, and backup and restore; the deploy guide follows.
 
 ## [2026-11-15] - Release via dev
 
