@@ -95,6 +95,12 @@ def _send(key: str, event: Dict[str, Any]) -> None:
             listener.offer(event)
 
 
+def broadcast(key: str, event: Dict[str, Any]) -> None:
+    """Puts an event on a channel for this process's listeners. For things every server process learns by itself (the mail
+    service's directory is read by each process), so it needs no trip through Kafka."""
+    _send(key, {"seq": next(_seq), "at": datetime.now(timezone.utc).isoformat(), **event})
+
+
 def _fact(kind: str, payload: Dict[str, Any], **fields) -> Dict[str, Any]:
     return {"seq": next(_seq), "kind": kind, "at": payload.get("timestamp") or datetime.now(timezone.utc).isoformat(),
             "tenant_id": payload.get("tenant_id"), "template_id": payload.get("template_id"),

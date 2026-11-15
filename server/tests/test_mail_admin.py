@@ -144,3 +144,32 @@ async def test_without_the_mail_service_the_page_says_so(client, monkeypatch):
     res = await client.get(f"{SYS}/overview", headers=OWNER)
     assert res.status_code == 503 and "hasn't been heard from" in res.json()["detail"]
     assert (await client.get("/api/v1/sysadmin/support/settings", headers=OWNER)).json()["mailbox"]["reading"] is None
+
+
+async def test_the_email_page_is_told_what_changed_and_only_when_something_did(client, mail):
+    from app.services.live import mail_feed, platform_feed
+    from tests.mail_fakes import directory
+    listener = platform_feed.listen(mail_feed.CHANNEL)
+    bus.listeners.append(mail_feed.changed)
+    try:
+        entry = {**directory()["job:notifications"], "label": "Alerts"}
+        await bus._directory("job:notifications", json.dumps(entry).encode())
+        event = listener.queue.get_nowait()
+        assert event["kind"] == "mail.changed" and event["key"] == "job:notifications" and event["removed"] is False
+        assert "Alerts" not in json.dumps(event)                                  # it names what changed, never its content
+        await bus._directory("job:notifications", json.dumps(entry).encode())     # the same again: the mail service publishes everything every minute
+        assert listener.queue.empty()
+        await bus._directory("job:support", None)
+        assert listener.queue.get_nowait()["removed"] is True
+        await bus._directory("job:support", None)                                 # already gone
+        assert listener.queue.empty()
+    finally:
+        bus.listeners.remove(mail_feed.changed)
+        platform_feed.stop(listener)
+
+
+async def test_only_owners_may_follow_the_email_stream(client, mail):
+    support = {**person("usr_mail_live", "Lee Live"), "X-Client-ID": "syruss-admin"}
+    await make_staff(client, support, "support")
+    refused = await client.get("/api/v1/sysadmin/live", params={"scope": "mail"}, headers=support)
+    assert refused.status_code == 403 and "owners" in refused.json()["detail"]

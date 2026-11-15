@@ -883,28 +883,58 @@ export interface LiveChat extends LiveChatItem {
 
 export type Presence = "online" | "away" | "offline";
 
-export type MailPurpose = "notifications" | "accounts" | "support";
+/** A job's key: notifications, documents, promotions, support (shown as Help), accounts, or one added in the admin app. */
+export type MailPurpose = string;
+export type MailDirection = "send" | "read" | "both";
 
 /** A mailbox Syruss sends (and reads) mail through: from the mail service's environment, or connected here. No secrets. */
 export interface MailAccount {
   id: string;
-  kind: "smtp_imap" | "gmail" | "console" | "memory";
+  kind: "smtp_imap" | "gmail" | "graph" | "console" | "memory";
   address: string;
   name: string;
   granted: ("send" | "read")[];
   status: "active" | "needs_reconnect";
   last_error: string | null;
   checked_at?: string | null;
+  created_at?: string | null;
   from_environment: boolean;
+  /** The jobs it serves (their keys) */
   purposes: MailPurpose[];
   config?: Record<string, string | number | boolean>;
+}
+
+/** What a job may set for itself. */
+export interface MailJobSettings {
+  sender_name?: string;
+  reply_to?: string;
+  poll_seconds?: number;
+}
+
+/** A job: a named use of mail with a mailbox of its own, as the mail service's directory describes it. */
+export interface MailJobDef {
+  account_id: string | null;
+  address: string | null;
+  routed: boolean;
+  needs: ("send" | "read")[];
+  reads: boolean;
+  label: string;
+  direction: MailDirection;
+  system: boolean;
+  description: string;
+  settings: MailJobSettings;
+  last_sent_at: string | null;
+  last_read_at: string | null;
+  last_error: string | null;
 }
 
 export interface MailOverview {
   google: boolean;
   redirect_uri: string;
   accounts: MailAccount[];
-  purposes: Record<MailPurpose, { account_id: string; address: string; routed: boolean; needs: ("send" | "read")[]; reads: boolean }>;
+  purposes: Record<MailPurpose, MailJobDef>;
+  /** The key people seal secrets to, so a password never crosses the server or Kafka in the clear. */
+  key: { fingerprint: string | null; public_key: string | null };
 }
 
 export interface MailJob {
@@ -936,6 +966,10 @@ export interface MailImapInput {
   imap_folder: string;
   imap_username: string;
   imap_password: string;
+  /** The passwords sealed in the browser (then the plain fields above are sent empty) */
+  sealed?: string;
+  /** The jobs it serves from the start */
+  jobs?: MailPurpose[];
 }
 
 export interface SavedReply { id: string; title: string; body: string; shortcut: string | null; created_by_name: string; updated_at: string }

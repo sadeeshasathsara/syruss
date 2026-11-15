@@ -72,7 +72,8 @@ export const NAV: NavGroup[] = [
       { href: "/platform/lessons", label: "How Syruss works" },
     ] },
     { href: "/email", label: "Email", icon: Mail, permission: "staff.manage", children: [
-      { href: "/email", label: "Accounts and purposes", also: ["/email/google"] },
+      { href: "/email", label: "Jobs" },
+      { href: "/email/accounts", label: "Accounts", also: ["/email/google"] },
       { href: "/email/log", label: "Delivery log" },
     ] },
     { href: "/staff", label: "Staff", icon: UsersRound, children: [
