@@ -16,10 +16,20 @@
 | :--- | :--- | :--- | :--- |
 | **admin** | `0.16.0-dev.1` | 2026-11-15 | [What changed](#admin-0160-dev1) |
 | **agent** | `0.13.0-dev.1` | 2026-11-15 | [What changed](#agent-0130-dev1) |
-| **mail** | `0.3.0-dev.1` | 2026-11-15 | [What changed](#mail-030-dev1) |
+| **mail** | `0.4.0-dev.1` | 2026-11-15 | [What changed](#mail-040-dev1) |
 | **server** | `0.24.0-dev.1` | 2026-11-15 | [What changed](#server-0240-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
 | **www** | `0.17.2-dev.1` | 2026-11-15 | [What changed](#www-0172-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### mail (0.4.0-dev.1)
+- **Mail has jobs, and the mail service takes signed commands over Kafka** (the first step of moving all mail setup out of the server).
+- **Jobs:** notifications, document inbound, promotions, help and Keycloak's account emails are jobs, and more can be added. Each is served by its own mailbox and has settings of its own (sender name, reply-to, how often it is read). Each job that reads has its own poller, so one slow mailbox doesn't hold up another.
+- **Commands on Kafka:** `mail.commands` (signed by the server, recent, never repeated; anything else is refused), answers on `mail.replies`, and the public state (jobs, accounts' addresses and status, the key secrets are sealed to) on the compacted topic `mail.directory`. The mail service makes these topics itself. The HTTP API stays for now.
+- **Secrets:** `MAIL_MASTER_KEYS` (newest first) can be rotated; mail read from mailboxes is sealed at rest too (`MAIL_SECRETS_KEY` still works). A mailbox password can arrive sealed to the service's public key, so Kafka and the server never hold it.
+- **Command line:** `python -m mail connect` connects the first mailbox (the password is asked for and sealed straight into the database), with `keygen`, `fingerprint` and `jobs`.
+- **Setting up:** add `MAIL_MASTER_KEYS` (`python -m mail keygen`); `MAIL_TRUSTED_SERVER_KEY` isn't needed until the server sends commands (the next step).
 
 ## [2026-11-15] - Release via dev
 
