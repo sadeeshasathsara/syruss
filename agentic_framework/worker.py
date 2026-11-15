@@ -46,6 +46,7 @@ class RunRecorder:
     def __init__(self, api: CoreAPI, run_id: str, model: str):
         self.api, self.run_id, self.model = api, run_id, model
         self.sent = 0
+        self.prompt_sent = False
         self.result: Optional[RunResult] = None
 
     async def start(self, event: AgentEvent, attempt: int) -> None:
@@ -60,8 +61,10 @@ class RunRecorder:
         try:
             await self.api.patch(f"/traces/{self.run_id}", {
                 "steps": result.steps[self.sent:], "usage": result.usage, "model_calls": result.model_calls,
-                "cost_usd": run_cost(self.model, result.usage)})
+                "cost_usd": run_cost(self.model, result.usage),
+                **({"prompt": result.prompt} if result.prompt and not self.prompt_sent else {})})
             self.sent = len(result.steps)
+            self.prompt_sent = self.prompt_sent or bool(result.prompt)
         except (CoreUnavailable, ToolRefused) as exc:
             logger.warning("Couldn't save a step of run %s: %s", self.run_id, exc)
 
@@ -174,7 +177,7 @@ class AgentWorker:
             "started_at": result.started_at.isoformat(), "completed_at": result.completed_at.isoformat(),
             "steps": result.steps, "final_thought": result.final_thought, "usage": result.usage,
             "document_id": event.document_id, "run_id": run_id, "origin": event.actor, "attempt": attempt,
-            "model_calls": result.model_calls, "cost_usd": run_cost(model, result.usage),
+            "model_calls": result.model_calls, "cost_usd": run_cost(model, result.usage), "prompt": result.prompt,
         })
         logger.info("Event %s (%s) handled: %s, %d steps", event.event_id, event.type, result.status, len(result.steps))
         return result.status
@@ -190,6 +193,7 @@ class AgentWorker:
                 "steps": result.steps if result else [], "usage": usage, "error_message": str(error)[:2000] or type(error).__name__,
                 "document_id": event.document_id, "run_id": recorder.run_id, "origin": event.actor, "attempt": attempt,
                 "model_calls": result.model_calls if result else 0, "cost_usd": run_cost(recorder.model, usage),
+                "prompt": result.prompt if result else None,
             })
         except (CoreUnavailable, ToolRefused) as exc:
             logger.error("Could not record the failed run %s: %s", recorder.run_id, exc)

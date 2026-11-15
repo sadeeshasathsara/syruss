@@ -171,5 +171,5 @@ async def test_one_search_box_and_the_security_view(client):
     assert [o["id"] for o in found["organizations"]] == ["tenant_searchable"]
     assert (await client.get(f"{API}/sysadmin/search", headers=AS_STAFF, params={"q": "x"})).status_code == 422
     view = (await client.get(f"{API}/sysadmin/security", headers=AS_STAFF)).json()
-    assert set(view) == {"last_7_days", "wrong_code_bursts", "open_access", "staff_review"}
+    assert set(view) == {"last_7_days", "wrong_code_bursts", "staff_review"}
     assert any(s["user_id"] == "usr_platform_owner" and s["role"] == "owner" for s in view["staff_review"])

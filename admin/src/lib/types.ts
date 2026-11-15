@@ -187,13 +187,42 @@ export interface EventFacts {
 }
 
 /** A step: in full with content open, else its shape only (thought_chars, tool names, timings). */
+export interface StepUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  [detail: string]: number | undefined;
+}
+
 export interface RunStep {
   step_number: number;
   step_started_at: string | null;
   step_completed_at: string | null;
+  /** What the model answered in this step */
   thought?: string;
-  thought_chars?: number;
-  tool_calls: { tool_name: string; status: string; duration_ms: number | null; arguments?: unknown; observation?: string }[];
+  /** The model's own thinking, when the provider returns it */
+  reasoning?: string;
+  /** What the loop added before this model call (a reminder to finish, requested page images) */
+  added?: string[];
+  usage?: StepUsage;
+  tool_calls: { tool_call_id?: string; tool_name: string; status: string; duration_ms: number | null; arguments?: unknown; observation?: string }[];
+}
+
+/** What a run was given before its first model call. */
+export interface RunPrompt {
+  system: string | null;
+  system_hash: string | null;
+  briefing: string | null;
+  tools: string[];
+}
+
+/** A run of the same document before or after this one. */
+export interface RunLink {
+  id: string;
+  trigger: string;
+  status: RunStatus;
+  started_at: string;
+  attempt: number;
 }
 
 export interface RunChange {
@@ -208,16 +237,6 @@ export interface RunChange {
   conversation_id?: string;
 }
 
-export interface Grant {
-  id: string;
-  tenant_id: string;
-  organization?: string | null;
-  reason: string;
-  created_at?: string;
-  expires_at: string;
-  ended_at?: string | null;
-}
-
 export interface RunDetail extends Names {
   run: RunFacts;
   event: EventFacts | null;
@@ -227,7 +246,12 @@ export interface RunDetail extends Names {
   final_thought: string | null;
   error: string | null;
   usage: Record<string, number>;
-  grant: Grant | null;
+  prompt: RunPrompt | null;
+  previous: RunLink | null;
+  next: RunLink | null;
+  /** Its place among the document's runs (1 = the first) */
+  position: { number: number | null; of: number } | null;
+  document: { id: string; name: string; content_type: string; size_bytes: number; page_count: number; status: string } | null;
 }
 
 export interface RunStats extends Names {
@@ -250,6 +274,7 @@ export interface DocFacts {
   via: string;
   content_type: string;
   size_bytes: number;
+  page_count?: number;
   created_at: string;
   updated_at: string;
   name?: string;
@@ -276,14 +301,24 @@ export interface TimelineItem {
   by?: string;
   duration_ms?: number;
   priority?: string;
+  /** Everything known about the step, to show when it is opened */
+  details: StepFact[];
+}
+
+/** One line of a journey step's details: text (or a number), JSON to format, or a block of code-like text. */
+export interface StepFact {
+  label: string;
+  value: unknown;
+  kind: "text" | "json" | "code";
 }
 
 export interface ProcessDetail extends Names {
   document: DocFacts;
-  content_open: boolean;
-  grant: Grant | null;
   timeline: TimelineItem[];
-  timings: { total_ms: number | null; queue_wait_ms: number | null; agent_ms: number | null; waiting_for_people_ms: number | null; delivery_ms: number | null; cost_usd: number | null };
+  timings: {
+    total_ms: number | null; queue_wait_ms: number | null; agent_ms: number | null; waiting_for_people_ms: number | null; delivery_ms: number | null;
+    cost_usd: number | null; input_tokens: number; output_tokens: number; tokens: number; model_calls: number;
+  };
   events: EventFacts[];
   runs: RunFacts[];
   changes: RunChange[];
@@ -298,12 +333,6 @@ export interface QueuesPage extends Names {
   runs: { running: number; lost_today: number; failed_today: number; running_items: RunFacts[]; failed_items: RunFacts[] };
   documents: { stuck: number; items: DocFacts[] };
   deliveries: { dead: number; retrying: number; held: number };
-}
-
-export interface GrantList {
-  items: Grant[];
-  may_open: boolean;
-  minutes: { min: number; max: number; default: number };
 }
 
 /** A fact on the platform's live view (sysadmin/live). */
@@ -710,7 +739,6 @@ export interface OrganizationProfile {
   workspaces: { id: string; name: string; slug: string; documents: number; last_document_at: string | null; members: number; created_at: string }[];
   notes: OrgNote[];
   staff_actions: StaffAction[];
-  access_grants: { staff_name: string; reason: string; created_at: string; expires_at: string; ended_at: string | null }[];
   agent_paused: boolean;
 }
 
@@ -747,7 +775,6 @@ export interface SearchResults {
 export interface SecurityView {
   last_7_days: { wrong_codes: number; browsers_confirmed: number; browsers_removed: number; codes_sent: number };
   wrong_code_bursts: { user_id: string; name: string; email: string | null; count: number; last_at: string }[];
-  open_access: { staff_name: string; organization: string; tenant_id: string; reason: string; expires_at: string }[];
   staff_review: { user_id: string; name: string; email: string; role: string; status: string; last_seen_at: string | null; last_action_at: string | null; stale: boolean }[];
 }
 
