@@ -136,6 +136,7 @@ function Workspaces({ p }: { p: OrganizationProfile }) {
               <span className="min-w-0 flex-1 truncate text-body text-ink">{w.name}</span>
               <span className="num text-meta text-muted">{plural(w.documents, "document")} · {plural(w.members, "member")}</span>
               <span className="num text-meta text-muted">{w.last_document_at ? `last ${ago(w.last_document_at).toLowerCase()}` : "no documents"}</span>
+              <Link href={`/objects/${w.id}`} className="text-meta font-medium text-ink underline-offset-2 hover:underline">Objects</Link>
             </li>
           ))}
         </ul>

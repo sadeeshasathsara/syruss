@@ -4,7 +4,7 @@ It answers only the system admin app's tokens, and only platform staff (see acce
 payments are in billing.py.
 """
 from fastapi import APIRouter
-from app.api.v1.sysadmin import accounts, actions, approvals, console, lessons, live_support, mail, support, audit, billing, live, overview, processes, queues, runs, staff
+from app.api.v1.sysadmin import accounts, actions, approvals, console, lessons, live_support, mail, support, audit, billing, live, objects, overview, processes, queues, runs, staff
 
 router = APIRouter(prefix="/sysadmin", tags=["System administration"])
 router.include_router(overview.router)
@@ -23,3 +23,4 @@ router.include_router(approvals.router)
 router.include_router(mail.router)
 router.include_router(live_support.router)
 router.include_router(support.router)
+router.include_router(objects.router)

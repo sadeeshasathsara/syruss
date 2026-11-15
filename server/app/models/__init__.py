@@ -36,7 +36,7 @@ from app.models.outbox import AgentEventOutbox
 from app.models.audit import AuditLog
 from app.models.trace import AgentExecutionTrace, AgentPrompt
 from app.models.conversation import Conversation, ChatMessage
-from app.models.graph import EntitySighting
+from app.models.graph import EntitySighting, RecordObject
 from app.models.jobs import WorkspaceJob
 from app.models.screen import WorkspaceScreen
 from app.models.rule import TemplateRule
@@ -96,6 +96,7 @@ __all__ = [
     "Conversation",
     "ChatMessage",
     "EntitySighting",
+    "RecordObject",
     "WorkspaceJob",
     "EvalRun",
     "EvalRunItem",

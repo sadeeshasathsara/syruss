@@ -45,8 +45,9 @@ export const NAV: NavGroup[] = [
     ] },
   ] },
   { label: "Customers", sections: [
-    { href: "/accounts/organizations", label: "Accounts", icon: Building2, also: ["/accounts"], children: [
-      { href: "/accounts/organizations", label: "Organizations" },
+    // A workspace's object and thing pages belong to its organization
+    { href: "/accounts/organizations", label: "Accounts", icon: Building2, also: ["/accounts", "/objects"], children: [
+      { href: "/accounts/organizations", label: "Organizations", also: ["/objects"] },
       { href: "/accounts/people", label: "People" },
     ] },
     { href: "/billing/organizations", label: "Billing", icon: CreditCard, also: ["/billing"], children: [

@@ -298,7 +298,10 @@ export default function Knowledge() {
             {rows.map((e) => (
               <tr key={e.id} className="border-t border-rule align-top">
                 <td className="py-2.5 pr-3">
-                  <span className="block truncate text-ink">{e.name}</span>
+                  {e.identifier_value ? (
+                    <Link href={href(`objects/${encodeURIComponent(e.entity_type)}/things/${encodeURIComponent(e.identifier_value)}`)}
+                      className="block truncate text-ink underline-offset-2 hover:underline">{e.name}</Link>
+                  ) : <span className="block truncate text-ink">{e.name}</span>}
                   {e.aliases.length > 0 && <span className="block truncate text-meta text-muted">Also written {e.aliases.map((a) => `“${a}”`).join(", ")}</span>}
                   <span className="mt-0.5 block text-meta text-muted @2xl:hidden">
                     {[e.entity_type, e.identifier_value].filter(Boolean).join(", ")}

@@ -38,7 +38,7 @@ import re2
 # ---------------------------------------------------------------------------
 
 def normalize_schema(schema: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    """Returns {object_type: {"multiple": bool, "identity": dict | None, "fields": {name: field_spec}}}."""
+    """Returns {object_type: {"multiple": bool, "identity": dict | None, "fields": {name: field_spec}, "icon", "description"}}."""
     objects: Dict[str, Dict[str, Any]] = {}
     for obj in (schema or {}).get("objects", []) or []:
         if not isinstance(obj, dict) or not obj.get("type"):
@@ -54,6 +54,8 @@ def normalize_schema(schema: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, An
             "multiple": obj.get("multiple", True),
             "identity": ident if isinstance(ident, dict) else None,
             "fields": fields,
+            "icon": obj.get("icon"),
+            "description": obj.get("description") or "",
         }
     return objects
 

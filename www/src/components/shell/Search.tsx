@@ -25,7 +25,7 @@ function places(org: string, canOrg: (p: string) => boolean): Place[] {
 }
 
 /**
- * The customer app's search, across the organization you are in: workspaces, documents you may view, people, your own
+ * The customer app's search, across the organization you are in: workspaces, documents you may view, objects and things, people, your own
  * chats, your support requests and (for those who manage billing) invoices, plus the organization's pages.
  */
 export function OrgSearch({ children }: { children: React.ReactNode }) {
@@ -38,7 +38,7 @@ export function OrgSearch({ children }: { children: React.ReactNode }) {
     search: api.search,
     scope: `org:${org}`,
     places: places(org, (p) => perms.split(",").includes(p)),
-    placeholder: "Search workspaces, documents, people, chats…",
+    placeholder: "Search workspaces, documents, things, people, chats…",
     hrefFor: (item) => `/${org}${item.href}`,
     // A chat opens in its workspace's chat panel
     open: (item, group) => {

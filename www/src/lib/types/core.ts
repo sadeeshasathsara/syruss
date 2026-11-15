@@ -46,6 +46,8 @@ export interface TemplateField {
 export interface TemplateObject {
   type: string;
   description?: string;
+  /** Its picture: a name from the object icon list (lib/objectIcons) */
+  icon?: string;
   multiple?: boolean;
   identity?: { id_field: string; label_field: string };
   fields: Array<string | TemplateField>;

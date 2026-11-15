@@ -6,6 +6,7 @@ import type {
   Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
   StaffActionPage, StaffInvitation, StaffList, StaffMe, StaffMember, StaffRole, JoinView, SystemLesson,
   Approval, ApprovalList, ApprovalRule, StaffPolicy,
+  ObjectProfile, ObjectSummary, Paged, ProfileWhere, ThingProfile, ThingSummary,
   LiveChat, LiveMessage, LiveQueue, MailImapInput, MailJob, MailOverview, MailPurpose, Presence, SavedReply, SupportSettings, SupportSummary, Ticket, TicketDetail, TicketMessage,
 } from "./types";
 import { loadPage } from "./navigate";
@@ -181,6 +182,16 @@ export const api = {
     get: (id: string) => request<RunDetail>(`/runs/${encodeURIComponent(id)}`),
     stop: (id: string, reason: string) => request<{ stopping: boolean }>(`/runs/${encodeURIComponent(id)}/stop`, { method: "POST", body: json({ reason }) }),
   },
+  objects: {
+    list: (template: string) => request<ProfileWhere & { objects: ObjectSummary[] }>(`/objects/${encodeURIComponent(template)}`),
+    get: (template: string, type: string, page = 0) =>
+      request<ProfileWhere & ObjectProfile>(`/objects/${encodeURIComponent(template)}/${encodeURIComponent(type)}?page=${page}`),
+    things: (template: string, type: string, q = "", page = 0) =>
+      request<Paged<ThingSummary>>(`/objects/${encodeURIComponent(template)}/${encodeURIComponent(type)}/things?page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
+    thing: (template: string, type: string, id: string, page = 0) =>
+      request<ProfileWhere & ThingProfile>(`/objects/${encodeURIComponent(template)}/${encodeURIComponent(type)}/things/${encodeURIComponent(id)}?page=${page}`),
+  },
+
   processes: {
     list: (params: Record<string, string | undefined>) => request<ProcessList>(`/processes?${query(params)}`),
     get: (id: string) => request<ProcessDetail>(`/processes/${encodeURIComponent(id)}`),
