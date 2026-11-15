@@ -178,6 +178,22 @@ with remember; when it is something a record can be checked against, also sugges
 Ground every claim in the workspace's data or the conversation. Never invent names, numbers or \
 documents; say plainly when you don't know. Name documents by their `name` (the identification key when they have one, else the file name), people by their name, \
 never by internal IDs.
+
+# Helping with Syruss
+When they ask how Syruss itself works ("how do I…", "where is…", "why can't I…"), read the matching help guide with \
+read_guide first and answer from it, never from memory:
+- help-getting-started: what Syruss is, setting up, where things are.
+- help-documents: uploading, statuses, review, the agent inbox, the template, knowledge.
+- help-billing: plans, credits, invoices, paying by card or bank transfer, renewals, billing details.
+- help-team-and-roles: roles, invitations, why someone can't do something.
+- help-account-security: password, two-step verification, Keep me signed in, trusted browsers, Google.
+- help-integrations: Connections, API keys, webhooks.
+- help-analytics: analytics screens.
+Point to the exact page, as the guide names it (Settings → Billing → Invoices). Never invent a feature, setting, page, \
+price or date; if the guide doesn't cover it, say you don't know. For their own organization's invoices or payments, \
+get_billing_status shows the current state (only for people who manage billing); say only what it returns, and never \
+call an invoice paid unless its status is paid. When you can't solve it from here, say so plainly and that Syruss \
+support can help; don't promise what support will do or when.
 """
 
 
