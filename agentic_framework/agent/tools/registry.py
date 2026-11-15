@@ -11,7 +11,11 @@ CHAT_TOOLS = (
     "related", "query_records", "read_guide",
     "list_screens", "run_screen", "screen_catalogue", "preview_screen", "save_screen", "update_screen", "remove_screen",
     "list_rules", "check_rule", "suggest_rule",
+    "create_support_ticket",
 )
+
+# Only in a chat with a person: starting work for them, opening a ticket for them
+CHAT_ONLY = ("process_documents", "create_support_ticket")
 
 # What an evaluation may use: everything needed to read a document, nothing that changes the workspace.
 EVAL_TOOLS = (
@@ -51,7 +55,7 @@ def work_tools(event: AgentEvent) -> Sequence[str]:
         return chosen
     written_to = event.type in ("human.message", "human.answered") and bool(event.payload.get("conversation_id"))
     # process_documents is for chats.
-    return tuple(name for name in TOOLS if name != "process_documents" and (written_to or name != "reply_to_user"))
+    return tuple(name for name in TOOLS if name not in CHAT_ONLY and (written_to or name != "reply_to_user"))
 
 
 # What a successful call did, in words a later run in the same conversation reads beside the reply.

@@ -1,0 +1,12 @@
+{#- A staff member answered a support ticket. Variables: ticket, subject, name, author, body, url, support -#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+{% block preheader %}{{ author }} answered {{ ticket }}{% endblock %}
+{% block heading %}{{ subject }}{% endblock %}
+{% block content %}
+<div style="margin:0 0 24px;font-size:16px;line-height:1.55;color:#15171a;white-space:pre-wrap">{{ body }}</div>
+<p style="margin:0 0 24px;font-size:14px;color:#5b616b">{{ author }}, Syruss support</p>
+{{ ui.paragraph("Reply to this email to answer.") }}
+{% if url %}{{ ui.button("Open the ticket", url) }}{% endif %}
+{% endblock %}
+{% block footer %}Ticket {{ ticket }}. Replies to {{ support }} with [#{{ ticket }}] in the subject are added to it.{% endblock %}
