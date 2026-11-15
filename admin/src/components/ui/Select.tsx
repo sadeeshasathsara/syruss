@@ -2,8 +2,9 @@
 
 import * as Popover from "@radix-ui/react-popover";
 import { Check, ChevronsUpDown, Search } from "lucide-react";
-import { Children, Fragment, isValidElement, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { Children, Fragment, isValidElement, useContext, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { cn } from "@/lib/format";
+import { ModalContainer } from "./Modal";
 
 interface Option {
   value: string;
@@ -63,6 +64,7 @@ export function Select({
   const [active, setActive] = useState(0);
   const list = useRef<HTMLUListElement>(null);
   const listId = useId();
+  const inModal = useContext(ModalContainer);
   const withSearch = searchable ?? options.length > SEARCH_FROM;
   const q = query.trim().toLowerCase();
   const shown = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
@@ -109,7 +111,7 @@ export function Select({
         <span className={cn("min-w-0 flex-1 truncate", !current && "text-muted")}>{current?.label ?? "Choose…"}</span>
         <ChevronsUpDown aria-hidden className="size-4 flex-none text-muted" />
       </Popover.Trigger>
-      <Popover.Portal>
+      <Popover.Portal container={inModal ?? undefined}>
         <Popover.Content
           align="start"
           sideOffset={6}

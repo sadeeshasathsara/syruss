@@ -43,6 +43,7 @@ class Directory:
     def __init__(self, store: Store, router: Router, send: Send):
         self.store, self.router, self.send = store, router, send
         self._known: Set[str] = set()
+        self._primed = False
 
     async def snapshot(self) -> Dict[str, Dict[str, Any]]:
         jobs = await self.store.jobs()
@@ -59,11 +60,11 @@ class Directory:
         async with self.store.session() as s:
             sent = dict((await s.execute(select(JobRow.purpose, func.max(JobRow.done_at)).where(JobRow.status == "sent").group_by(JobRow.purpose))).all())
             read = dict((await s.execute(select(CursorRow.purpose, func.max(CursorRow.read_at)).group_by(CursorRow.purpose))).all())
-            failing = {}
-            for purpose, error, at in (await s.execute(select(JobRow.purpose, JobRow.last_error, JobRow.created_at)
-                                                        .where(JobRow.status.in_(("dead", "retrying")), JobRow.last_error.is_not(None))
-                                                        .order_by(JobRow.created_at))).all():
-                failing[purpose] = error
+            # How each job's latest message went: a problem is only one that is still true (the latest message failed, and through the
+            # account that serves the job now). A mailbox that has since been changed, or a message that has since gone out, clears it.
+            latest = {purpose: (status, error, account_id) for purpose, status, error, account_id in (await s.execute(
+                select(JobRow.purpose, JobRow.status, JobRow.last_error, JobRow.account_id)
+                .distinct(JobRow.purpose).order_by(JobRow.purpose, JobRow.created_at.desc()))).all()}
         for job in jobs:
             account, routed = await self.router.account_for(job.key)
             out["job:" + job.key] = {
@@ -74,12 +75,54 @@ class Directory:
                 "routed": routed, "reads": Capability.READ in job.needs and Capability.READ in account.granted,
                 "last_sent_at": sent[job.key].isoformat() if sent.get(job.key) else None,
                 "last_read_at": read[job.key].isoformat() if read.get(job.key) else None,
-                "last_error": failing.get(job.key),
+                "last_error": self._problem(latest.get(job.key), account),
             }
         return out
 
+    @staticmethod
+    def _problem(latest: Optional[tuple], account: Any) -> Optional[str]:
+        if not latest:
+            return None
+        status, error, account_id = latest
+        if status not in ("dead", "retrying") or not error:
+            return None
+        return error if account_id in (None, account.id) else None
+
+    async def _on_topic(self, topic: str) -> Set[str]:
+        """The keys already on the (compacted) topic, so a thing published by an earlier run that no longer exists can be removed."""
+        from aiokafka import AIOKafkaConsumer
+        from mail.config import settings
+        from mail.kafka_security import kafka_security
+        consumer = AIOKafkaConsumer(topic, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(), group_id=None,
+                                    enable_auto_commit=False, auto_offset_reset="earliest")
+        keys: Set[str] = set()
+        await consumer.start()
+        try:
+            end = await consumer.end_offsets(list(consumer.assignment()))
+            behind = True
+            while behind:
+                for batch in (await consumer.getmany(timeout_ms=1000)).values():
+                    for message in batch:
+                        if message.key is None:
+                            continue
+                        (keys.add if message.value else keys.discard)(message.key.decode())
+                behind = False
+                for tp, offset in end.items():
+                    if await consumer.position(tp) < offset:
+                        behind = True
+        finally:
+            await consumer.stop()
+        return keys
+
     async def publish_all(self, topic: str) -> int:
-        """Publishes every thing, and a tombstone for each one that was published before and is gone now."""
+        """Publishes every thing, and a tombstone for each one that was published before and is gone now (including by an earlier run:
+        the first time, what is already on the topic is read)."""
+        if not self._primed:
+            try:
+                self._known |= await self._on_topic(topic)
+                self._primed = True
+            except Exception:  # noqa: BLE001  (the topic may not be readable yet: publish anyway, and try again next time)
+                logger.exception("Couldn't read what is already in the directory")
         state = await self.snapshot()
         for key, value in state.items():
             await self.send(topic, key, json.dumps(value, default=str).encode())
