@@ -13,7 +13,9 @@ class AgentSettings(BaseSettings):
     AGENT_DLQ_TOPIC: str = "agent.events.dlq"
     CONSUMER_GROUP: str = "workspace-agents"
 
-    # "production" demands the real public key below. Development derives a keypair from the shared dev secret.
+    # "development" (someone's machine), "test" (the test server) or "production". The test server and production refuse
+    # to start with the development defaults below (see deployment_problems) and demand the real public key below;
+    # development derives a keypair from the shared dev secret.
     ENV: str = "development"
     # Ed25519 public key (PEM) of the core server's agent-token signing key. This service can verify, never sign.
     AGENT_TOKEN_PUBLIC_KEY: str = ""
@@ -29,6 +31,11 @@ class AgentSettings(BaseSettings):
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
     AGENT_MEMORY_DB: str = "agent_memory"
+
+    @property
+    def is_deployed(self) -> bool:
+        """A real server (the test server or production), where development defaults are refused."""
+        return self.ENV.lower() in ("test", "production")
 
     @property
     def MEMORY_DATABASE_URL(self) -> str:
@@ -81,6 +88,28 @@ class AgentSettings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+
+ENVIRONMENTS = ("development", "test", "production")
+
+
+def deployment_problems(s: AgentSettings) -> list:
+    """Development defaults the test server and production refuse, in plain words (empty means fine)."""
+    problems = []
+    if s.POSTGRES_PASSWORD == "postgrespassword":
+        problems.append("POSTGRES_PASSWORD still has its development value")
+    if not s.AGENT_TOKEN_PUBLIC_KEY:
+        problems.append("AGENT_TOKEN_PUBLIC_KEY is not set (the core server's public key)")
+    return problems
+
+
+def check_config(s: AgentSettings) -> None:
+    """Fails startup on an unknown ENV, or a real server still running with development values."""
+    if s.ENV.lower() not in ENVIRONMENTS:
+        raise RuntimeError(f"ENV must be one of {', '.join(ENVIRONMENTS)} (it is '{s.ENV}').")
+    problems = deployment_problems(s) if s.is_deployed else []
+    if problems:
+        raise RuntimeError(f"Not safe to run as {s.ENV.lower()}: " + "; ".join(problems))
 
 
 settings = AgentSettings()

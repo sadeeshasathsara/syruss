@@ -26,8 +26,8 @@ def _public_key():
     if settings.AGENT_TOKEN_PUBLIC_KEY:
         # A key in a one-line env value has its line breaks written as \n (the core server reads its keys the same way)
         return serialization.load_pem_public_key(settings.AGENT_TOKEN_PUBLIC_KEY.replace("\\n", "\n").encode())
-    if settings.ENV.lower() == "production":
-        raise RuntimeError("Set AGENT_TOKEN_PUBLIC_KEY in production.")
+    if settings.is_deployed:
+        raise RuntimeError("Set AGENT_TOKEN_PUBLIC_KEY on the test server and in production.")
     # Development: the same keypair the core derives from the shared dev secret
     return Ed25519PrivateKey.from_private_bytes(hashlib.sha256(settings.AGENT_TOKEN_SECRET.encode()).digest()).public_key()
 
