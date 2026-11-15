@@ -34,7 +34,7 @@ class Router:
         account_id = (await self.store.routes()).get(purpose)
         row = await self.store.account(account_id) if account_id else None
         if row is not None and row.status == "active":
-            account = account_from_row(row, unseal(row.secret), on_lost=self.store.lost)
+            account = account_from_row(row, unseal(row.secret), on_lost=self.store.lost, on_secret=self.store.save_secret)
             if needs & ~account.granted == Capability.NONE:
                 return account, True
             logger.warning("Mail account %s can't do everything %s needs; using the fallback", row.address, purpose)

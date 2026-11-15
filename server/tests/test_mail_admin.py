@@ -173,3 +173,35 @@ async def test_only_owners_may_follow_the_email_stream(client, mail):
     await make_staff(client, support, "support")
     refused = await client.get("/api/v1/sysadmin/live", params={"scope": "mail"}, headers=support)
     assert refused.status_code == 403 and "owners" in refused.json()["detail"]
+
+
+async def test_microsoft_and_the_provider_apps_go_through_signed_commands(client, mail):
+    overview = (await client.get(f"{SYS}/overview", headers=OWNER)).json()
+    assert overview["providers"]["google"]["configured"] and not overview["providers"]["microsoft"]["configured"]
+    assert overview["providers"]["microsoft"]["redirect_uri"].endswith("/email/microsoft")
+    assert overview["providers"]["google"]["redirect_uri"].endswith("/email/google") and "secret" not in json.dumps(overview).lower()
+
+    mail.answers["oauth.microsoft.start"] = {"url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?state=sealed"}
+    mail.answers["oauth.microsoft.finish"] = {"id": "microsoft-1", "address": "help@syruss.test", "granted": ["send", "read"], "purposes": ["support"]}
+    started = await client.post(f"{SYS}/microsoft/start", headers=OWNER, json={"purposes": ["support"]})
+    assert started.json()["url"].startswith("https://login.microsoftonline.com/")
+    kind, payload, _ = mail.calls[-1]
+    assert kind == "oauth.microsoft.start" and payload["redirect_uri"].endswith("/email/microsoft")
+    assert (await client.post(f"{SYS}/microsoft/finish", headers=OWNER, json={"code": "ms-code-123", "state": "sealed"})).status_code == 200
+    assert "ms-code-123" not in json.dumps(mail.payloads("oauth.microsoft.finish")[0])
+    assert (await client.post(f"{SYS}/yahoo/start", headers=OWNER, json={"purposes": ["support"]})).status_code == 422
+
+    saved = await client.put(f"{SYS}/apps/microsoft", headers=OWNER, json={"client_id": "app-client-id", "tenant": "contoso.com", "client_secret": "the-app-secret"})
+    assert saved.status_code == 200
+    command = mail.payloads("provider_app.set")[0]
+    assert command["provider"] == "microsoft" and command["tenant"] == "contoso.com" and command["sealed"]
+    assert "the-app-secret" not in json.dumps(command)                                      # the secret goes sealed
+    kept = await client.put(f"{SYS}/apps/microsoft", headers=OWNER, json={"client_id": "app-client-id-2"})
+    assert kept.status_code == 200 and "sealed" not in mail.payloads("provider_app.set")[1]   # blank: the mail service keeps its secret
+    assert (await client.delete(f"{SYS}/apps/microsoft", headers=OWNER)).status_code == 204
+    assert mail.calls[-1][0] == "provider_app.clear"
+    assert {"mail.microsoft_connected", "mail.app_set", "mail.app_cleared"} <= {e.action for e in await audited()}
+
+    support = {**person("usr_mail_apps", "Ann Apps"), "X-Client-ID": "syruss-admin"}
+    await make_staff(client, support, "support")
+    assert (await client.put(f"{SYS}/apps/google", headers=support, json={"client_id": "abc", "client_secret": "x"})).status_code == 403

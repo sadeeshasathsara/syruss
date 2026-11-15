@@ -32,7 +32,7 @@ def job(key: str, label: str, direction: str, account_id: str, address: str, rou
 def directory() -> Dict[str, Dict[str, Any]]:
     """What a mail service with two mailboxes says: the environment's sends notifications; a connected one serves help."""
     return {
-        "meta": {"public_key": base64.b64encode(BOX_PUBLIC).decode(), "fingerprint": "A1B2-C3D4-E5F6-7788-99AA", "providers": {"google": True}},
+        "meta": {"public_key": base64.b64encode(BOX_PUBLIC).decode(), "fingerprint": "A1B2-C3D4-E5F6-7788-99AA", "providers": {"google": {"configured": True, "client_id": "g-id", "from_environment": False}, "microsoft": {"configured": False}}},
         "account:env": account("env", "no-reply@syruss.test", ["send"], ["notifications", "accounts", "promotions", "documents"], env=True),
         "account:google-1": account("google-1", "help@syruss.test", ["send", "read"], ["support"]),
         "job:notifications": job("notifications", "Notifications", "send", "env", "no-reply@syruss.test", False, False),

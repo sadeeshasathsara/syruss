@@ -7,7 +7,7 @@ import type {
   StaffActionPage, StaffInvitation, StaffList, StaffMe, StaffMember, StaffRole, JoinView, SystemLesson,
   Approval, ApprovalList, ApprovalRule, StaffPolicy,
   ObjectProfile, ObjectSummary, Paged, ProfileWhere, ThingProfile, ThingSummary,
-  LiveChat, LiveMessage, LiveQueue, MailDirection, MailImapInput, MailJob, MailJobSettings, MailOverview, MailPurpose, Presence, SavedReply, SupportSettings, SupportSummary, Ticket, TicketDetail, TicketMessage,
+  LiveChat, LiveMessage, LiveQueue, MailDirection, MailAppInput, MailImapInput, MailJob, MailJobSettings, MailOverview, MailProvider, MailPurpose, Presence, SavedReply, SupportSettings, SupportSummary, Ticket, TicketDetail, TicketMessage,
 } from "./types";
 import { loadPage } from "./navigate";
 
@@ -159,9 +159,12 @@ export const api = {
     updateJob: (key: string, body: { label?: string; description?: string; settings?: MailJobSettings }) =>
       request<{ key: string }>(`/mail/purposes/${encodeURIComponent(key)}`, { method: "PUT", body: json(body) }),
     deleteJob: (key: string) => request<void>(`/mail/purposes/${encodeURIComponent(key)}`, { method: "DELETE" }),
-    googleStart: (purposes: MailPurpose[]) => request<{ url: string }>("/mail/google/start", { method: "POST", body: json({ purposes }) }),
-    googleFinish: (code: string, state: string) =>
-      request<{ id: string; address: string; granted: string[]; purposes: MailPurpose[] }>("/mail/google/finish", { method: "POST", body: json({ code, state }) }),
+    oauthStart: (provider: MailProvider, purposes: MailPurpose[]) =>
+      request<{ url: string }>(`/mail/${provider}/start`, { method: "POST", body: json({ purposes }) }),
+    oauthFinish: (provider: MailProvider, code: string, state: string) =>
+      request<{ id: string; address: string; granted: string[]; purposes: MailPurpose[] }>(`/mail/${provider}/finish`, { method: "POST", body: json({ code, state }) }),
+    setApp: (provider: MailProvider, body: MailAppInput) => request<MailOverview>(`/mail/apps/${provider}`, { method: "PUT", body: json(body) }),
+    clearApp: (provider: MailProvider) => request<void>(`/mail/apps/${provider}`, { method: "DELETE" }),
   },
   approvals: {
     list: (status: "pending" | "done" | "rejected" | "cancelled" | "failed" | "all" = "pending") => request<ApprovalList>(`/approvals?status=${status}`),

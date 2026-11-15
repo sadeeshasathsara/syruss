@@ -928,8 +928,30 @@ export interface MailJobDef {
   last_error: string | null;
 }
 
+/** The providers a mailbox can be connected through (OAuth: no app passwords). */
+export type MailProvider = "google" | "microsoft";
+
+/** A provider's OAuth app as the mail service describes it: whether it is set, its client id and tenant (public), never its secret. */
+export interface MailProviderInfo {
+  configured: boolean;
+  client_id?: string;
+  tenant?: string;
+  /** Set in the mail service's environment rather than here (Google only) */
+  from_environment?: boolean;
+  /** What to register as the app's redirect URI with the provider */
+  redirect_uri: string;
+}
+
+export interface MailAppInput {
+  client_id: string;
+  tenant?: string;
+  /** Sealed in the browser to the mail service's key ({ client_secret }); empty keeps the secret already set */
+  sealed?: string;
+}
+
 export interface MailOverview {
   google: boolean;
+  providers: Record<MailProvider, MailProviderInfo>;
   redirect_uri: string;
   accounts: MailAccount[];
   purposes: Record<MailPurpose, MailJobDef>;

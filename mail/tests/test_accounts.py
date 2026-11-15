@@ -7,10 +7,11 @@ import time
 from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
-from mail import google
+from mail import apps, oauth
 from mail.accounts import MemoryAccount
 from mail.accounts.base import Capability, MailError
-from mail.accounts.gmail import SCOPES, GmailAccount, _tokens
+from mail.accounts.gmail import GmailAccount, _tokens
+from mail.oauth import GOOGLE_SCOPES as SCOPES
 from mail.config import settings
 from mail.inbound import Reader
 from mail.sealing import open_bytes
@@ -99,25 +100,25 @@ async def test_a_refused_sign_in_marks_the_account_for_reconnecting(fake):
 
 
 async def test_connecting_google_asks_for_only_what_is_needed_and_saves_what_was_granted(store, fake):
-    url = google.start(["notifications"], "https://admin.example.com/platform/email/google", by="usr_owner")
+    url = oauth.start("google", ["notifications"], "https://admin.example.com/platform/email/google", by="usr_owner")
     q = parse_qs(urlparse(url).query)
     assert q["scope"] == [f"openid email {SCOPES[Capability.SEND]}"] and q["access_type"] == ["offline"]
     assert q["code_challenge_method"] == ["S256"] and "usr_owner" not in url  # the state is sealed
     state = q["state"][0]
-    with pytest.raises(google.ConnectError, match="someone else"):
-        await google.finish(store, code="the-code", state=state, redirect_uri="x", by="usr_other", transport=httpx.MockTransport(fake))
-    done = await google.finish(store, code="the-code", state=state, redirect_uri="x", by="usr_owner", transport=httpx.MockTransport(fake))
+    with pytest.raises(oauth.ConnectError, match="someone else"):
+        await oauth.finish(store, provider="google", code="the-code", state=state, redirect_uri="x", by="usr_other", transport=httpx.MockTransport(fake))
+    done = await oauth.finish(store, provider="google", code="the-code", state=state, redirect_uri="x", by="usr_owner", transport=httpx.MockTransport(fake))
     assert done["address"] == "help@example.com" and set(done["granted"]) == {"send", "read"}
     row = await store.account(done["id"])
     assert row.kind == "gmail" and "rt-1" not in row.secret  # sealed
     # The same address again updates the account; unticking a permission the purpose needs is refused
-    state2 = parse_qs(urlparse(google.start(["support"], "x", by="usr_owner")).query)["state"][0]
+    state2 = parse_qs(urlparse(oauth.start("google", ["support"], "x", by="usr_owner")).query)["state"][0]
     fake.scope = f"openid email {SCOPES[Capability.SEND]}"
-    with pytest.raises(google.ConnectError, match="read"):
-        await google.finish(store, code="the-code", state=state2, redirect_uri="x", by="usr_owner", transport=httpx.MockTransport(fake))
+    with pytest.raises(oauth.ConnectError, match="read"):
+        await oauth.finish(store, provider="google", code="the-code", state=state2, redirect_uri="x", by="usr_owner", transport=httpx.MockTransport(fake))
     assert len([r for r in await store.accounts() if r.kind == "gmail"]) == 1
-    with pytest.raises(google.ConnectError, match="Choose what it is for"):
-        google.start(["marketing"], "x", by="usr_owner")
+    with pytest.raises(oauth.ConnectError, match="Choose what it is for"):
+        oauth.start("google", ["marketing"], "x", by="usr_owner")
 
 
 async def test_mailboxes_are_read_from_where_they_left_off(store):

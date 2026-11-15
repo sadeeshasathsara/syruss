@@ -26,14 +26,18 @@ def env_account() -> MailAccount:
     return SmtpImapAccount(id=ENV_ACCOUNT_ID, address=settings.MAIL_FROM, name=settings.MAIL_FROM_NAME, smtp=smtp, imap=imap)
 
 
-def account_from_row(row: Any, secret: Dict[str, Any], on_lost=None) -> MailAccount:
+def account_from_row(row: Any, secret: Dict[str, Any], on_lost=None, on_secret=None) -> MailAccount:
     """A connected account, from its row (mail.store.AccountRow) and its unsealed secret. `on_lost(account_id, why)` is
-    called when its provider stops accepting its sign-in."""
+    called when its provider stops accepting its sign-in; `on_secret(account_id, secret)` when it has a new refresh token to keep."""
     c = row.config or {}
     if row.kind == "gmail":
         from mail.accounts.gmail import GmailAccount
         return GmailAccount(id=row.id, address=row.address, name=row.name, granted=Capability.parse(row.granted),
                             refresh_token=secret.get("refresh_token", ""), on_lost=on_lost)
+    if row.kind == "graph":
+        from mail.accounts.graph import GraphAccount
+        return GraphAccount(id=row.id, address=row.address, name=row.name, granted=Capability.parse(row.granted),
+                            refresh_token=secret.get("refresh_token", ""), on_lost=on_lost, on_secret=on_secret)
     if row.kind == "smtp_imap":
         smtp = SmtpServer(c["smtp_host"], int(c.get("smtp_port", 587)), c.get("smtp_username", ""), secret.get("smtp_password", ""),
                           c.get("smtp_security", "starttls")) if c.get("smtp_host") else None
