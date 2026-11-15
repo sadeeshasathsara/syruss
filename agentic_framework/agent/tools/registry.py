@@ -11,7 +11,7 @@ CHAT_TOOLS = (
     "related", "query_records", "read_guide",
     "list_screens", "run_screen", "screen_catalogue", "preview_screen", "save_screen", "update_screen", "remove_screen",
     "list_rules", "check_rule", "suggest_rule",
-    "get_billing_status", "create_support_ticket",
+    "get_billing_status", "create_support_ticket", "request_live_support",
 )
 
 # What an evaluation may use: everything needed to read a document, nothing that changes the workspace.
@@ -22,8 +22,8 @@ EVAL_TOOLS = (
 )
 
 # Tools only a chat gets: starting work for the person, reading the organization's billing for them, and opening
-# a support ticket for them.
-CHAT_ONLY = ("process_documents", "get_billing_status", "create_support_ticket")
+# a support ticket or live support for them.
+CHAT_ONLY = ("process_documents", "get_billing_status", "create_support_ticket", "request_live_support")
 
 # Every tool's description is resent with every model call, so each kind of work gets the tools it
 # uses. Anything else (answers, reviews, decisions, replies in conversations it opened) can lead
@@ -55,7 +55,7 @@ def work_tools(event: AgentEvent) -> Sequence[str]:
     if chosen is not None:
         return chosen
     written_to = event.type in ("human.message", "human.answered") and bool(event.payload.get("conversation_id"))
-    # process_documents, get_billing_status and create_support_ticket are for chats.
+    # CHAT_ONLY tools are for chats.
     return tuple(name for name in TOOLS if name not in CHAT_ONLY and (written_to or name != "reply_to_user"))
 
 

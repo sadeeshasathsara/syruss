@@ -28,6 +28,7 @@ from app.schemas.conversation import ChatMessageCreate, ConversationCreate, Conv
 from app.services.agent_events import enqueue_agent_event, agent_event_relay
 from app.services import budget_service, document_key
 from app.services.live.ui_events import listen_channel, publish_ui_event
+from app.services.support import live as support_live
 
 REPLY_TIMEOUT_SECONDS = 180
 # A live session's id (the web app makes them, e.g. tpl_1a2b3c4d): no ':' so it can never name a user: or template: channel
@@ -233,6 +234,10 @@ class ConversationService:
         if conv.kind in SYRUSS_KINDS and conv.status == "resolved":  # writing again reopens it
             conv.status, conv.resolved_at = "open", None
         conv.updated_at = datetime.now(timezone.utc)
+        if conv.support_state in support_live.ACTIVE:  # someone from the Syruss team has (or is about to have) this chat
+            await db.commit()
+            await support_live.person_said(conv, msg)
+            return msg
         paused = await budget_service.paused_reply(db, scope.template_id)
         if paused:  # the agent can't work this month: say so now rather than leave them waiting
             reply = ChatMessage(
@@ -296,6 +301,11 @@ class ConversationService:
     ) -> dict:
         """Posts the message and returns the agent's reply (or a pending notice on timeout)."""
         conv = await ConversationService.get_conversation(db, scope, conversation_id)
+        if conv.support_state in support_live.ACTIVE:
+            msg = await ConversationService.post_user_message(db, scope, conv, payload)
+            return {"id": f"support-{msg.id}", "conversation_id": conv.id, "role": "system",
+                    "content": "Sent to the Syruss team member in this chat.", "evidence_citations": [], "confidence": 1.0,
+                    "agent_trace": {"support": True, "reply_to": msg.id}, "created_at": datetime.now(timezone.utc)}
         async with listen_channel(conv.id) as wait:
             msg = await ConversationService.post_user_message(db, scope, conv, payload)
             reply = await wait(
@@ -332,6 +342,10 @@ class ConversationService:
             if event.get("event_type") == "agent_thought" and event.get("thought"):
                 queue.append(sse("thought", {"thought": event["thought"], "step": event.get("step")}))
 
+        if conv.support_state in support_live.ACTIVE:
+            await ConversationService.post_user_message(db, scope, conv, payload)
+            yield sse("done", {"support": True, "content": "Sent to the Syruss team member in this chat."})
+            return
         async with listen_channel(conv.id) as wait:
             msg = await ConversationService.post_user_message(db, scope, conv, payload)
             yield sse("thought", {"thought": "Message delivered to the workspace agent.", "step": 0})

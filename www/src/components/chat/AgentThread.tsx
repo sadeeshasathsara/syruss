@@ -2,7 +2,7 @@
 
 import { ComposerPrimitive, MessagePrimitive, ThreadPrimitive, type DataMessagePartProps } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import { ArrowUp, History, Pencil, Square, SquarePen, Trash2 } from "lucide-react";
+import { ArrowUp, Headset, History, Pencil, Square, SquarePen, ThumbsDown, ThumbsUp, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { useShell } from "@/components/shell/ShellContext";
@@ -163,10 +163,51 @@ function WaitingNotice() {
   );
 }
 
+/** Live support in this chat: waiting for someone from the team, talking with them, or rating it afterwards. */
+function SupportBar() {
+  const { support, staffTyping, endSupport, rateSupport } = useAgentChat();
+  const [busy, setBusy] = useState(false);
+  const [rated, setRated] = useState(false);
+  if (!support) return null;
+  const name = support.staff_name?.split(" ")[0] ?? "Someone";
+  const act = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await fn();
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (support.state === "ended") {
+    if (!support.joined_at || support.rating || rated) return null;
+    return (
+      <div className="mb-2 flex animate-fade flex-wrap items-center gap-2 rounded-control bg-active/60 px-3 py-2 text-body text-ink">
+        <span className="min-w-0 flex-1">How was your chat with {name}?</span>
+        <IconButton aria-label="It helped" disabled={busy} onClick={() => act(async () => { await rateSupport("up"); setRated(true); })}><ThumbsUp /></IconButton>
+        <IconButton aria-label="It didn't help" disabled={busy} onClick={() => act(async () => { await rateSupport("down"); setRated(true); })}><ThumbsDown /></IconButton>
+      </div>
+    );
+  }
+  const live = support.state === "live";
+  return (
+    <div className="mb-2 flex animate-fade flex-col gap-1">
+      <div className="flex items-center gap-2 rounded-control bg-[var(--pill-accent-bg)] px-3 py-2 text-body text-[var(--pill-accent-ink)]">
+        <Headset className="size-4 flex-none" aria-hidden />
+        <span className="min-w-0 flex-1">
+          {live ? `${name} from the Syruss team is in this chat and can see it.` : "Connecting you to the Syruss team. You can keep writing."}
+        </span>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(endSupport)}>{live ? "End chat" : "Stop waiting"}</Button>
+      </div>
+      {live && staffTyping && <p className="px-1 text-meta italic text-muted" aria-live="polite">{staffTyping} is typing…</p>}
+    </div>
+  );
+}
+
 function ChatView() {
   const { workspace } = useWorkspace();
   const { status } = useLive();
-  const { replying, stop, stopping } = useAgentChat();
+  const { replying, stop, stopping, support, typing } = useAgentChat();
+  const withTeam = support?.state === "live";
   return (
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
       <SessionBar />
@@ -186,13 +227,15 @@ function ChatView() {
       </ThreadPrimitive.Viewport>
 
       <div className="flex-none border-t border-border p-3">
-        <WaitingNotice />
+        <SupportBar />
+        {!support || support.state === "ended" ? <WaitingNotice /> : null}
         <ComposerPrimitive.Root className="flex items-end gap-2 rounded-card border border-control bg-sheet p-1.5 focus-within:border-accent">
           <ComposerPrimitive.Input
             rows={1}
             autoFocus={false}
             submitOnEnter={!replying}
-            placeholder="Ask Syruss or tell it something about your business"
+            onInput={typing}
+            placeholder={withTeam ? `Write to ${support?.staff_name?.split(" ")[0] ?? "the Syruss team"}` : "Ask Syruss or tell it something about your business"}
             className="max-h-40 min-h-8 flex-1 resize-none bg-transparent px-2 py-1.5 text-body text-ink placeholder:text-faint focus:outline-none"
           />
           {replying ? (

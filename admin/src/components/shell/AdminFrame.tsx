@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
 import { BrandMark } from "@/components/shell/Brand";
 import { IdleSignOut } from "@/components/shell/IdleSignOut";
+import { PresenceProvider } from "@/components/support/Presence";
 import { GlobalSearch } from "@/components/shell/Search";
 import { Button, IconButton } from "@/components/ui/Button";
 import { APPROVAL_EVENT, ApiError, api } from "@/lib/api";
@@ -51,10 +52,10 @@ function useWaitingApprovals(): number {
   return waiting.data?.waiting ?? 0;
 }
 
-/** Tickets nobody has taken, and late ones: the Support badge. */
+/** Tickets nobody has taken, late ones, and chats waiting for a person: the Support badge. */
 function useSupportBadge(): number {
   const summary = useQuery({ queryKey: ["support", "summary"], queryFn: api.support.summary, refetchInterval: 60_000 });
-  return (summary.data?.unassigned ?? 0) + (summary.data?.breached ?? 0);
+  return (summary.data?.unassigned ?? 0) + (summary.data?.breached ?? 0) + (summary.data?.live_waiting ?? 0);
 }
 
 // Signing out ends the session on this app's server and at Keycloak, so it is a real form post, not a fetch.
@@ -146,7 +147,9 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
       {(me) => (
         <StaffContext.Provider value={me}>
           <IdleSignOut minutes={me.session?.idle_minutes ?? 30} onSignOut={signOut} />
-          <Frame me={me}>{children}</Frame>
+          <PresenceProvider enabled={me.permissions.includes("support.respond")}>
+            <Frame me={me}>{children}</Frame>
+          </PresenceProvider>
         </StaffContext.Provider>
       )}
     </Gate>
