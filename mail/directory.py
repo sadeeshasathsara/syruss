@@ -3,6 +3,7 @@ The directory: this service's public state, kept on a compacted Kafka topic (mai
 the admin app) always knows what mail looks like without ever being told a setting. One message per thing, keyed by it:
 
     meta            the public key people seal secrets to (and its fingerprint), which providers can be connected
+    use:<key>       a function of the application that needs mail, and the job it uses now
     job:<key>       a job: its label, what it does, the account that serves it, when it last sent and read, its last error
     account:<id>    a connected mailbox: its address, kind, what it may do, its status, which jobs it serves
 
@@ -65,6 +66,9 @@ class Directory:
             latest = {purpose: (status, error, account_id) for purpose, status, error, account_id in (await s.execute(
                 select(JobRow.purpose, JobRow.status, JobRow.last_error, JobRow.account_id)
                 .distinct(JobRow.purpose).order_by(JobRow.purpose, JobRow.created_at.desc()))).all()}
+        for use in await self.store.uses():
+            out["use:" + use.key] = {"key": use.key, "label": use.label, "description": use.description, "direction": use.direction,
+                                     "needs": use.needs.names(), "default_job": use.default_job, "job": use.effective_job, "assigned": bool(use.job)}
         for job in jobs:
             account, routed = await self.router.account_for(job.key)
             out["job:" + job.key] = {

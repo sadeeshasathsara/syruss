@@ -76,7 +76,7 @@ async def send(ticket: SupportTicket, template: str, *, message: Optional[Suppor
                 await db.commit()
         await transport.send(transport.EmailMessage(
             to=ticket.requester_email, subject=subject_of(ticket, reply), text=parts["text"], html=parts["html"],
-            purpose="support", reply_to=support_address(), message_id=own_id,
+            purpose="support.mail", reply_to=support_address(), message_id=own_id,
             in_reply_to=refs[-1] if refs else None, references=refs or None, automatic=template != "support_reply",
             meta={"ticket": ticket.number, "template": template}))
         return True

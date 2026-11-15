@@ -9,7 +9,7 @@ import json
 import pytest
 
 from app.core.config import settings
-from app.services import mail_identity
+from app.services import mail_identity, mail_uses
 from app.services.mail_bus import MailBus, MailBusError, box_seal, canonical, sign
 from tests.mail_fakes import BOX_PRIVATE, BOX_PUBLIC, directory
 
@@ -135,6 +135,7 @@ async def test_a_secret_is_sealed_to_the_key_in_the_directory_and_only_that_key_
 
 async def test_the_addresses_come_from_the_directory_and_are_never_guessed(bus, monkeypatch):
     monkeypatch.setattr(mail_identity, "bus", bus)
+    monkeypatch.setattr(mail_uses, "bus", bus)
     mail_identity.forget()
 
     async def nobody(timeout: float = 0.0) -> bool:

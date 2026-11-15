@@ -186,13 +186,14 @@ async def take_in(item_id: str, job: str, raw: bytes, too_large: bool = False) -
     """Takes in one email the mail service read: support mail is added to its ticket (or opens one), document mail becomes documents of the channel it was addressed to, then it is acknowledged.
     Returns False when nothing here handles that job yet: it isn't acknowledged, so the mail service keeps it and offers it again.
     Raises when it couldn't be taken in now (also not acknowledged: it comes again)."""
+    from app.services import mail_uses
     from app.services.support import mailbox as support_mailbox
     if too_large:
         logger.warning("Inbound mail %s for '%s' was too big to carry; the sender should send it smaller", item_id, job)
-    elif job == "support":
+    elif (use := mail_uses.use_for_job(job)) == mail_uses.SUPPORT_MAIL.key:
         async with AsyncSessionLocal() as db:
             await support_mailbox.handle(db, raw)
-    elif job == "documents":
+    elif use == mail_uses.DOCUMENTS_INBOUND.key:
         from app.services.intake import email as intake_email
         await intake_email.take_in(raw)
     else:

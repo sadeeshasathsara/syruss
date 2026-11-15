@@ -304,7 +304,8 @@ class TargetsIn(BaseModel):
 @router.get("/settings", dependencies=[VIEW])
 async def targets(db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
     from app.services.mail_bus import bus as mail_bus
-    support = mail_bus.overview()["purposes"].get("support")
+    from app.services import mail_uses
+    support = mail_bus.overview()["purposes"].get(mail_uses.job_of(mail_uses.SUPPORT_MAIL))
     if support:
         mailbox = {"address": support["address"], "reading": bool(support["reads"]), "connected": bool(support["routed"])}
     else:

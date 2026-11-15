@@ -23,10 +23,10 @@ const STATUS: Record<MailJob["status"], { label: string; tone: "positive" | "war
 export type EmailView = "jobs" | "accounts" | "apps" | "log";
 
 const SUBTITLE: Record<EmailView, string> = {
-  jobs: "What Syruss uses mail for. Each job has a mailbox of its own: choose which one does what, and add jobs of your own.",
-  accounts: "The mailboxes Syruss sends and reads mail through. Connect Google or Microsoft, or any mail server. Passwords are sealed in this browser.",
-  apps: "The Google and Microsoft apps Syruss signs people in through, so connecting a mailbox is a button, not an app password. Secrets are sealed in this browser.",
-  log: "What the mail service sent, to whom and how it went. The text itself isn't kept.",
+  jobs: "Each job has a mailbox of its own. Choose which mailbox a job uses, and which job each part of Syruss sends or reads through.",
+  accounts: "The mailboxes Syruss sends and reads mail through. Connect Google or Microsoft, or any mail server.",
+  apps: "The Google and Microsoft apps that let you connect a mailbox with a button, instead of an app password.",
+  log: "What was sent, to whom and how it went. The text itself isn't kept.",
 };
 
 /**
