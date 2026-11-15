@@ -101,12 +101,13 @@ def _box_key(secret: bytes, ephemeral_public: bytes, recipient_public: bytes) ->
     return HKDF(algorithm=hashes.SHA256(), length=32, salt=ephemeral_public + recipient_public, info=INFO).derive(secret)
 
 
-def box_seal(recipient_public: bytes, data: bytes) -> bytes:
-    """What the admin app's browser does (and tests): seal `data` so only the holder of the private key can open it."""
-    ephemeral = x25519.X25519PrivateKey.generate()
+def box_seal(recipient_public: bytes, data: bytes, ephemeral_private: Optional[bytes] = None, nonce: Optional[bytes] = None) -> bytes:
+    """What the admin app's browser does (and tests): seal `data` so only the holder of the private key can open it.
+    `ephemeral_private` and `nonce` are only for the test vector that pins this format (the server has its own copy)."""
+    ephemeral = x25519.X25519PrivateKey.from_private_bytes(ephemeral_private) if ephemeral_private else x25519.X25519PrivateKey.generate()
     ephemeral_public = _raw_public(ephemeral)
     secret = ephemeral.exchange(x25519.X25519PublicKey.from_public_bytes(recipient_public))
-    nonce = os.urandom(12)
+    nonce = nonce or os.urandom(12)
     return ephemeral_public + nonce + AESGCM(_box_key(secret, ephemeral_public, recipient_public)).encrypt(nonce, data, INFO)
 
 

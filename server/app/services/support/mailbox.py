@@ -137,7 +137,7 @@ async def handle(db: AsyncSession, raw: bytes) -> Optional[SupportTicket]:
     name, sender = parseaddr(msg.get("From") or "")
     sender = sender.strip().lower()
     known = await mail_identity.ensure(required=True)  # raises when the mail service never answered: the mail waits and is tried again
-    ours = {a.lower() for a in (known.support_address, known.from_address) if a}
+    ours = {a.lower() for a in (*known.ours, known.support_address, known.from_address) if a}
     if not sender or "@" not in sender or sender in ours or is_automatic(msg):
         return None
     if any(addr.lower() in ours for _, addr in getaddresses(msg.get_all("Reply-To", []))):

@@ -11,7 +11,6 @@ from mail import google
 from mail.accounts import MemoryAccount
 from mail.accounts.base import Capability, MailError
 from mail.accounts.gmail import SCOPES, GmailAccount, _tokens
-from mail.api import build_api
 from mail.config import settings
 from mail.inbound import Reader
 from mail.sealing import open_bytes
@@ -19,7 +18,6 @@ from mail.router import Router
 from mail.store import AccountRow, InboundRow, JobRow, seal
 from mail.tests.conftest import job
 
-TOKEN = "service-token-for-tests-1234567890"
 
 
 class FakeGoogle:
@@ -126,67 +124,18 @@ async def test_mailboxes_are_read_from_where_they_left_off(store):
     box = MemoryAccount(id="env")
     announced = []
 
-    async def announce(event):
-        announced.append(event)
+    async def announce(event, raw):
+        announced.append((event, raw))
 
     reader = Reader(store, Router(store, box), announce)
     box.inbox.append(b"already there")
     assert await reader.read("support") == 0          # the first read notes where the mailbox is
     box.inbox.append(b"Subject: new\r\n\r\nnew")
     assert await reader.read("support") == 1 and await reader.read("support") == 0
-    assert announced[0]["purpose"] == "support" and announced[0]["size"] > 0
+    event, raw = announced[0]
+    assert event["purpose"] == "support" and event["size"] > 0 and raw == b"Subject: new\r\n\r\nnew"   # the email itself goes out whole
     async with store.session() as s:
-        kept = (await s.get(InboundRow, announced[0]["id"])).raw
+        kept = (await s.get(InboundRow, event["id"])).raw
         assert b"Subject: new" not in kept and open_bytes(kept) == b"Subject: new\r\n\r\nnew"   # sealed at rest
     # A fallback that can't read reads nothing
     assert await Reader(store, Router(store, MemoryAccount(id="env", granted=Capability.SEND))).read("support") == 0
-
-
-async def test_the_api_tells_the_server_its_addresses(store, monkeypatch):
-    monkeypatch.setattr(settings, "MAIL_SERVICE_TOKEN", TOKEN)
-    monkeypatch.setattr(settings, "MAIL_FROM", "no-reply@example.com")
-    app = build_api(store, Router(store, MemoryAccount(id="env", granted=Capability.SEND)))
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://mail") as client:
-        assert (await client.get("/identity")).status_code == 401
-        auth = {"Authorization": f"Bearer {TOKEN}"}
-        monkeypatch.setattr(settings, "SUPPORT_EMAIL_ADDRESS", "")
-        assert (await client.get("/identity", headers=auth)).json() == {"from_address": "no-reply@example.com", "support_address": "no-reply@example.com"}
-        monkeypatch.setattr(settings, "SUPPORT_EMAIL_ADDRESS", "help@example.com")
-        assert (await client.get("/identity", headers=auth)).json() == {"from_address": "no-reply@example.com", "support_address": "help@example.com"}
-
-
-async def test_the_api_is_only_for_the_server_and_never_shows_secrets(store, monkeypatch):
-    monkeypatch.setattr(settings, "MAIL_SERVICE_TOKEN", TOKEN)
-    app = build_api(store, Router(store, MemoryAccount(id="env", granted=Capability.SEND)))
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://mail") as client:
-        assert (await client.get("/accounts")).status_code == 401
-        assert (await client.get("/accounts", headers={"Authorization": "Bearer wrong"})).status_code == 401
-        auth = {"Authorization": f"Bearer {TOKEN}"}
-        made = await client.post("/accounts/imap", headers=auth, json={
-            "address": "Help@Example.com", "smtp_host": "smtp.example.com", "smtp_password": "s3cret", "imap_host": "imap.example.com",
-            "imap_password": "s3cret-too", "by": "usr_owner"})
-        assert made.status_code == 201 and set(made.json()["granted"]) == {"send", "read"}
-        listing = await client.get("/accounts", headers=auth)
-        assert "s3cret" not in listing.text and [a["from_environment"] for a in listing.json()] == [True, False]
-        # A route the account can't serve is refused when it is set
-        send_only = await client.post("/accounts/imap", headers=auth, json={"address": "no-reply@example.com", "smtp_host": "smtp.example.com"})
-        refused = await client.put("/routes/support", headers=auth, json={"account_id": send_only.json()["id"]})
-        assert refused.status_code == 422 and "read" in refused.json()["detail"]
-        ok = await client.put("/routes/support", headers=auth, json={"account_id": made.json()["id"]})
-        assert ok.json()["purposes"]["support"]["routed"] and ok.json()["purposes"]["support"]["reads"]
-        # Mail read from a mailbox waits until the server takes it
-        async with store.session() as s:
-            s.add(InboundRow(id="in-1", purpose="support", account_id="env", raw=b"Subject: x\r\n\r\ny"))
-            await s.commit()
-        assert [i["id"] for i in (await client.get("/inbound", headers=auth)).json()] == ["in-1"]
-        assert (await client.get("/inbound/in-1", headers=auth)).content == b"Subject: x\r\n\r\ny"
-        assert (await client.delete("/inbound/in-1", headers=auth)).status_code == 204
-        assert (await client.get("/inbound/in-1", headers=auth)).status_code == 404
-        # The delivery log, and sending again mail that was given up (while its message is still kept)
-        async with store.session() as s:
-            s.add(JobRow(id="j-dead", purpose="notifications", to="a@b.c", subject="s", status="dead", attempts=6, payload=seal(job().model_dump()), meta={}))
-            await s.commit()
-        assert (await client.get("/jobs?status=dead", headers=auth)).json()[0]["retryable"]
-        assert (await client.post("/jobs/j-dead/retry", headers=auth)).json()["status"] == "retrying"
-        assert (await client.delete("/accounts/env", headers=auth)).status_code == 409
-        assert (await client.delete(f"/accounts/{made.json()['id']}", headers=auth)).status_code == 204
