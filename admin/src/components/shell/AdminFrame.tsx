@@ -8,7 +8,8 @@ import { BrandMark } from "@/components/shell/Brand";
 import { IdleSignOut } from "@/components/shell/IdleSignOut";
 import { Nav } from "@/components/shell/Nav";
 import { PresenceProvider } from "@/components/support/Presence";
-import { GlobalSearch } from "@/components/shell/Search";
+import { SearchTrigger } from "@/components/shell/CommandPalette";
+import { AdminSearch } from "@/components/shell/Search";
 import { Button, IconButton } from "@/components/ui/Button";
 import { ApiError, api } from "@/lib/api";
 import type { StaffMe } from "@/lib/types";
@@ -113,7 +114,7 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
         <StaffContext.Provider value={me}>
           <IdleSignOut minutes={me.session?.idle_minutes ?? 30} onSignOut={signOut} />
           <PresenceProvider enabled={me.permissions.includes("support.respond")}>
-            <Frame me={me}>{children}</Frame>
+            <AdminSearch permissions={me.permissions}><Frame me={me}>{children}</Frame></AdminSearch>
           </PresenceProvider>
         </StaffContext.Provider>
       )}
@@ -162,7 +163,7 @@ function Frame({ me, children }: { me: StaffMe; children: React.ReactNode }) {
             <div className="flex h-12 flex-none items-center gap-2 border-b border-border px-3 lg:hidden">
               <IconButton aria-label="Open the menu" aria-expanded={menu} aria-controls="admin-menu" onClick={() => setMenu(true)}><Menu /></IconButton>
               {brand}
-              <span className="ml-auto flex items-center"><ThemeToggle /><IconButton aria-label="Sign out" onClick={signOut}><LogOut /></IconButton></span>
+              <span className="ml-auto flex items-center"><SearchTrigger variant="icon" /><ThemeToggle /><IconButton aria-label="Sign out" onClick={signOut}><LogOut /></IconButton></span>
             </div>
             {menu && (
               <div className="fixed inset-0 z-40 lg:hidden">
@@ -170,7 +171,7 @@ function Frame({ me, children }: { me: StaffMe; children: React.ReactNode }) {
                 <div ref={drawer} id="admin-menu" role="dialog" aria-modal="true" aria-label="Menu"
                   className="absolute inset-y-0 left-0 flex w-[min(300px,86vw)] flex-col gap-4 overflow-y-auto border-r border-border bg-frame px-3 pb-6 pt-3 shadow-xl">
                   <div className="flex items-center justify-between">{brand}<IconButton aria-label="Close the menu" onClick={() => setMenu(false)}><X /></IconButton></div>
-                  <div className="px-1"><GlobalSearch /></div>
+                  <div className="px-1"><SearchTrigger label="Search everything" className="max-w-none" /></div>
                   <Nav can={can} onNavigate={() => setMenu(false)} />
                   <p className="mt-auto px-2.5 text-meta text-muted">{me.name} · {me.role_name}</p>
                 </div>
@@ -179,7 +180,7 @@ function Frame({ me, children }: { me: StaffMe; children: React.ReactNode }) {
 
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <div className="hidden h-12 flex-none items-center gap-2 pr-3 lg:flex">
-                <div className="min-w-0 flex-1"><GlobalSearch /></div>
+                <div className="min-w-0 flex-1"><SearchTrigger label="Search organizations, people, documents, tickets" /></div>
                 <p className="hidden min-w-0 items-center gap-1.5 text-meta text-muted 2xl:flex" title="Every change you make here is recorded in the audit log.">
                   <ShieldCheck className="size-3.5 flex-none" aria-hidden />
                   <span className="truncate">Changes are audited</span>

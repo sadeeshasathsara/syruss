@@ -1,6 +1,7 @@
+import type { SearchAnswer } from "@/components/shell/CommandPalette";
 import type {
   BankAccountInfo, BillingPayment, BillingSettingsPage, BillingSetup, CatalogDraft, CatalogItem, CatalogKind, CreditNoteInfo, FollowUp, MoneySummary, OrganizationAccount, PersonAccount,
-  Announcement, AtRisk, BusinessMetrics, OrgNote, OrganizationProfile, PersonProfile, PlatformControls, SearchResults, SecurityView, Severity, SwitchName,
+  Announcement, AtRisk, BusinessMetrics, OrgNote, OrganizationProfile, PersonProfile, PlatformControls, SecurityView, Severity, SwitchName,
   Invoice, OrgBilling, OrgBillingRow, PaymentFileInfo, SellerSettings, Submission, TaxRateInfo,
   Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
   StaffActionPage, StaffInvitation, StaffList, StaffMe, StaffMember, StaffRole, JoinView, SystemLesson,
@@ -218,7 +219,7 @@ export const api = {
     announce: (body: { title: string; body: string; severity: Severity; tenant_id?: string | null; starts_at?: string | null; ends_at?: string | null; reason: string }) =>
       request<Announcement>("/announcements", { method: "POST", body: json(body) }),
     endAnnouncement: (id: string) => request<Announcement>(`/announcements/${encodeURIComponent(id)}/end`, { method: "POST" }),
-    search: (q: string) => request<SearchResults>(`/search?q=${encodeURIComponent(q)}`),
+    search: (q: string) => request<SearchAnswer>(`/search?q=${encodeURIComponent(q)}`),
     security: () => request<SecurityView>("/security"),
   },
 

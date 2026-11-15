@@ -6,7 +6,9 @@ import { Sheet, SheetClose } from "@/components/ui/Sheet";
 import { cn } from "@/lib/format";
 import { Announcements } from "./Announcements";
 import { NotificationBell, NotificationToasts } from "./NotificationBell";
+import { SearchTrigger } from "./CommandPalette";
 import { OfflineBanner } from "./OfflineBanner";
+import { OrgSearch } from "./Search";
 import { useShell } from "./ShellContext";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserMenu } from "./UserMenu";
@@ -38,6 +40,7 @@ export function AppFrame({
   const showDocked = !!chat && docked && chatOpen;
 
   return (
+    <OrgSearch>
     <div className="relative flex h-dvh flex-col overflow-hidden">
       <OfflineBanner />
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
@@ -52,6 +55,7 @@ export function AppFrame({
             <Menu />
           </IconButton>
           <span className="min-w-0 flex-1 truncate px-1 text-body font-semibold text-ink">{title}</span>
+          <SearchTrigger variant="icon" />
           <NotificationBell />
           {chat && (
             <IconButton aria-label="Open Syruss AI" onClick={() => setChatOpen(true)}>
@@ -65,6 +69,7 @@ export function AppFrame({
           {/* Top bar of the frame (≥1024): scope on the left, utilities on the right, no rule. */}
           <div className="hidden h-12 flex-none items-center gap-2 pr-3 lg:flex">
             <div className="min-w-0 flex-1">{topbar}</div>
+            <SearchTrigger className="w-64 flex-none xl:w-80" />
             <ThemeToggle />
             {chat && !showDocked && (
               <Button variant="secondary" size="sm" onClick={() => setChatOpen(true)}>
@@ -125,5 +130,6 @@ export function AppFrame({
       </div>
     <NotificationToasts />
     </div>
+    </OrgSearch>
   );
 }

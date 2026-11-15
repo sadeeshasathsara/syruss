@@ -168,7 +168,7 @@ async def test_announcements_reach_their_audience_between_their_times(client):
 async def test_one_search_box_and_the_security_view(client):
     await organization("searchable")
     found = (await client.get(f"{API}/sysadmin/search", headers=AS_STAFF, params={"q": "searchab"})).json()
-    assert [o["id"] for o in found["organizations"]] == ["tenant_searchable"]
+    assert [o["id"] for g in found["groups"] if g["key"] == "organizations" for o in g["items"]] == ["tenant_searchable"]
     assert (await client.get(f"{API}/sysadmin/search", headers=AS_STAFF, params={"q": "x"})).status_code == 422
     view = (await client.get(f"{API}/sysadmin/security", headers=AS_STAFF)).json()
     assert set(view) == {"last_7_days", "wrong_code_bursts", "staff_review"}

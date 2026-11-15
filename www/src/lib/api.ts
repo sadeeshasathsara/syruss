@@ -1,3 +1,4 @@
+import type { SearchAnswer } from "@/components/shell/CommandPalette";
 import type {
   Access, AgentQuestion, AgentRun, AgentRunDetail, MemoryItem, MemoryKind, ApiKeyInfo, ApiSourceInput, AppNotification, AuditEntry, Billing, ChatMessage, Conversation,
   DocumentItem, Entity, MyOrganization, Screen, ScreenCatalogue, ScreenDefinition, ScreenFilter, ScreenRun, ScreenStarter, ScreenSummary, Extraction, Invitation, InvitationPreview, KnowledgeSource, Me, Member, NotificationPref,
@@ -491,6 +492,8 @@ export const api = {
 
 
   // What Syruss is telling everyone now: announcements and maintenance (for the banner at the top of every page)
+  /** One search across the organization: only what you may open (hrefs are relative to the organization). */
+  search: (q: string) => request<SearchAnswer>(`/search?q=${encodeURIComponent(q)}`),
   announcements: () => request<{ maintenance: { on: boolean; message: string } | null; items: { id: string; title: string; body: string; severity: "info" | "warning" | "critical"; starts_at: string; ends_at: string | null }[] }>("/announcements"),
 
   notifications: {
