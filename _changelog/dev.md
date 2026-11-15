@@ -14,12 +14,32 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.16.0-dev.1` | 2026-11-15 | [What changed](#admin-0160-dev1) |
+| **admin** | `0.17.0-dev.1` | 2026-11-15 | [What changed](#admin-0170-dev1) |
 | **agent** | `0.13.0-dev.1` | 2026-11-15 | [What changed](#agent-0130-dev1) |
 | **mail** | `0.5.0-dev.1` | 2026-11-15 | [What changed](#mail-050-dev1) |
-| **server** | `0.25.0-dev.1` | 2026-11-15 | [What changed](#server-0250-dev1) |
+| **server** | `0.26.0-dev.1` | 2026-11-15 | [What changed](#server-0260-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
 | **www** | `0.17.2-dev.1` | 2026-11-15 | [What changed](#www-0172-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### admin (0.17.0-dev.1)
+- **The admin app's Email section is organised around jobs, and its mailbox passwords are sealed in your browser.**
+- **Jobs** (`Email › Jobs`): the built-in jobs (notifications, help, document inbound, promotions, and Keycloak's account emails) each with the mailbox it uses (a mailbox that can't do the job isn't offered for it), when it last sent and read, its last error, and settings of its own (sender name, where replies go, how often it reads). **Add a job** of your own; remove it again when you no longer need it.
+- **Accounts** (`Email › Accounts`): the connected mailboxes, with Google, or any mail server. Pick which jobs a new mailbox serves as you add it.
+- **Delivery log** is unchanged.
+- **Passwords are sealed in the browser** to the mail service's key before they are sent, so neither this app's server nor Kafka ever holds one. The key's fingerprint is shown beside the form; it should match `python -m mail fingerprint` on the mail server. A browser without the needed support (older than Chrome 133, Firefox 130 or Safari 17) still works: the server seals the password instead, and the page says so.
+- **Live:** the Email pages are told the moment the mail service's state changes (a mailbox connected, a job's mailbox chosen, a problem found), so they are always what the mail service says. The new `mail` scope of the staff live stream carries it, owners only; it names what changed, never its content. A "Live" badge shows when it is connected.
+- **Audit log:** the mail actions (connecting or removing a mailbox, choosing a job's mailbox, adding, changing and removing jobs) read in plain words.
+
+### server (0.26.0-dev.1)
+- **The admin app's Email section is organised around jobs, and its mailbox passwords are sealed in your browser.**
+- **Jobs** (`Email › Jobs`): the built-in jobs (notifications, help, document inbound, promotions, and Keycloak's account emails) each with the mailbox it uses (a mailbox that can't do the job isn't offered for it), when it last sent and read, its last error, and settings of its own (sender name, where replies go, how often it reads). **Add a job** of your own; remove it again when you no longer need it.
+- **Accounts** (`Email › Accounts`): the connected mailboxes, with Google, or any mail server. Pick which jobs a new mailbox serves as you add it.
+- **Delivery log** is unchanged.
+- **Passwords are sealed in the browser** to the mail service's key before they are sent, so neither this app's server nor Kafka ever holds one. The key's fingerprint is shown beside the form; it should match `python -m mail fingerprint` on the mail server. A browser without the needed support (older than Chrome 133, Firefox 130 or Safari 17) still works: the server seals the password instead, and the page says so.
+- **Live:** the Email pages are told the moment the mail service's state changes (a mailbox connected, a job's mailbox chosen, a problem found), so they are always what the mail service says. The new `mail` scope of the staff live stream carries it, owners only; it names what changed, never its content. A "Live" badge shows when it is connected.
+- **Audit log:** the mail actions (connecting or removing a mailbox, choosing a job's mailbox, adding, changing and removing jobs) read in plain words.
 
 ## [2026-11-15] - Release via dev
 
