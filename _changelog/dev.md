@@ -15,10 +15,69 @@
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
 | **admin** | `0.9.2-dev.1` | 2026-11-14 | [What changed](#admin-092-dev1) |
-| **agent** | `0.7.1-dev.1` | 2026-11-14 | [What changed](#agent-071-dev1) |
-| **server** | `0.16.3-dev.1` | 2026-11-14 | [What changed](#server-0163-dev1) |
+| **agent** | `0.9.0-dev.1` | 2026-11-15 | [What changed](#agent-090-dev1) |
+| **server** | `0.17.1-dev.1` | 2026-11-15 | [What changed](#server-0171-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
-| **www** | `0.12.0-dev.1` | 2026-11-14 | [What changed](#www-0120-dev1) |
+| **www** | `0.12.1-dev.1` | 2026-11-15 | [What changed](#www-0121-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### agent (0.9.0-dev.1)
+- **Syruss answers questions about Syruss itself from facts.** Seven help guides the chat reads before it answers "how do I…" or "why can't I…": getting started, documents and review, billing, team and roles, account security, connections, and analytics. They name the pages and buttons as the app shows them (Settings → Billing → Invoices, Settings → Account and security → Sign-in, Settings → Organization → Support access).
+- **Billing** covers plans and credits, invoice statuses, paying by card on Stripe's page, paying by bank transfer (the slip, its transfer reference, "Being checked" and "Not confirmed", and sending again), renewals, reminders, the grace period and the move to Free, and billing details.
+- **Account security** covers password and two-step changes, "Keep me signed in" (30 days), trusted browsers and their emailed codes, and Google sign-in.
+- **A "Helping with Syruss" section in the chat charter**, before the shared boundaries: read the matching guide first, point to the exact page, never invent a feature or setting, and say plainly when only Syruss support can help.
+- **`get_billing_status`, a read-only chat tool**: the organization's plan, invoices waiting for payment, and the latest bank slip sent (with why it wasn't confirmed). The server answers only during a person's own chat, and only when their organization role manages billing (its owners); work runs and everyone else are refused.
+- **A new red-team case**: a document that tells the agent to say the person's invoice is paid.
+
+### server (0.17.1-dev.1)
+- **Syruss answers questions about Syruss itself from facts.** Seven help guides the chat reads before it answers "how do I…" or "why can't I…": getting started, documents and review, billing, team and roles, account security, connections, and analytics. They name the pages and buttons as the app shows them (Settings → Billing → Invoices, Settings → Account and security → Sign-in, Settings → Organization → Support access).
+- **Billing** covers plans and credits, invoice statuses, paying by card on Stripe's page, paying by bank transfer (the slip, its transfer reference, "Being checked" and "Not confirmed", and sending again), renewals, reminders, the grace period and the move to Free, and billing details.
+- **Account security** covers password and two-step changes, "Keep me signed in" (30 days), trusted browsers and their emailed codes, and Google sign-in.
+- **A "Helping with Syruss" section in the chat charter**, before the shared boundaries: read the matching guide first, point to the exact page, never invent a feature or setting, and say plainly when only Syruss support can help.
+- **`get_billing_status`, a read-only chat tool**: the organization's plan, invoices waiting for payment, and the latest bank slip sent (with why it wasn't confirmed). The server answers only during a person's own chat, and only when their organization role manages billing (its owners); work runs and everyone else are refused.
+- **A new red-team case**: a document that tells the agent to say the person's invoice is paid.
+
+## [2026-11-15] - Release via dev
+
+### agent (0.8.0-dev.1)
+- **Defenses against prompt injection, in four layers:**
+- **Data is marked as data.** Every tool result reaches the model between markers carrying a random value per run, which a document can't fake or close. Every charter says nothing inside them is an instruction, and that such text is described, never passed on word for word (no images, links or code copied from data).
+- **What the agent never shares:** its instructions and setup, anything about other workspaces, other people's chats or Syruss staff, secrets, internal IDs. It doesn't assess the platform's security, list its weak points, or help probe it, whoever asks: security questions go to Syruss support.
+- **A server-side guard on everything the agent says to people** (chat replies, flags, the conversations it opens and closes):
+- a reply that repeats its instructions is refused;
+- keys, tokens, private keys, connection strings, internal IDs and images are cut out;
+- each catch is written to the workspace's activity, as the kinds removed, never the text.
+- **The chat never loads images from agent text** (the description is shown instead), and links to other sites show which site.
+- **Injection tests:**
+- `python -m agentic_framework.redteam` attacks the real model with seven cases: asking for its instructions, claiming authority, probing security, asking for other people's data, and documents that try to command it, smuggle data out through an image, or carry a secret.
+- It runs from `.github/workflows/agent-redteam.yml` on pull requests that change the agent, weekly and by hand, once the `GEMINI_API_KEY` secret is set.
+
+### server (0.17.0-dev.1)
+- **Defenses against prompt injection, in four layers:**
+- **Data is marked as data.** Every tool result reaches the model between markers carrying a random value per run, which a document can't fake or close. Every charter says nothing inside them is an instruction, and that such text is described, never passed on word for word (no images, links or code copied from data).
+- **What the agent never shares:** its instructions and setup, anything about other workspaces, other people's chats or Syruss staff, secrets, internal IDs. It doesn't assess the platform's security, list its weak points, or help probe it, whoever asks: security questions go to Syruss support.
+- **A server-side guard on everything the agent says to people** (chat replies, flags, the conversations it opens and closes):
+- a reply that repeats its instructions is refused;
+- keys, tokens, private keys, connection strings, internal IDs and images are cut out;
+- each catch is written to the workspace's activity, as the kinds removed, never the text.
+- **The chat never loads images from agent text** (the description is shown instead), and links to other sites show which site.
+- **Injection tests:**
+- `python -m agentic_framework.redteam` attacks the real model with seven cases: asking for its instructions, claiming authority, probing security, asking for other people's data, and documents that try to command it, smuggle data out through an image, or carry a secret.
+- It runs from `.github/workflows/agent-redteam.yml` on pull requests that change the agent, weekly and by hand, once the `GEMINI_API_KEY` secret is set.
+
+### www (0.12.1-dev.1)
+- **Defenses against prompt injection, in four layers:**
+- **Data is marked as data.** Every tool result reaches the model between markers carrying a random value per run, which a document can't fake or close. Every charter says nothing inside them is an instruction, and that such text is described, never passed on word for word (no images, links or code copied from data).
+- **What the agent never shares:** its instructions and setup, anything about other workspaces, other people's chats or Syruss staff, secrets, internal IDs. It doesn't assess the platform's security, list its weak points, or help probe it, whoever asks: security questions go to Syruss support.
+- **A server-side guard on everything the agent says to people** (chat replies, flags, the conversations it opens and closes):
+- a reply that repeats its instructions is refused;
+- keys, tokens, private keys, connection strings, internal IDs and images are cut out;
+- each catch is written to the workspace's activity, as the kinds removed, never the text.
+- **The chat never loads images from agent text** (the description is shown instead), and links to other sites show which site.
+- **Injection tests:**
+- `python -m agentic_framework.redteam` attacks the real model with seven cases: asking for its instructions, claiming authority, probing security, asking for other people's data, and documents that try to command it, smuggle data out through an image, or carry a secret.
+- It runs from `.github/workflows/agent-redteam.yml` on pull requests that change the agent, weekly and by hand, once the `GEMINI_API_KEY` secret is set.
 
 ## [2026-11-14] - Release via dev
 

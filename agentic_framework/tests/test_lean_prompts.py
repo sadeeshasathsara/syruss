@@ -2,7 +2,7 @@
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from agentic_framework.agent import guides
 from agentic_framework.agent.briefing import build_briefing
-from agentic_framework.agent.charter import CHARTER
+from agentic_framework.agent.charter import ASSISTANT_CHARTER, CHARTER
 from agentic_framework.agent.loop import TRIMMED, _trim_tool_results
 from agentic_framework.agent.tools import RunContext, execute, work_tools
 from agentic_framework.tests.conftest import make_event
@@ -11,7 +11,8 @@ from agentic_framework.tests.conftest import make_event
 def test_every_guide_exists_and_the_charter_points_to_it():
     for name in guides.GUIDES:
         assert guides.read(name).startswith("# ")
-        assert f"- {name}:" in CHARTER
+        # Help on using Syruss is for chats; the work charter lists the guides for work.
+        assert f"- {name}:" in (ASSISTANT_CHARTER if name in guides.HELP else CHARTER)
     # The detail lives in the guides, not in the charter sent with every call.
     assert "count_equals" not in CHARTER and "count_equals" in guides.read("template-design")
 
