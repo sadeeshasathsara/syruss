@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useState } from "react";
 import { field } from "@/components/ops/Bits";
 import { useStaff } from "@/components/shell/AdminFrame";
-import { SupportTabs } from "@/components/support/Bits";
 import { Bar, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
@@ -24,7 +23,6 @@ export default function SupportSettingsPage() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="Support" subtitle="Service targets and the support mailbox. Owners change them." />
-      <SupportTabs />
       {!s ? <Bar className="h-64 w-full" /> : (
         <>
           <Panel title="Support mailbox" aside={s.mailbox.reading === null ? <Pill tone="neutral">Unknown</Pill>

@@ -7,7 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { field } from "@/components/ops/Bits";
 import { useStaff } from "@/components/shell/AdminFrame";
-import { CATEGORY, CustomerPanel, PRIORITY, STATUS, StatusPill, SupportTabs, dueIn, fillReply } from "@/components/support/Bits";
+import { CATEGORY, CustomerPanel, PRIORITY, STATUS, StatusPill, dueIn, fillReply } from "@/components/support/Bits";
 import { Bar, ErrorNote, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
@@ -25,7 +25,6 @@ export default function TicketPage() {
     <div className="flex flex-col gap-5">
       <PageHeader back={{ href: "/support", label: "← Support" }} title={t ? `${t.number} · ${t.subject}` : "Ticket"}
         subtitle={t ? `${t.requester_name} <${t.requester_email}> · opened ${ago(t.created_at).toLowerCase()} by ${t.channel === "agent" ? "the assistant, for them" : t.channel === "email" ? "email" : "the Help page"}` : undefined} />
-      <SupportTabs />
       {!t ? <Bar className="h-96 w-full" /> : (
         <div className="grid grid-cols-1 gap-5 @5xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="flex min-w-0 flex-col gap-4">

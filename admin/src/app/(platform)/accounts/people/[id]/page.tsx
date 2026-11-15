@@ -34,7 +34,7 @@ export default function PersonPage({ params }: { params: Promise<{ id: string }>
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        back={{ href: "/accounts", label: "Accounts" }}
+        back={{ href: "/accounts/people", label: "Accounts" }}
         title={who.name}
         subtitle={<span className="flex flex-wrap items-center gap-2">
           <Pill tone={who.status === "active" ? "positive" : "negative"}>{who.status === "active" ? "Active" : who.status === "disabled" ? "Disabled" : "Deleted"}</Pill>
