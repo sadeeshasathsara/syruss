@@ -52,7 +52,8 @@ class Directory:
         _, public = await self.store.box()
         out["meta"] = {"public_key": base64.b64encode(public).decode(), "fingerprint": sealing.fingerprint(public),
                        "providers": {p: apps.describe(p) for p in apps.PROVIDERS}}
-        out["account:" + self.router.fallback.id] = describe_account(None, self.router.fallback, routes, keys)
+        if self.router.fallback.kind != "none":
+            out["account:" + self.router.fallback.id] = describe_account(None, self.router.fallback, routes, keys)
         for row in await self.store.accounts():
             out["account:" + row.id] = describe_account(row, self.router.fallback, routes, keys)
         async with self.store.session() as s:
@@ -68,7 +69,8 @@ class Directory:
             out["job:" + job.key] = {
                 "key": job.key, "label": job.label, "direction": job.direction, "description": job.description, "system": job.system,
                 "settings": job.settings, "needs": job.needs.names(),
-                "account": {"id": account.id, "address": account.address, "kind": account.kind, "from_environment": account.id == self.router.fallback.id},
+                "account": ({"id": account.id, "address": account.address, "kind": account.kind, "from_environment": account.id == self.router.fallback.id}
+                            if account.kind != "none" else None),
                 "routed": routed, "reads": Capability.READ in job.needs and Capability.READ in account.granted,
                 "last_sent_at": sent[job.key].isoformat() if sent.get(job.key) else None,
                 "last_read_at": read[job.key].isoformat() if read.get(job.key) else None,

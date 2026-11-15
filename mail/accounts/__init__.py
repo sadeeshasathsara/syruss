@@ -5,7 +5,7 @@ builds a connected one from the database with its unsealed secret.
 from typing import Any, Dict
 from mail.accounts.base import (Attachment, Capability, MailAccount, MailError, MailHandle, MailNotPermitted, Outbound,
                                 SentReceipt, TestResult)
-from mail.accounts.local import ConsoleAccount, MemoryAccount
+from mail.accounts.local import ConsoleAccount, MemoryAccount, NotConnectedAccount
 from mail.accounts.smtp_imap import ImapServer, SmtpImapAccount, SmtpServer
 from mail.config import settings
 
@@ -13,17 +13,14 @@ ENV_ACCOUNT_ID = "env"
 
 
 def env_account() -> MailAccount:
-    """The account from the environment (MAIL_BACKEND, MAIL_SMTP_*, MAIL_FROM): every purpose's fallback."""
+    """What a job uses before a mailbox is connected for it: nothing (`none`: its mail waits), or for local work and tests the console
+    or memory. No mail credential comes from the environment."""
     backend = settings.MAIL_BACKEND.lower()
     if backend == "memory":
         return MemoryAccount(id=ENV_ACCOUNT_ID, address=settings.MAIL_FROM, name=settings.MAIL_FROM_NAME, granted=Capability.SEND)
     if backend == "console":
         return ConsoleAccount(id=ENV_ACCOUNT_ID, address=settings.MAIL_FROM, name=settings.MAIL_FROM_NAME)
-    smtp = SmtpServer(settings.MAIL_SMTP_HOST, settings.MAIL_SMTP_PORT, settings.MAIL_SMTP_USERNAME, settings.MAIL_SMTP_PASSWORD,
-                      settings.MAIL_SMTP_SECURITY.lower())
-    imap = ImapServer(settings.MAIL_IMAP_HOST, settings.MAIL_IMAP_PORT, settings.MAIL_IMAP_USERNAME, settings.MAIL_IMAP_PASSWORD,
-                      settings.MAIL_IMAP_FOLDER, settings.MAIL_IMAP_SSL) if settings.MAIL_IMAP_HOST else None
-    return SmtpImapAccount(id=ENV_ACCOUNT_ID, address=settings.MAIL_FROM, name=settings.MAIL_FROM_NAME, smtp=smtp, imap=imap)
+    return NotConnectedAccount(id=ENV_ACCOUNT_ID, name=settings.MAIL_FROM_NAME)
 
 
 def account_from_row(row: Any, secret: Dict[str, Any], on_lost=None, on_secret=None) -> MailAccount:
@@ -48,5 +45,5 @@ def account_from_row(row: Any, secret: Dict[str, Any], on_lost=None, on_secret=N
 
 
 __all__ = ["Attachment", "Capability", "ConsoleAccount", "ENV_ACCOUNT_ID", "ImapServer", "MailAccount", "MailError", "MailHandle",
-           "MailNotPermitted", "MemoryAccount", "Outbound", "SentReceipt", "SmtpImapAccount", "SmtpServer", "TestResult",
+           "MailNotPermitted", "MemoryAccount", "NotConnectedAccount", "Outbound", "SentReceipt", "SmtpImapAccount", "SmtpServer", "TestResult",
            "account_from_row", "env_account"]

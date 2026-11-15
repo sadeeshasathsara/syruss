@@ -1,4 +1,5 @@
-"""Accounts for working without a mail server: `console` only logs what it would send, `memory` keeps it (tests)."""
+"""Accounts for working without a mail server: `console` only logs what it would send, `memory` keeps it (tests), and `none` stands in
+where no mailbox has been connected yet."""
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 from mail.accounts.base import Capability, MailAccount, MailError, Outbound, SentReceipt
@@ -16,6 +17,18 @@ class ConsoleAccount(MailAccount):
     async def _send(self, message: Outbound) -> SentReceipt:
         logger.info("Email to %s (%s)\nSubject: %s\n\n%s", message.to, message.purpose, message.subject, message.text)
         return SentReceipt()
+
+
+class NotConnectedAccount(MailAccount):
+    """What a job uses while no mailbox is connected for it: it can do nothing, and says why. Mail for it waits."""
+    kind = "none"
+    supports = Capability.NONE
+
+    def __init__(self, *, id: str, name: str = "Syruss"):
+        super().__init__(id=id, address="", name=name, granted=Capability.NONE)
+
+    async def _send(self, message: Outbound) -> SentReceipt:
+        raise MailError("No mailbox is connected for this job yet.")
 
 
 class MemoryAccount(MailAccount):

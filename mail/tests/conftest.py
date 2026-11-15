@@ -8,13 +8,13 @@ os.environ["MAIL_BACKEND"] = "memory"
 os.environ["RETRY_BASE_SECONDS"] = "30"
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from mail.accounts import MemoryAccount
 from mail.accounts.base import Capability, Outbound
 from mail.delivery import Delivery
 from mail.router import Router
 from mail import apps
-from mail.store import AccountRow, CommandRow, CursorRow, InboundRow, JobRow, PurposeRow, RouteRow, SettingRow, Store
+from mail.store import AccountRow, CommandRow, CursorRow, InboundRow, JobRow, PurposeRow, SettingRow, Store
 
 
 @pytest.fixture(scope="session")
@@ -28,9 +28,10 @@ async def store():
 @pytest.fixture(autouse=True)
 async def clean(store):
     async with store.session() as s:
-        for table in (JobRow, RouteRow, AccountRow, CursorRow, InboundRow, CommandRow):
+        for table in (JobRow, AccountRow, CursorRow, InboundRow, CommandRow):
             await s.execute(delete(table))
         await s.execute(delete(PurposeRow).where(PurposeRow.system.is_(False)))   # jobs a test added
+        await s.execute(update(PurposeRow).values(account_id=None))                  # and the accounts they were given
         await s.execute(delete(SettingRow).where(SettingRow.key.like("app:%")))   # provider apps a test set
         apps._cache.clear()
         await s.commit()
