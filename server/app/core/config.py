@@ -70,16 +70,9 @@ class Settings(BaseSettings):
     # the same MAIL_SERVICE_TOKEN as in mail.env.
     MAIL_SERVICE_URL: str = "http://localhost:8100"
     MAIL_SERVICE_TOKEN: str = ""
-    # The address app mail comes from (set the same in the mail service's MAIL_FROM, or on the account connected for
-    # notifications): it names the domain of message ids and keeps the support mailbox from reading our own mail.
-    MAIL_FROM: str = "no-reply@syruss.local"
-    MAIL_FROM_NAME: str = "Syruss"
-    MAIL_REPLY_TO: str = ""
-
-    # Support tickets by email. Customers write to SUPPORT_EMAIL_ADDRESS. The mail service reads that mailbox and sends
-    # the answers from it: connect it in the admin app (Email) for the "support" purpose.
-    SUPPORT_EMAIL_ADDRESS: str = ""
-    SUPPORT_FROM_NAME: str = "Syruss Support"
+    # The sender's address and name, the reply address and the support mailbox are the mail service's settings (MAIL_FROM,
+    # MAIL_FROM_NAME, MAIL_REPLY_TO, SUPPORT_EMAIL_ADDRESS, SUPPORT_FROM_NAME in mail.env). The server asks it for the two
+    # addresses it needs (services/mail_identity.py).
     # An invitation email can be sent again this often, no sooner
     MAIL_RESEND_SECONDS: int = 60
 
