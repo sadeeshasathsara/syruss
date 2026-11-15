@@ -9,7 +9,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import JSON, DateTime, Integer, String, Text, select, text
+from sqlalchemy import JSON, DateTime, Integer, LargeBinary, String, Text, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from mail.config import settings
@@ -76,6 +76,16 @@ class CursorRow(Base):
     read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, onupdate=_now)
 
 
+class InboundRow(Base):
+    """Mail read from a mailbox, kept until the server collects it (announced on mail.inbound, fetched through the API)."""
+    __tablename__ = "mail_inbound"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    purpose: Mapped[str] = mapped_column(String(40), nullable=False)
+    account_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    raw: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, index=True)
+
+
 # ---- sealing ---------------------------------------------------------------------------------------
 
 def _fernet() -> Fernet:
@@ -137,3 +147,9 @@ class Store:
     async def account(self, account_id: str) -> Optional[AccountRow]:
         async with self.session() as s:
             return await s.get(AccountRow, account_id)
+
+    async def lost(self, account_id: str, why: str) -> None:
+        """The provider stopped accepting this account's sign-in: it needs connecting again."""
+        async with self.session() as s:
+            await s.execute(update(AccountRow).where(AccountRow.id == account_id).values(status="needs_reconnect", last_error=why))
+            await s.commit()

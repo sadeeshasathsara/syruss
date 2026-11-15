@@ -8,9 +8,7 @@ import pytest
 from sqlalchemy import select, update
 from app.core.agent_token import mint_agent_token
 from app.core.config import settings
-from app.models.platform import PlatformSetting
 from app.models.support import SupportMessage, SupportTicket
-from app.services import platform_controls
 from app.services.support import mailbox as support_mailbox, sla
 from tests.conftest import TENANT, AsyncSessionLocal, create_template, make_staff, person, png_bytes, register, ws
 from tests.test_workspace_authorization import chat_token
@@ -122,30 +120,6 @@ async def test_emails_thread_by_headers_and_strangers_and_robots_are_kept_apart(
         fresh = await support_mailbox.handle(db, raw_email("dev@syruss.test", "New problem", "Something new broke."))
         assert fresh.tenant_id == TENANT and not fresh.unverified and fresh.channel == "email"
     assert any(m.to == "dev@syruss.test" and fresh.number in m.subject for m in mailbox)
-
-
-class FakeMailbox:
-    def __init__(self, messages):
-        self.messages = messages
-
-    async def fetch(self, after_uid):
-        return 7, [(uid, raw) for uid, raw in self.messages if uid > after_uid]
-
-
-async def test_the_mailbox_reads_only_what_arrives_after_it_is_switched_on(client):
-    async with AsyncSessionLocal() as db:
-        old = raw_email("dev@syruss.test", "Old mail", "Sent before support was set up.")
-        box = FakeMailbox([(1, old)])
-        assert await support_mailbox.poll(db, now=datetime.now(timezone.utc), mailbox=box) == 0          # the first look only notes where it is
-        box.messages.append((2, raw_email("dev@syruss.test", "Fresh mail", "Sent after.")))
-        assert await support_mailbox.poll(db, now=datetime.now(timezone.utc), mailbox=box) == 1
-        assert await support_mailbox.poll(db, now=datetime.now(timezone.utc), mailbox=box) == 0          # once only
-        subjects = (await db.execute(select(SupportTicket.subject).where(SupportTicket.subject.in_(("Old mail", "Fresh mail"))))).scalars().all()
-        assert subjects == ["Fresh mail"]
-        row = await db.get(PlatformSetting, support_mailbox.STATE)
-        await db.delete(row)
-        await db.commit()
-    platform_controls.forget()
 
 
 async def test_the_agent_opens_a_ticket_only_for_the_person_in_its_chat(client, mailbox):

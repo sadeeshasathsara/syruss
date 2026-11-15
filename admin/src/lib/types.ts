@@ -864,6 +864,61 @@ export interface LiveChat extends LiveChatItem {
 
 export type Presence = "online" | "away" | "offline";
 
+export type MailPurpose = "notifications" | "accounts" | "support";
+
+/** A mailbox Syruss sends (and reads) mail through: from the mail service's environment, or connected here. No secrets. */
+export interface MailAccount {
+  id: string;
+  kind: "smtp_imap" | "gmail" | "console" | "memory";
+  address: string;
+  name: string;
+  granted: ("send" | "read")[];
+  status: "active" | "needs_reconnect";
+  last_error: string | null;
+  checked_at?: string | null;
+  from_environment: boolean;
+  purposes: MailPurpose[];
+  config?: Record<string, string | number | boolean>;
+}
+
+export interface MailOverview {
+  google: boolean;
+  redirect_uri: string;
+  accounts: MailAccount[];
+  purposes: Record<MailPurpose, { account_id: string; address: string; routed: boolean; needs: ("send" | "read")[]; reads: boolean }>;
+}
+
+export interface MailJob {
+  id: string;
+  purpose: MailPurpose;
+  to: string;
+  subject: string;
+  status: "queued" | "sending" | "retrying" | "sent" | "dead";
+  attempts: number;
+  last_error: string | null;
+  account_id: string | null;
+  created_at: string;
+  done_at: string | null;
+  next_attempt_at: string | null;
+  retryable: boolean;
+}
+
+export interface MailImapInput {
+  address: string;
+  name: string;
+  smtp_host?: string;
+  smtp_port: number;
+  smtp_security: "none" | "starttls" | "ssl";
+  smtp_username: string;
+  smtp_password: string;
+  imap_host?: string;
+  imap_port: number;
+  imap_ssl: boolean;
+  imap_folder: string;
+  imap_username: string;
+  imap_password: string;
+}
+
 export interface SavedReply { id: string; title: string; body: string; shortcut: string | null; created_by_name: string; updated_at: string }
 
 export interface SupportSettings {
@@ -871,5 +926,6 @@ export interface SupportSettings {
   resolve_hours: Record<TicketPriority, number>;
   auto_solve_days: number;
   auto_close_days: number;
-  mailbox: { address: string; reading: boolean };
+  /** reading null: the mail service couldn't be asked */
+  mailbox: { address: string; reading: boolean | null; connected: boolean | null };
 }

@@ -69,12 +69,13 @@ def test_a_real_server_refuses_development_values():
     for env in ("test", "production"):
         with pytest.raises(RuntimeError, match=f"as {env}") as e:
             check_config(MailSettings(**dev, ENV=env))
-        for name in ("POSTGRES_PASSWORD", "MAIL_SECRETS_KEY", "MAIL_SMTP_HOST", "MAIL_FROM"):
+        for name in ("POSTGRES_PASSWORD", "MAIL_SECRETS_KEY", "MAIL_SMTP_HOST", "MAIL_FROM", "MAIL_SERVICE_TOKEN"):
             assert name in str(e.value)
     with pytest.raises(RuntimeError, match="MAIL_BACKEND must be smtp"):
         check_config(MailSettings(_env_file=None, ENV="test", MAIL_BACKEND="console"))
     ready = dict(_env_file=None, ENV="production", MAIL_BACKEND="smtp", POSTGRES_PASSWORD="real", MAIL_SECRETS_KEY="k",
-                 MAIL_SMTP_HOST="smtp.example.com", MAIL_FROM="no-reply@example.com", MAIL_RELAY_PASSWORD="a-long-random-relay-password")
+                 MAIL_SMTP_HOST="smtp.example.com", MAIL_FROM="no-reply@example.com", MAIL_RELAY_PASSWORD="a-long-random-relay-password",
+                 MAIL_SERVICE_TOKEN="a-long-random-service-token-123")
     check_config(MailSettings(**ready))
     with pytest.raises(RuntimeError, match="MAIL_RELAY_PASSWORD"):
         check_config(MailSettings(**{**ready, "MAIL_RELAY_PASSWORD": "short"}))

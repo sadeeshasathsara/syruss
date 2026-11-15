@@ -48,6 +48,29 @@ class MailSettings(BaseSettings):
     MAIL_FROM: str = "no-reply@syruss.local"
     MAIL_FROM_NAME: str = "Syruss"
 
+    # The account from the environment can also read a mailbox (IMAP, read-only), for purposes that read (support) until
+    # an account connected in the admin app takes over. Empty host: it doesn't read.
+    MAIL_IMAP_HOST: str = ""
+    MAIL_IMAP_PORT: int = 993
+    MAIL_IMAP_USERNAME: str = ""
+    MAIL_IMAP_PASSWORD: str = ""
+    MAIL_IMAP_FOLDER: str = "INBOX"
+    MAIL_IMAP_SSL: bool = True
+    MAIL_POLL_SECONDS: int = 60        # how often mailboxes are read
+    MAIL_INBOUND_TOPIC: str = "mail.inbound"
+    INBOUND_KEEP_DAYS: int = 7         # mail read but never collected by the server is dropped after this
+
+    # The internal API the server uses (api.py): accounts, routes, the delivery log, connecting Google, collecting
+    # mail read from mailboxes. Only the server calls it, with MAIL_SERVICE_TOKEN (the same value in the server's env).
+    MAIL_API_HOST: str = "127.0.0.1"
+    MAIL_API_PORT: int = 8100
+    MAIL_SERVICE_TOKEN: str = ""
+
+    # Google mail (accounts/gmail.py): an OAuth client of type "Web application" in Google Cloud, with the admin app's
+    # <PUBLIC_ADMIN_URL>/email/google as its redirect URI. Empty: Google can't be connected.
+    GOOGLE_MAIL_CLIENT_ID: str = ""
+    GOOGLE_MAIL_CLIENT_SECRET: str = ""
+
     # The SMTP door for Keycloak (relay.py): Keycloak sends its emails here with this login, From MAIL_FROM, and they
     # leave through the "accounts" purpose's account. Reachable only on the internal network (deploy/*: the mail-relay
     # network; on your machine 127.0.0.1, and Keycloak's container reaches it as host.docker.internal). 0: switched off.
@@ -89,6 +112,8 @@ def deployment_problems(s: MailSettings) -> list:
         problems.append("MAIL_SMTP_HOST must point at a real mail server")
     if s.MAIL_FROM.endswith((".local", ".localhost", ".test")):
         problems.append("MAIL_FROM must be an address at a real domain")
+    if len(s.MAIL_SERVICE_TOKEN) < 24:
+        problems.append("MAIL_SERVICE_TOKEN must be a long random value (the server's key to this service)")
     if s.MAIL_RELAY_PORT and len(s.MAIL_RELAY_PASSWORD) < 16:
         problems.append("MAIL_RELAY_PASSWORD must be a long random value (Keycloak's login to the mail relay)")
     return problems

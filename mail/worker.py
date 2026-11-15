@@ -1,6 +1,7 @@
 """
-The service's loops: jobs from mail.outbound are recorded and sent, a retry loop sends the ones due again, and every
-outcome is published on mail.events for the server.
+The service's loops: jobs from mail.outbound are recorded and sent, a retry loop sends the ones due again, every
+outcome is published on mail.events for the server, mailboxes are read (inbound.py), the server's API answers (api.py),
+and Keycloak's SMTP door listens (relay.py).
 """
 import asyncio
 import json
@@ -10,7 +11,10 @@ from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from pydantic import ValidationError
 from mail.accounts.base import Outbound
 from mail.config import check_config, settings
+import uvicorn
+from mail.api import build_api
 from mail.delivery import Delivery
+from mail.inbound import Reader, kafka_announcer
 from mail.relay import Relay
 from mail.router import PURPOSES, Router
 from mail.store import Store
@@ -79,13 +83,20 @@ async def main() -> None:
     logger.info("Mail service started (fallback account %s via %s), consuming '%s'", router.fallback.address,
                 router.fallback.kind, settings.MAIL_OUTBOUND_TOPIC)
     retry = asyncio.create_task(worker.retry_forever())
+    reading = asyncio.create_task(Reader(store, router, kafka_announcer(producer)).forever())
+    api = uvicorn.Server(uvicorn.Config(build_api(store, router), host=settings.MAIL_API_HOST, port=settings.MAIL_API_PORT,
+                                        log_level="warning", access_log=False))
+    api.install_signal_handlers = lambda: None  # this loop owns the process
+    serving = asyncio.create_task(api.serve())
     relay = Relay(worker.send)
     await relay.start()
     try:
         await worker.consume(consumer)
     finally:
         await relay.stop()
-        retry.cancel()
+        api.should_exit = True
+        for task in (retry, reading, serving):
+            task.cancel()
         await consumer.stop()
         await producer.stop()
         await store.close()

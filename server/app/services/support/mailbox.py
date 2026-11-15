@@ -1,8 +1,8 @@
 """
-The support mailbox, read over IMAP: each new email becomes a reply on its ticket, or a new ticket.
+Mail to the support address: each new email becomes a reply on its ticket, or a new ticket. The mail service reads the
+mailbox (whichever account is connected for "support") and hands each new message over (services/notifications/
+mail_relay.collect), once.
 
-    poll(db)        the scheduler's job: at most every SUPPORT_POLL_SECONDS, fetches what arrived since the last UID it
-                    saw (kept as a platform setting) and handles each message once, in order
     handle(db, raw) one email: finds its ticket by the [#T-1042] tag in the subject, else by our Message-IDs in its
                     In-Reply-To / References (services/support/mail.py), else by a customer message id it answers
 
@@ -12,118 +12,25 @@ address, an "unverified" ticket without a confirmation email (a stranger can't u
 to someone else). Mail whose sender the receiving mail server could not confirm (its Authentication-Results say
 DMARC failed, or SPF failed without a passing DKIM signature) is treated like mail from a stranger, since a From address
 alone can be forged. Out-of-office and bulk mail, mail from our own addresses, and floods from one sender are dropped.
-The first time it runs, the mailbox's existing mail is left alone: only what arrives from then on is read.
 """
-import asyncio
-import imaplib
 import logging
 import re
-import time
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes, policy as email_policy
 from email.message import EmailMessage
 from email.utils import getaddresses, parseaddr
 from html import unescape
-from typing import List, Optional, Protocol, Tuple
+from typing import List, Optional, Tuple
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.identity import OrgMember, User
 from app.models.support import SupportMessage, SupportTicket
-from app.services import platform_controls
 from app.services.support import mail, tickets
 
 logger = logging.getLogger("services.support.mailbox")
-STATE = "support_mailbox"
-BATCH = 25
 MAX_PER_SENDER_HOUR = 30
 MAX_BODY = 20000
-_last_poll = 0.0
-
-
-class Mailbox(Protocol):
-    async def fetch(self, after_uid: int) -> Tuple[int, List[Tuple[int, bytes]]]:
-        """(the folder's UIDVALIDITY, [(uid, raw message)] for uids after `after_uid`, oldest first, at most BATCH)."""
-
-
-@dataclass
-class ImapMailbox:
-    host: str
-    port: int
-    username: str
-    password: str
-    folder: str = "INBOX"
-    ssl: bool = True
-
-    @classmethod
-    def from_settings(cls) -> Optional["ImapMailbox"]:
-        if not settings.SUPPORT_IMAP_HOST:
-            return None
-        return cls(settings.SUPPORT_IMAP_HOST, settings.SUPPORT_IMAP_PORT, settings.SUPPORT_IMAP_USERNAME, settings.SUPPORT_IMAP_PASSWORD,
-                   settings.SUPPORT_IMAP_FOLDER, settings.SUPPORT_IMAP_SSL)
-
-    def _fetch(self, after_uid: int) -> Tuple[int, List[Tuple[int, bytes]]]:
-        conn = imaplib.IMAP4_SSL(self.host, self.port, timeout=30) if self.ssl else imaplib.IMAP4(self.host, self.port, timeout=30)
-        try:
-            if not self.ssl:
-                conn.starttls()
-            conn.login(self.username, self.password)
-            conn.select(self.folder, readonly=True)  # read only: the mailbox stays as the team left it
-            validity = int((conn.response("UIDVALIDITY")[1] or [b"0"])[0] or 0)
-            _, data = conn.uid("search", None, f"UID {after_uid + 1}:*")
-            uids = sorted(int(u) for u in (data[0] or b"").split() if int(u) > after_uid)[:BATCH]
-            out: List[Tuple[int, bytes]] = []
-            for uid in uids:
-                _, parts = conn.uid("fetch", str(uid), "(BODY.PEEK[])")
-                raw = next((p[1] for p in parts if isinstance(p, tuple) and len(p) > 1), None)
-                if raw:
-                    out.append((uid, raw))
-            return validity, out
-        finally:
-            try:
-                conn.logout()
-            except Exception:  # noqa: BLE001
-                pass
-
-    async def fetch(self, after_uid: int) -> Tuple[int, List[Tuple[int, bytes]]]:
-        return await asyncio.to_thread(self._fetch, after_uid)
-
-
-async def poll(db: AsyncSession, now: Optional[datetime] = None, mailbox: Optional[Mailbox] = None) -> int:
-    """New mail since last time, each handled once. Returns how many messages were read."""
-    global _last_poll
-    mailbox = mailbox or ImapMailbox.from_settings()
-    if mailbox is None:
-        return 0
-    if now is None and time.monotonic() - _last_poll < settings.SUPPORT_POLL_SECONDS:
-        return 0
-    _last_poll = time.monotonic()
-    state = await platform_controls.read_key(db, STATE) or {}
-    first_run = "last_uid" not in state
-    validity, messages = await mailbox.fetch(int(state.get("last_uid", 0)))
-    if state.get("validity") not in (None, validity):  # the folder was rebuilt: its uids start over
-        validity, messages = await mailbox.fetch(0)
-        first_run = True
-    if first_run:  # leave what was already there; read what arrives from now on
-        last = max((uid for uid, _ in messages), default=0)
-        await _save(db, validity, last)
-        return 0
-    read = 0
-    for uid, raw in messages:
-        try:
-            await handle(db, raw)
-            read += 1
-        except Exception:  # noqa: BLE001  (one bad email must not stop the rest)
-            await db.rollback()
-            logger.exception("Couldn't take in support email uid %s", uid)
-        await _save(db, validity, uid)
-    return read
-
-
-async def _save(db: AsyncSession, validity: int, uid: int) -> None:
-    await platform_controls.save(db, STATE, {"validity": validity, "last_uid": uid}, by_id="system", by_name="Support mailbox")
-    await db.commit()
 
 
 # ---- one email ------------------------------------------------------------------------------------
