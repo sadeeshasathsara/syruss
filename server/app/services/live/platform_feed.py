@@ -148,6 +148,10 @@ def deliver(payload: Dict[str, Any]) -> None:
     if not _listeners:
         return
     try:
+        channel = str(payload.get("channel_id") or "")
+        if channel.startswith("support:"):  # live support: the staff queue, or one chat (services/support/live)
+            _send(channel, {"kind": payload.get("event_type"), **(payload.get("data") or {})})
+            return
         if payload.get("channel_id") == OPS:  # a fact the platform sent itself (a run started, stepped or ended)
             _send("ops", {"seq": next(_seq), **(payload.get("data") or {})})
             run = (payload.get("data") or {}).get("run_id")

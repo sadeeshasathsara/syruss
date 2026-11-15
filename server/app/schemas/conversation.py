@@ -45,6 +45,8 @@ class ConversationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     message_count: int = 0
+    # Live support from the Syruss team in this chat: state (waiting, live, ended), who joined, when, the rating
+    live_support: Optional[Dict[str, Any]] = None
     messages: Optional[List[ChatMessageResponse]] = None
 
     model_config = ConfigDict(from_attributes=True)

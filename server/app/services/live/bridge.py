@@ -59,7 +59,7 @@ class KafkaWebSocketBridge:
         """
         platform_feed.deliver(payload)
         channel_id = payload.get("channel_id")
-        if channel_id == platform_feed.OPS:
+        if channel_id == platform_feed.OPS or str(channel_id or "").startswith("support:"):  # the staff's own: never a customer's channel
             return
         if channel_id:
             await broadcaster.broadcast_to_channel(channel_id, payload)

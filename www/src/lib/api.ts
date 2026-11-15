@@ -607,6 +607,11 @@ export const api = {
       request<ChatMessage>(`/conversations/${conversationId}/messages?wait=false`, {
         method: "POST", workspaceId, body: json({ content, context }),
       }),
+    /** Live support: you are typing to the team member in the chat, you end it, or you rate it afterwards. */
+    supportTyping: (workspaceId: string, id: string) => request<void>(`/conversations/${id}/support/typing`, { method: "POST", workspaceId }),
+    supportEnd: (workspaceId: string, id: string) => request<unknown>(`/conversations/${id}/support/end`, { method: "POST", workspaceId }),
+    supportRate: (workspaceId: string, id: string, rating: "up" | "down", note?: string) =>
+      request<unknown>(`/conversations/${id}/support/rating`, { method: "POST", workspaceId, body: json({ rating, note: note || null }) }),
   },
 };
 

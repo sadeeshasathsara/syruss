@@ -818,17 +818,51 @@ export interface TicketMessage {
   files: TicketFile[];
 }
 
-export interface TicketDetail extends Ticket {
-  messages: TicketMessage[];
-  context: {
-    organization: { id: string; name: string; slug: string; status: string; plan: string | null } | null;
-    person: { id: string; name: string; email: string; status: string; last_seen_at: string | null } | null;
-    bills: { id: string; number: string; status: string; total_cents: number; currency: string; due_cents: number; due_at: string | null }[];
-    other_tickets: { id: string; number: string; subject: string; status: TicketStatus; created_at: string }[];
-  };
+/** Who a customer is, from what staff already see elsewhere (a ticket's or a live chat's side panel). */
+export interface CustomerContext {
+  organization: { id: string; name: string; slug: string; status: string; plan: string | null } | null;
+  person: { id: string; name: string; email: string; status: string; last_seen_at: string | null } | null;
+  bills: { id: string; number: string; status: string; total_cents: number; currency: string; due_cents: number; due_at: string | null }[];
 }
 
-export interface SupportSummary { new: number; unassigned: number; mine: number; breached: number; active: number }
+export interface TicketDetail extends Ticket {
+  messages: TicketMessage[];
+  context: CustomerContext & { other_tickets: { id: string; number: string; subject: string; status: TicketStatus; created_at: string }[] };
+}
+
+export interface SupportSummary { new: number; unassigned: number; mine: number; breached: number; active: number; live_waiting: number }
+
+export type LiveState = "waiting" | "live" | "ended";
+
+/** A chat in live support, as the queue shows it (the assistant's handover, not the conversation). */
+export interface LiveChatItem {
+  conversation_id: string;
+  state: LiveState;
+  tenant_id: string;
+  organization: string | null;
+  workspace: string | null;
+  person: string | null;
+  reason: string | null;
+  summary: string | null;
+  requested_at: string | null;
+  joined_at: string | null;
+  staff_id: string | null;
+  staff_name: string | null;
+}
+
+export interface LiveQueue { waiting: LiveChatItem[]; mine: LiveChatItem[]; others_live: number; online: { id: string; name: string }[] }
+
+export interface LiveMessage { id: string; role: "user" | "assistant" | "system" | "staff"; content: string; staff_name: string | null; at: string }
+
+export interface LiveChat extends LiveChatItem {
+  title: string;
+  support: { state: LiveState; ticket_number: string | null; rating: "up" | "down" | null } | null;
+  rating_note: string | null;
+  messages: LiveMessage[];
+  context: CustomerContext;
+}
+
+export type Presence = "online" | "away" | "offline";
 
 export interface SavedReply { id: string; title: string; body: string; shortcut: string | null; created_by_name: string; updated_at: string }
 

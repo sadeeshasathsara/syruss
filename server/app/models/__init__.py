@@ -50,6 +50,7 @@ from app.models.platform import (
     PlatformStaffInvitation, PlatformApproval,
 )
 from app.models.support import SupportFile, SupportMessage, SupportSavedReply, SupportTicket
+from app.models.support_live import SupportPresence
 from app.models.billing import (
     BankAccount, BillingPayment, BillingProfile, BillingRefund, BillingSequence, BillingSettings, CardCheckout, CatalogItem, CreditEntry,
     CreditNote, Invoice,
