@@ -3,7 +3,7 @@ Provider apps: the OAuth client each provider gave Syruss (Google Cloud's "Web a
 registration). Set from the admin app's Email › Provider apps tab, kept sealed in this service's database, and never
 shown again: only whether one is set, its client id and (Microsoft) its tenant are public.
 
-    get(provider)       {client_id, client_secret, tenant} or None; Google falls back to GOOGLE_MAIL_CLIENT_* in the environment
+    get(provider)       {client_id, client_secret, tenant} or None; each falls back to GOOGLE_MAIL_CLIENT_* / MICROSOFT_MAIL_CLIENT_* (and _TENANT) in the environment
     configured(provider)
     describe(provider)   what the directory may say: whether it is set (and Microsoft's tenant); never the client id or secret
     load(store)         reads them at start (and after a change)
@@ -32,6 +32,9 @@ def get(provider: str) -> Optional[Dict[str, Any]]:
         return app
     if provider == "google" and settings.GOOGLE_MAIL_CLIENT_ID and settings.GOOGLE_MAIL_CLIENT_SECRET:
         return {"client_id": settings.GOOGLE_MAIL_CLIENT_ID, "client_secret": settings.GOOGLE_MAIL_CLIENT_SECRET, "tenant": "", "from_environment": True}
+    if provider == "microsoft" and settings.MICROSOFT_MAIL_CLIENT_ID and settings.MICROSOFT_MAIL_CLIENT_SECRET:
+        return {"client_id": settings.MICROSOFT_MAIL_CLIENT_ID, "client_secret": settings.MICROSOFT_MAIL_CLIENT_SECRET,
+                "tenant": settings.MICROSOFT_MAIL_TENANT.strip(), "from_environment": True}
     return None
 
 
