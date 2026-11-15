@@ -17,7 +17,7 @@ from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, TopicPartition
 from agentic_framework.agent import memory_upkeep
 from agentic_framework.agent.loop import RunResult, WorkspaceAgent, stopped
 from agentic_framework.agent.tools import RunContext
-from agentic_framework.config import settings
+from agentic_framework.config import check_config, settings
 from agentic_framework.core_api import CoreAPI, CoreUnavailable, ToolRefused
 from agentic_framework.events import AgentEvent
 from agentic_framework.llm import get_chat_model, model_name, run_cost
@@ -297,6 +297,7 @@ class AgentWorker:
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    check_config(settings)       # a real server refuses development defaults
     token_check.check_startup()  # refuse to start without a way to verify event tokens
     memory = MemoryStore()
     await memory.init()

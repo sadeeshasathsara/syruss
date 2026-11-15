@@ -163,6 +163,8 @@ services:
     networks: [data, agent-egress]
     image: ghcr.io/sadeeshasathsara/syruss/agent:latest
     env_file: env/agent.env
+    environment:
+      ENV: production
     depends_on:
       - server
       - kafka
