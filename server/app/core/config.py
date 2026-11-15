@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool = False
     MINIO_BUCKET_NAME: str = "documents"
 
-    # "development" or "production". Production refuses the mock sign-in and the destructive dev routes.
+    # "development" (someone's machine), "test" (the test server) or "production". The test server and production refuse
+    # to start with any development default below that would matter there (passwords, keys, localhost addresses):
+    # see deployment_problems in app/core/auth/dependencies.py. Production also refuses weakened security switches.
     ENV: str = "development"
     # Keycloak (authentication only: tokens carry who you are, never what you may do)
     OIDC_ISSUER: str = "http://localhost:8080/realms/syruss"
@@ -136,6 +138,11 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.ENV.lower() == "production"
+
+    @property
+    def is_deployed(self) -> bool:
+        """A real server people reach (the test server or production), where development defaults are refused."""
+        return self.ENV.lower() in ("test", "production")
 
     # Kafka (agent events out, agent telemetry in)
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"

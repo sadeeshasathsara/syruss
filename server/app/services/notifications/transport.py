@@ -112,13 +112,13 @@ async def send(message: EmailMessage) -> None:
 
 
 def check_mail_config() -> None:
-    """Fails startup when production would send mail nowhere useful."""
+    """Fails startup when a real server (the test server or production) would send mail nowhere useful."""
     backend = settings.MAIL_BACKEND.lower()
     if backend not in ("smtp", "console", "memory"):
         raise RuntimeError("MAIL_BACKEND must be smtp, console or memory.")
-    if settings.is_production and backend != "smtp":
-        raise RuntimeError("MAIL_BACKEND must be 'smtp' in production.")
-    if settings.is_production and settings.SMTP_HOST in ("localhost", "127.0.0.1"):
-        raise RuntimeError("SMTP_HOST must point at a real mail server in production.")
+    if settings.is_deployed and backend != "smtp":
+        raise RuntimeError(f"MAIL_BACKEND must be 'smtp' on a real server ({settings.ENV}).")
+    if settings.is_deployed and settings.SMTP_HOST in ("localhost", "127.0.0.1"):
+        raise RuntimeError(f"SMTP_HOST must point at a real mail server ({settings.ENV}).")
     if settings.SMTP_SECURITY.lower() not in ("none", "starttls", "ssl"):
         raise RuntimeError("SMTP_SECURITY must be none, starttls or ssl.")
