@@ -19,6 +19,7 @@ from app.core.database import get_db_session
 from app.core.platform_permissions import PLATFORM_GRANTS
 from app.models.audit import AuditLog
 from app.models.billing import Invoice
+from app.models.conversation import Conversation
 from app.models.identity import User
 from app.models.platform import PlatformStaff
 from app.models.support import CATEGORIES, PRIORITIES, STATUSES, SupportFile, SupportSavedReply, SupportTicket
@@ -47,7 +48,8 @@ async def summary(staff: Staff = Depends(require_staff()), db: AsyncSession = De
     active = SupportTicket.status.in_(ACTIVE)
     return {"new": await count(SupportTicket.status == "new"), "unassigned": await count(active, SupportTicket.assignee_id.is_(None)),
             "mine": await count(active, SupportTicket.assignee_id == staff.user_id), "breached": await count(active, SupportTicket.breached_at.is_not(None)),
-            "active": await count(active)}
+            "active": await count(active),
+            "live_waiting": int(await db.scalar(select(func.count(Conversation.id)).where(Conversation.support_state == "waiting")) or 0)}
 
 
 @router.get("/tickets", dependencies=[VIEW])
@@ -81,13 +83,10 @@ async def inbox(status: str = Query("active", pattern="^(active|new|open|pending
     return {"items": [{**tickets.ticket_dict(t), "organization": names.get(t.tenant_id)} for t in rows]}
 
 
-@router.get("/tickets/{ticket_id}", dependencies=[VIEW])
-async def ticket(ticket_id: str, db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
-    """The whole conversation (internal notes included), its files, and the customer's context."""
-    t = await _ticket(db, ticket_id)
-    files = await tickets.files_of(db, t.id)
-    tenant = await db.get(Tenant, t.tenant_id) if t.tenant_id else None
-    person = await db.get(User, t.opened_by) if t.opened_by else None
+async def customer_context(db: AsyncSession, tenant_id: Optional[str], person_id: Optional[str]) -> Dict[str, Any]:
+    """Who the customer is, from what staff already see elsewhere: their organization and plan, the person, recent bills."""
+    tenant = await db.get(Tenant, tenant_id) if tenant_id else None
+    person = await db.get(User, person_id) if person_id else None
     bills, plan = [], None
     if tenant:
         from app.services.billing import service as billing
@@ -96,6 +95,19 @@ async def ticket(ticket_id: str, db: AsyncSession = Depends(get_db_session)) -> 
             bills.append({"id": i.id, "number": i.number, "status": i.status, "total_cents": i.total_cents, "currency": i.currency,
                           "due_cents": invoice_service.amount_due(i), "due_at": i.due_at})
         plan = (await billing.summary(db, tenant.id)).get("plan")
+    return {
+        "organization": {"id": tenant.id, "name": tenant.name, "slug": tenant.slug, "status": tenant.status, "plan": plan} if tenant else None,
+        "person": {"id": person.id, "name": person.display_name, "email": person.email, "status": person.status,
+                   "last_seen_at": person.last_seen_at} if person else None,
+        "bills": bills,
+    }
+
+
+@router.get("/tickets/{ticket_id}", dependencies=[VIEW])
+async def ticket(ticket_id: str, db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
+    """The whole conversation (internal notes included), its files, and the customer's context."""
+    t = await _ticket(db, ticket_id)
+    files = await tickets.files_of(db, t.id)
     others = (await db.execute(select(SupportTicket).where(
         SupportTicket.id != t.id, or_(SupportTicket.requester_email == t.requester_email, SupportTicket.tenant_id == t.tenant_id) if t.tenant_id
         else SupportTicket.requester_email == t.requester_email).order_by(SupportTicket.created_at.desc()).limit(5))).scalars().all()
@@ -103,10 +115,7 @@ async def ticket(ticket_id: str, db: AsyncSession = Depends(get_db_session)) -> 
         **tickets.ticket_dict(t),
         "messages": [tickets.message_dict(m, files.get(m.id, ())) for m in await tickets.messages_of(db, t.id, internal=True)],
         "context": {
-            "organization": {"id": tenant.id, "name": tenant.name, "slug": tenant.slug, "status": tenant.status, "plan": plan} if tenant else None,
-            "person": {"id": person.id, "name": person.display_name, "email": person.email, "status": person.status,
-                       "last_seen_at": person.last_seen_at} if person else None,
-            "bills": bills,
+            **await customer_context(db, t.tenant_id, t.opened_by),
             "other_tickets": [{"id": o.id, "number": o.number, "subject": o.subject, "status": o.status, "created_at": o.created_at} for o in others],
         },
     }

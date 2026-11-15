@@ -270,7 +270,8 @@ async def conversation_history(conversation_id: str, limit: int = Query(20, ge=1
         .order_by(ChatMessage.created_at.desc()).limit(limit)
     )).scalars().all()
     return [{"id": m.id, "role": m.role, "content": m.content, "at": m.created_at,
-             "actions": (m.agent_trace or {}).get("actions") or []} for m in reversed(rows)]
+             "actions": (m.agent_trace or {}).get("actions") or [],
+             **({"name": ((m.agent_trace or {}).get("staff") or {}).get("name")} if m.role == "staff" else {})} for m in reversed(rows)]
 
 
 @router.post("/conversations/{conversation_id}/messages", status_code=201)
@@ -284,6 +285,9 @@ async def reply_in_chat(conversation_id: str, body: ChatReplyBody, ws: Workspace
     if event is not None and await _waking_conversation(ws) != conv.id:
         raise HTTPException(status_code=403, detail=(
             "Nobody wrote to you in that conversation in this run. You can only reply where a person wrote to you."))
+    if conv.support_state == "live":
+        raise HTTPException(status_code=409, detail=(
+            "Someone from the Syruss team is talking with them in this chat now. Stay quiet: don't reply; finish without a reply."))
     body.content = await for_people(ws, body.content, "chat")
     msg = ChatMessage(
         conversation_id=conv.id, tenant_id=ws.tenant_id, role="assistant", content=body.content,

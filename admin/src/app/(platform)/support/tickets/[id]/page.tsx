@@ -7,7 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { field } from "@/components/ops/Bits";
 import { useStaff } from "@/components/shell/AdminFrame";
-import { CATEGORY, PRIORITY, STATUS, StatusPill, SupportTabs, dueIn, fillReply } from "@/components/support/Bits";
+import { CATEGORY, CustomerPanel, PRIORITY, STATUS, StatusPill, SupportTabs, dueIn, fillReply } from "@/components/support/Bits";
 import { Bar, ErrorNote, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
@@ -15,8 +15,6 @@ import { Problem } from "@/components/ui/Problem";
 import { api } from "@/lib/api";
 import { ago, cn, dateTime } from "@/lib/format";
 import type { TicketDetail, TicketMessage } from "@/lib/types";
-
-const money = (cents: number, currency: string) => `${(cents / 100).toFixed(2)} ${currency}`;
 
 export default function TicketPage() {
   const { id } = useParams<{ id: string }>();
@@ -206,49 +204,22 @@ function Controls({ t }: { t: TicketDetail }) {
 }
 
 function Context({ t }: { t: TicketDetail }) {
-  const c = t.context;
+  const others = t.context.other_tickets;
   return (
-    <Panel title="Customer">
-      <div className="flex flex-col gap-3 text-body">
-        {c.person ? (
-          <div>
-            <Link href={`/accounts/people/${c.person.id}`} className="font-medium text-ink hover:underline">{c.person.name}</Link>
-            <p className="text-meta text-muted">{c.person.email}{c.person.last_seen_at && ` · seen ${ago(c.person.last_seen_at).toLowerCase()}`}</p>
-          </div>
-        ) : <p className="text-meta text-muted">{t.requester_email}: no Syruss account{t.unverified ? " (unverified sender)" : ""}.</p>}
-        {c.organization && (
-          <div>
-            <Link href={`/accounts/organizations/${c.organization.id}`} className="font-medium text-ink hover:underline">{c.organization.name}</Link>
-            <p className="text-meta text-muted">{c.organization.plan ?? "No plan"} · {c.organization.status}</p>
-          </div>
-        )}
-        {!!c.bills.length && (
-          <div>
-            <p className="mb-1 text-meta font-medium text-muted">Recent bills</p>
-            <ul className="flex flex-col gap-1">
-              {c.bills.map((b) => (
-                <li key={b.id} className="flex items-center justify-between gap-2 text-meta">
-                  <span className="num text-ink">{b.number}</span>
-                  <span className="text-muted">{b.status}{b.due_cents > 0 ? ` · ${money(b.due_cents, b.currency)} due` : ""}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {!!c.other_tickets.length && (
-          <div>
-            <p className="mb-1 text-meta font-medium text-muted">Other tickets</p>
-            <ul className="flex flex-col gap-1">
-              {c.other_tickets.map((o) => (
-                <li key={o.id} className="flex items-center justify-between gap-2 text-meta">
-                  <Link href={`/support/tickets/${o.id}`} className="min-w-0 truncate text-ink hover:underline">{o.number} {o.subject}</Link>
-                  <StatusPill status={o.status} />
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-    </Panel>
+    <CustomerPanel c={t.context} missing={`${t.requester_email}: no Syruss account${t.unverified ? " (unverified sender)" : ""}.`}>
+      {!!others.length && (
+        <div>
+          <p className="mb-1 text-meta font-medium text-muted">Other tickets</p>
+          <ul className="flex flex-col gap-1">
+            {others.map((o) => (
+              <li key={o.id} className="flex items-center justify-between gap-2 text-meta">
+                <Link href={`/support/tickets/${o.id}`} className="min-w-0 truncate text-ink hover:underline">{o.number} {o.subject}</Link>
+                <StatusPill status={o.status} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </CustomerPanel>
   );
 }

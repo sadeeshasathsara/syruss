@@ -23,3 +23,17 @@ async def create_support_ticket(ctx: RunContext, a: TicketArgs) -> ToolOutcome:
         body["invoice_number"] = a.bill_number
     result = await ctx.api.post("/support/tickets", body)
     return ToolOutcome(dump(result))
+
+
+class LiveArgs(BaseModel):
+    reason: str = Field(..., description="What they need a person for, in a few words")
+    summary: str = Field(..., description="For the team member who joins: what they asked, what you checked and found, and what "
+                         "you tried, so they can help without asking again")
+
+
+@tool("request_live_support", "Ask someone from the Syruss team to join this chat now, when the person asks to talk to a "
+      "person or needs help you can't give and it can't wait. Works only when someone is online: if not, offer a support "
+      "ticket instead. Once someone joins, they answer in this chat and you stay quiet until they leave.", LiveArgs)
+async def request_live_support(ctx: RunContext, a: LiveArgs) -> ToolOutcome:
+    result = await ctx.api.post("/support/live", a.model_dump())
+    return ToolOutcome(dump(result))

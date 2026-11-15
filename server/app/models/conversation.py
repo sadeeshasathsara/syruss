@@ -38,6 +38,11 @@ class Conversation(Base):
     agent_state: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)         # agent: where it left off, until resolved
     resolution: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # chat: live support from the Syruss team in this same chat (services/support/live). "waiting" for someone to
+    # join, "live" while they answer (the agent stays silent), "ended" afterwards; `support` holds who joined, the
+    # agent's handover summary, timestamps, a ticket made from it and the person's rating.
+    support_state: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
+    support: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
@@ -49,6 +54,11 @@ class Conversation(Base):
         order_by="ChatMessage.created_at",
         lazy="selectin"
     )
+
+    @property
+    def live_support(self) -> Optional[dict]:
+        from app.services.support.live import public
+        return public(self)
 
     @property
     def message_count(self) -> int:
@@ -66,7 +76,8 @@ class ChatMessage(Base):
     conversation_id: Mapped[str] = mapped_column(String(64), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
     tenant_id: Mapped[str] = mapped_column(String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
 
-    role: Mapped[str] = mapped_column(String(20), nullable=False) # "user" | "assistant" | "system"
+    # "user" | "assistant" | "system" | "staff" (someone from the Syruss team in live support: agent_trace["staff"] names them)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     evidence_citations: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
