@@ -6,6 +6,7 @@ The platform's live view over Server-Sent Events, through the admin app's signed
   scope=document&id=<document>    one document: every event about it
   scope=support                   live support's queue: chats waiting, taken and ended (support.respond)
   scope=chat&id=<conversation>    a live chat you took: its messages and typing (support.respond, and it is yours)
+  scope=mail                      the Email page: what changed in the mail service's directory (staff.manage)
 
 The stream starts with a snapshot (what is running now), so a page is right before the first event. Who is listening is
 checked again every minute (still on the staff, the content grant still open), and the stream ends after a few minutes so
@@ -26,7 +27,7 @@ from app.models.conversation import Conversation
 from app.models.document import Document
 from app.models.identity import User
 from app.models.trace import AgentExecutionTrace as Run
-from app.services.live import platform_feed
+from app.services.live import mail_feed, platform_feed
 from app.services.support import live as support_live
 
 router = APIRouter()
@@ -57,7 +58,7 @@ async def _still_allowed(staff: Staff, tenant_id: Optional[str], content: bool, 
 @router.get("/live")
 async def live(
     request: Request,
-    scope: Literal["ops", "run", "document", "support", "chat"] = "ops",
+    scope: Literal["ops", "run", "document", "support", "chat", "mail"] = "ops",
     id: Optional[str] = None,
     tenant_id: Optional[str] = None,
     workspace_id: Optional[str] = None,
@@ -82,6 +83,12 @@ async def live(
                 chat_id = conv.id
                 listener = platform_feed.listen(support_live.chat_channel(conv.id))
                 snapshot = {"kind": "snapshot", "conversation_id": conv.id}
+        elif scope == "mail":
+            if not staff.can("staff.manage"):
+                raise HTTPException(status_code=403, detail="Email is for owners.")
+            need = "staff.manage"
+            listener = platform_feed.listen(mail_feed.CHANNEL)
+            snapshot = {"kind": "snapshot"}
         elif scope == "ops":
             running = list((await db.execute(select(Run).where(Run.status == "RUNNING").order_by(Run.started_at).limit(500))).scalars().all())
             snapshot = {"kind": "snapshot", "at": datetime.now(timezone.utc), **await _labelled(db, staff, running)}
