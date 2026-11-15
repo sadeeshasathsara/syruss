@@ -21,6 +21,7 @@ from mail.operations import Operations
 from mail.relay import Relay
 from mail.router import Router
 from mail.store import Store
+from mail.kafka_security import kafka_security
 
 logger = logging.getLogger("mail.worker")
 
@@ -89,7 +90,7 @@ async def main() -> None:
     await apps.load(store)
     router = Router(store)
     await bus.ensure_topics()
-    producer = AIOKafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, max_request_size=settings.MAIL_MAX_MESSAGE_BYTES + 1_000_000)
+    producer = AIOKafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(), max_request_size=settings.MAIL_MAX_MESSAGE_BYTES + 1_000_000)
     await producer.start()
     transport = bus.Bus(producer)
     directory = Directory(store, router, transport.send)
@@ -99,7 +100,7 @@ async def main() -> None:
     logger.info("Secrets are sealed to key %s: the admin app shows the same fingerprint (compare them once).", sealing.fingerprint(public))
     if not settings.MAIL_TRUSTED_SERVER_KEY:
         logger.warning("MAIL_TRUSTED_SERVER_KEY isn't set: commands from the server will be refused until it is.")
-    consumer = AIOKafkaConsumer(settings.MAIL_OUTBOUND_TOPIC, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+    consumer = AIOKafkaConsumer(settings.MAIL_OUTBOUND_TOPIC, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(),
                                 group_id=settings.CONSUMER_GROUP, enable_auto_commit=False, auto_offset_reset="earliest")
     await consumer.start()
     worker = MailWorker(Delivery(store, router), producer)

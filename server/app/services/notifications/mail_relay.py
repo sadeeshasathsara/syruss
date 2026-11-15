@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.secrets import unseal
 from app.models.mail import MailOutbox
+from app.core.kafka_security import kafka_security
 
 try:
     from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
@@ -66,7 +67,7 @@ class MailRelay:
         if self._producer:
             return True
         try:
-            producer = AIOKafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, acks="all", max_request_size=1_048_576)
+            producer = AIOKafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(), acks="all", max_request_size=1_048_576)
             await producer.start()
             self._producer = producer
             return True
@@ -148,7 +149,7 @@ class MailEvents:
     async def _run(self) -> None:
         while True:
             try:
-                self._consumer = AIOKafkaConsumer(settings.MAIL_EVENTS_TOPIC, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                self._consumer = AIOKafkaConsumer(settings.MAIL_EVENTS_TOPIC, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(),
                                                   group_id="core-mail-events", enable_auto_commit=False, auto_offset_reset="earliest")
                 await self._consumer.start()
                 async for message in self._consumer:
@@ -209,7 +210,7 @@ class MailInbound(MailEvents):
     async def _run(self) -> None:
         while True:
             try:
-                self._consumer = AIOKafkaConsumer(settings.MAIL_INBOUND_TOPIC, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                self._consumer = AIOKafkaConsumer(settings.MAIL_INBOUND_TOPIC, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(),
                                                   group_id="core-mail-inbound", enable_auto_commit=False, auto_offset_reset="earliest",
                                                   max_partition_fetch_bytes=30_000_000, fetch_max_bytes=60_000_000)
                 await self._consumer.start()

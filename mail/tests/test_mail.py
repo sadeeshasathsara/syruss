@@ -12,7 +12,7 @@ from mail.accounts.mime import build
 from mail.config import MailSettings, check_config, settings
 from mail.delivery import Delivery, backoff, with_defaults
 from mail.router import Router
-from mail.store import AccountRow, JobRow, RouteRow, seal, unseal
+from mail.store import AccountRow, JobRow, seal, unseal
 from mail.worker import MailWorker
 from mail.tests.conftest import job
 
@@ -64,17 +64,17 @@ def test_secrets_are_sealed():
 
 
 def test_a_real_server_refuses_development_values():
-    dev = dict(_env_file=None, MAIL_BACKEND="smtp", POSTGRES_PASSWORD="postgrespassword")
+    dev = dict(_env_file=None, MAIL_BACKEND="none", POSTGRES_PASSWORD="postgrespassword")
     check_config(MailSettings(**dev))
     for env in ("test", "production"):
         with pytest.raises(RuntimeError, match=f"as {env}") as e:
             check_config(MailSettings(**dev, ENV=env))
-        for name in ("POSTGRES_PASSWORD", "MAIL_SECRETS_KEY", "MAIL_SMTP_HOST", "MAIL_FROM", "MAIL_TRUSTED_SERVER_KEY"):
+        for name in ("POSTGRES_PASSWORD", "MAIL_SECRETS_KEY", "MAIL_FROM", "MAIL_TRUSTED_SERVER_KEY"):
             assert name in str(e.value)
-    with pytest.raises(RuntimeError, match="MAIL_BACKEND must be smtp"):
+    with pytest.raises(RuntimeError, match="MAIL_BACKEND must be none"):
         check_config(MailSettings(_env_file=None, ENV="test", MAIL_BACKEND="console"))
-    ready = dict(_env_file=None, ENV="production", MAIL_BACKEND="smtp", POSTGRES_PASSWORD="real", MAIL_SECRETS_KEY="k",
-                 MAIL_SMTP_HOST="smtp.example.com", MAIL_FROM="no-reply@example.com", MAIL_RELAY_PASSWORD="a-long-random-relay-password",
+    ready = dict(_env_file=None, ENV="production", MAIL_BACKEND="none", POSTGRES_PASSWORD="real", MAIL_SECRETS_KEY="k",
+                 MAIL_FROM="no-reply@example.com", MAIL_RELAY_PASSWORD="a-long-random-relay-password",
                  MAIL_TRUSTED_SERVER_KEY="AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=")
     check_config(MailSettings(**ready))
     with pytest.raises(RuntimeError, match="MAIL_RELAY_PASSWORD"):
@@ -94,9 +94,7 @@ async def add_account(store, id="acc-1", granted=("send", "read"), status="activ
 
 
 async def route(store, purpose, account_id):
-    async with store.session() as s:
-        await s.merge(RouteRow(purpose=purpose, account_id=account_id))
-        await s.commit()
+    await store.set_route(purpose, account_id)
 
 
 async def test_purposes_use_their_account_or_the_fallback(store, fallback):

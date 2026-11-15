@@ -35,6 +35,7 @@ from app.core.database import AsyncSessionLocal
 from app.models.outbox import AgentEventOutbox
 from app.models.template import DocumentTemplate
 from app.services import platform_controls
+from app.core.kafka_security import kafka_security
 
 try:
     from aiokafka import AIOKafkaProducer
@@ -146,7 +147,7 @@ class AgentEventRelay:
         if self._producer:
             return True
         try:
-            producer = AIOKafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, acks="all")
+            producer = AIOKafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(), acks="all")
             await producer.start()
             self._producer = producer
             logger.info("Agent event relay connected to Kafka at %s", settings.KAFKA_BOOTSTRAP_SERVERS)
