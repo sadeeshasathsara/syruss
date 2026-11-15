@@ -58,7 +58,9 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
   const dismissToast = useCallback((id: string) => setToasts((t) => t.filter((x) => x.id !== id)), []);
 
-  useEffect(() => armSound(), []);
+  useEffect(() => {
+    armSound();
+  }, []);
 
   // Live: one stream for the signed-in person; the browser reconnects it by itself.
   useEffect(() => {
