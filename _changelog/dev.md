@@ -14,12 +14,22 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.14.0-dev.1` | 2026-11-15 | [What changed](#admin-0140-dev1) |
+| **admin** | `0.14.1-dev.1` | 2026-11-15 | [What changed](#admin-0141-dev1) |
 | **agent** | `0.12.0-dev.1` | 2026-11-15 | [What changed](#agent-0120-dev1) |
 | **mail** | `0.2.0-dev.1` | 2026-11-15 | [What changed](#mail-020-dev1) |
 | **server** | `0.21.0-dev.1` | 2026-11-15 | [What changed](#server-0210-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
-| **www** | `0.15.0-dev.1` | 2026-11-15 | [What changed](#www-0150-dev1) |
+| **www** | `0.15.1-dev.1` | 2026-11-15 | [What changed](#www-0151-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### admin (0.14.1-dev.1)
+- **Live chats no longer crash when a chat opens.** Scrolling to the newest message ran in an effect that returned the browser's answer to React ("destroy is not a function").
+- **Changing your password from Settings asks for your current one plainly.** Keycloak first confirms it's you, but its page looked like a normal sign-in ("Welcome back", "Password", "Sign in"). People typed their new password there and got "Invalid username or password". It now says "Confirm it's you", asks for your **Current password**, says you'll choose the new one on the next page, and its button reads Continue. The same page shows when setting up or removing an authenticator.
+
+### www (0.15.1-dev.1)
+- **Live chats no longer crash when a chat opens.** Scrolling to the newest message ran in an effect that returned the browser's answer to React ("destroy is not a function").
+- **Changing your password from Settings asks for your current one plainly.** Keycloak first confirms it's you, but its page looked like a normal sign-in ("Welcome back", "Password", "Sign in"). People typed their new password there and got "Invalid username or password". It now says "Confirm it's you", asks for your **Current password**, says you'll choose the new one on the next page, and its button reads Continue. The same page shows when setting up or removing an authenticator.
 
 ## [2026-11-15] - Release via dev
 
