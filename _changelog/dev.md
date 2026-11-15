@@ -14,12 +14,78 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.12.0-dev.1` | 2026-11-15 | [What changed](#admin-0120-dev1) |
-| **agent** | `0.11.1-dev.1` | 2026-11-15 | [What changed](#agent-0111-dev1) |
+| **admin** | `0.13.0-dev.1` | 2026-11-15 | [What changed](#admin-0130-dev1) |
+| **agent** | `0.12.0-dev.1` | 2026-11-15 | [What changed](#agent-0120-dev1) |
 | **mail** | `0.2.0-dev.1` | 2026-11-15 | [What changed](#mail-020-dev1) |
-| **server** | `0.20.0-dev.1` | 2026-11-15 | [What changed](#server-0200-dev1) |
+| **server** | `0.21.0-dev.1` | 2026-11-15 | [What changed](#server-0210-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
-| **www** | `0.14.0-dev.1` | 2026-11-15 | [What changed](#www-0140-dev1) |
+| **www** | `0.15.0-dev.1` | 2026-11-15 | [What changed](#www-0150-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### admin (0.13.0-dev.1)
+- **The admin app shows a document and its agent runs in full.**
+- **The document itself** on the document and run pages: page by page, with zoom and "open full size".
+- **Every journey step opens** to show everything recorded about it: the event that woke the agent, its tries and errors, each log line, review, question, delivery attempt (with status code, request and response) and change. Opening one closes the one open before.
+- **A run is one journey step** that opens to its agent steps.
+- **Each agent step shows:**
+- what was sent to the model: on step 1, the agent's instructions and the briefing; after that, the tool results that came back, plus "Show the full prompt";
+- what the model answered, and its thinking when the provider returns it;
+- each tool it ran, with what it sent and what came back;
+- its tokens.
+- **Tokens add up:** per step, per run, and per document (in, out and total).
+- **Each run links to the run of the same document before and after it.** Runs of one document form a linked list ("run 2 of 3"), with Previous and Next on the run page.
+- **The agent records** each step's tokens, the model's thinking, and what it added before a call (reminders, requested page images). It sends the run's prompt once. The system prompt is stored once per version; the briefing is cleared with old steps after `RUN_STEPS_RETENTION_DAYS`.
+- **Staff see documents and runs without opening anything.** The support-access grant (the "Open content" step, the customer's switch, its banner and email) is gone. The customer's Settings → Organization page "Support and privacy" says plainly what the Syruss team sees and why.
+- Migration `0038`. Existing runs are linked per document in the order they started.
+
+### agent (0.12.0-dev.1)
+- **The admin app shows a document and its agent runs in full.**
+- **The document itself** on the document and run pages: page by page, with zoom and "open full size".
+- **Every journey step opens** to show everything recorded about it: the event that woke the agent, its tries and errors, each log line, review, question, delivery attempt (with status code, request and response) and change. Opening one closes the one open before.
+- **A run is one journey step** that opens to its agent steps.
+- **Each agent step shows:**
+- what was sent to the model: on step 1, the agent's instructions and the briefing; after that, the tool results that came back, plus "Show the full prompt";
+- what the model answered, and its thinking when the provider returns it;
+- each tool it ran, with what it sent and what came back;
+- its tokens.
+- **Tokens add up:** per step, per run, and per document (in, out and total).
+- **Each run links to the run of the same document before and after it.** Runs of one document form a linked list ("run 2 of 3"), with Previous and Next on the run page.
+- **The agent records** each step's tokens, the model's thinking, and what it added before a call (reminders, requested page images). It sends the run's prompt once. The system prompt is stored once per version; the briefing is cleared with old steps after `RUN_STEPS_RETENTION_DAYS`.
+- **Staff see documents and runs without opening anything.** The support-access grant (the "Open content" step, the customer's switch, its banner and email) is gone. The customer's Settings → Organization page "Support and privacy" says plainly what the Syruss team sees and why.
+- Migration `0038`. Existing runs are linked per document in the order they started.
+
+### server (0.21.0-dev.1)
+- **The admin app shows a document and its agent runs in full.**
+- **The document itself** on the document and run pages: page by page, with zoom and "open full size".
+- **Every journey step opens** to show everything recorded about it: the event that woke the agent, its tries and errors, each log line, review, question, delivery attempt (with status code, request and response) and change. Opening one closes the one open before.
+- **A run is one journey step** that opens to its agent steps.
+- **Each agent step shows:**
+- what was sent to the model: on step 1, the agent's instructions and the briefing; after that, the tool results that came back, plus "Show the full prompt";
+- what the model answered, and its thinking when the provider returns it;
+- each tool it ran, with what it sent and what came back;
+- its tokens.
+- **Tokens add up:** per step, per run, and per document (in, out and total).
+- **Each run links to the run of the same document before and after it.** Runs of one document form a linked list ("run 2 of 3"), with Previous and Next on the run page.
+- **The agent records** each step's tokens, the model's thinking, and what it added before a call (reminders, requested page images). It sends the run's prompt once. The system prompt is stored once per version; the briefing is cleared with old steps after `RUN_STEPS_RETENTION_DAYS`.
+- **Staff see documents and runs without opening anything.** The support-access grant (the "Open content" step, the customer's switch, its banner and email) is gone. The customer's Settings → Organization page "Support and privacy" says plainly what the Syruss team sees and why.
+- Migration `0038`. Existing runs are linked per document in the order they started.
+
+### www (0.15.0-dev.1)
+- **The admin app shows a document and its agent runs in full.**
+- **The document itself** on the document and run pages: page by page, with zoom and "open full size".
+- **Every journey step opens** to show everything recorded about it: the event that woke the agent, its tries and errors, each log line, review, question, delivery attempt (with status code, request and response) and change. Opening one closes the one open before.
+- **A run is one journey step** that opens to its agent steps.
+- **Each agent step shows:**
+- what was sent to the model: on step 1, the agent's instructions and the briefing; after that, the tool results that came back, plus "Show the full prompt";
+- what the model answered, and its thinking when the provider returns it;
+- each tool it ran, with what it sent and what came back;
+- its tokens.
+- **Tokens add up:** per step, per run, and per document (in, out and total).
+- **Each run links to the run of the same document before and after it.** Runs of one document form a linked list ("run 2 of 3"), with Previous and Next on the run page.
+- **The agent records** each step's tokens, the model's thinking, and what it added before a call (reminders, requested page images). It sends the run's prompt once. The system prompt is stored once per version; the briefing is cleared with old steps after `RUN_STEPS_RETENTION_DAYS`.
+- **Staff see documents and runs without opening anything.** The support-access grant (the "Open content" step, the customer's switch, its banner and email) is gone. The customer's Settings → Organization page "Support and privacy" says plainly what the Syruss team sees and why.
+- Migration `0038`. Existing runs are linked per document in the order they started.
 
 ## [2026-11-15] - Release via dev
 
