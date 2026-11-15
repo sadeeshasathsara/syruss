@@ -211,7 +211,7 @@ async def oauth_finish(provider: Provider, body: OAuthFinishIn, staff: Staff = D
 
 
 class AppIn(BaseModel):
-    client_id: str = Field(..., min_length=3, max_length=300)
+    client_id: str = Field("", max_length=300)                    # blank: keep the one already set (it is never sent back to the browser)
     tenant: str = Field("", max_length=100)                       # Microsoft only: common, organizations, consumers, or a directory
     client_secret: str = Field("", max_length=500)                # plain: only for a caller that cannot seal it itself
     sealed: Optional[str] = Field(None, max_length=4096)           # {"client_secret": ...} sealed to the mail service's key (the admin app's browser does this)
@@ -226,7 +226,7 @@ async def set_app(provider: Provider, body: AppIn, staff: Staff = Depends(CHANGE
     if sealed:
         payload["sealed"] = sealed
     await _command("provider_app.set", staff, payload)
-    record(db, staff, "mail.app_set", "mail_provider", provider, details={"client_id": payload["client_id"]})
+    record(db, staff, "mail.app_set", "mail_provider", provider)
     await db.commit()
     await _settled()
     return await overview(staff)

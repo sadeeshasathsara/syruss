@@ -54,3 +54,23 @@ async def test_an_older_installs_routes_are_copied_into_its_jobs_once(store):
         await store._fold_routes(conn)                  # running it again changes nothing
         assert await conn.scalar(text("SELECT to_regclass('public.mail_routes') IS NULL"))
     assert await store.routes() == {"support": "acc-old"}
+
+
+async def test_a_problem_shows_only_while_it_is_still_true(store, fallback):
+    """An old failure through a mailbox that has since been replaced, or one a later message got past, isn't shown."""
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    await add_account(store, "acc-new", granted=("send", "read"), imap_host="imap.example.com")
+    async with store.session() as s:
+        s.add(JobRow(id="old-fail", purpose="support", to="a@b.c", subject="x", status="dead", attempts=6, last_error="The account env wasn't given read.",
+                     account_id="env", created_at=now - timedelta(hours=2)))
+        await s.commit()
+    directory = Directory(store, Router(store, fallback), lambda *a: None)
+    await route(store, "support", "acc-new")                      # the job now goes through another mailbox
+    assert (await directory.snapshot())["job:support"]["last_error"] is None
+    await route(store, "support", None)                           # back on the one that failed: still true
+    assert "wasn't given read" in (await directory.snapshot())["job:support"]["last_error"]
+    async with store.session() as s:
+        s.add(JobRow(id="later-ok", purpose="support", to="a@b.c", subject="y", status="sent", attempts=1, account_id="env", created_at=now))
+        await s.commit()
+    assert (await directory.snapshot())["job:support"]["last_error"] is None   # a later message went out

@@ -22,7 +22,7 @@ const GUIDE: Record<MailProvider, string> = {
 export function AppsView({ o }: { o: MailOverview }) {
   return (
     <>
-      {(["google", "microsoft"] as MailProvider[]).map((p) => <ProviderApp key={`${p}:${o.providers[p].client_id ?? ""}:${o.providers[p].tenant ?? ""}`} provider={p} o={o} />)}
+      {(["google", "microsoft"] as MailProvider[]).map((p) => <ProviderApp key={`${p}:${o.providers[p].tenant ?? ""}`} provider={p} o={o} />)}
     </>
   );
 }
@@ -31,7 +31,7 @@ function ProviderApp({ provider, o }: { provider: MailProvider; o: MailOverview 
   const queryClient = useQueryClient();
   const info = o.providers[provider];
   const label = PROVIDER_LABEL[provider];
-  const [clientId, setClientId] = useState(info.client_id ?? "");
+  const [clientId, setClientId] = useState("");
   const [tenant, setTenant] = useState(info.tenant ?? "");
   const [secret, setSecret] = useState("");
   const [sealing, setSealing] = useState<boolean | null>(null);
@@ -51,7 +51,7 @@ function ProviderApp({ provider, o }: { provider: MailProvider; o: MailOverview 
       }
       return api.mail.setApp(provider, body);
     },
-    onSuccess: () => { setSecret(""); refresh(); },
+    onSuccess: () => { setSecret(""); setClientId(""); refresh(); },
   });
   const clear = useMutation({ mutationFn: () => api.mail.clearApp(provider), onSuccess: () => { setConfirming(false); refresh(); } });
   return (
@@ -64,7 +64,8 @@ function ProviderApp({ provider, o }: { provider: MailProvider; o: MailOverview 
         </div>
         <div className="flex flex-wrap gap-3">
           <label className="flex flex-col gap-1 text-meta text-muted">Client id
-            <input value={clientId} autoComplete="off" className={cn(field, "w-96 max-w-full")} onChange={(e) => setClientId(e.target.value)} />
+            <input value={clientId} autoComplete="off" className={cn(field, "w-96 max-w-full")}
+              placeholder={info.configured && !info.from_environment ? "Leave empty to keep the one set" : ""} onChange={(e) => setClientId(e.target.value)} />
           </label>
           <label className="flex flex-col gap-1 text-meta text-muted">Client secret
             <input type="password" value={secret} autoComplete="off" className={cn(field, "w-72")}
@@ -83,7 +84,7 @@ function ProviderApp({ provider, o }: { provider: MailProvider; o: MailOverview 
             : "This browser can't seal the secret itself, so the server seals it to the mail service's key. Use a current Chrome, Firefox or Safari to seal it here."}
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="submit" size="sm" variant="primary" disabled={!clientId.trim() || (!info.configured && !secret) || save.isPending}>{save.isPending ? "Saving…" : "Save app"}</Button>
+          <Button type="submit" size="sm" variant="primary" disabled={(!info.configured && (!clientId.trim() || !secret)) || (info.configured && !clientId.trim() && !secret && tenant.trim() === (info.tenant ?? "")) || save.isPending}>{save.isPending ? "Saving…" : "Save app"}</Button>
           {info.configured && !info.from_environment && (confirming ? (
             <span className="flex items-center gap-2 text-meta text-muted">Remove it? Mailboxes already connected stop working until it is set again.
               <Button size="sm" variant="danger" disabled={clear.isPending} onClick={() => clear.mutate()}>Yes, remove</Button>

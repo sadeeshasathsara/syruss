@@ -164,8 +164,10 @@ async def test_a_provider_app_is_kept_sealed_and_never_shown_again(store, fallba
     async with store.session() as s:
         raw = (await s.execute(select(SettingRow).where(SettingRow.key == "app:microsoft"))).scalar_one().value
     assert "super-secret-value" not in raw and "client-123" not in raw
-    assert apps.describe("microsoft") == {"configured": True, "client_id": "client-123", "from_environment": False, "tenant": "contoso.com"}
-    assert "super-secret-value" not in json.dumps(apps.describe("microsoft"))
+    assert apps.describe("microsoft") == {"configured": True, "from_environment": False, "tenant": "contoso.com"}   # never the client id or secret
+    assert "super-secret-value" not in json.dumps(apps.describe("microsoft")) and "client-123" not in json.dumps(apps.describe("microsoft"))
+    await ops.app_set("microsoft", "", "", "contoso.com")        # a blank client id and secret keep both
+    assert apps.get("microsoft")["client_id"] == "client-123" and apps.get("microsoft")["client_secret"] == "super-secret-value"
     await ops.app_set("microsoft", "client-456", "", "")          # a blank secret keeps the one set
     assert apps.get("microsoft")["client_secret"] == "super-secret-value" and apps.get("microsoft")["client_id"] == "client-456"
     apps._cache.clear()
@@ -186,7 +188,7 @@ async def test_google_still_works_from_the_environment(monkeypatch):
     assert not apps.configured("google")
     monkeypatch.setattr(settings, "GOOGLE_MAIL_CLIENT_ID", "env-id")
     monkeypatch.setattr(settings, "GOOGLE_MAIL_CLIENT_SECRET", "env-secret")
-    assert apps.describe("google") == {"configured": True, "client_id": "env-id", "from_environment": True}
+    assert apps.describe("google") == {"configured": True, "from_environment": True}
 
 
 async def test_the_server_sets_an_app_through_a_signed_command_with_the_secret_sealed(store, fallback, monkeypatch):
@@ -208,4 +210,17 @@ async def test_the_server_sets_an_app_through_a_signed_command_with_the_secret_s
     assert apps.get("microsoft")["client_secret"] == "from-the-browser"
     snapshot = await Directory(store, Router(store, fallback), lambda *a: None).snapshot()
     assert snapshot["meta"]["providers"]["microsoft"]["configured"] and "from-the-browser" not in json.dumps(snapshot)
+    await apps.clear(store, "microsoft")
+
+
+async def test_microsoft_can_come_from_the_environment_and_the_dashboard_takes_precedence(store, fallback, monkeypatch):
+    apps._cache.clear()
+    assert not apps.configured("microsoft")
+    monkeypatch.setattr(settings, "MICROSOFT_MAIL_CLIENT_ID", "env-ms-id")
+    monkeypatch.setattr(settings, "MICROSOFT_MAIL_CLIENT_SECRET", "env-ms-secret")
+    monkeypatch.setattr(settings, "MICROSOFT_MAIL_TENANT", "contoso.com")
+    assert apps.describe("microsoft") == {"configured": True, "from_environment": True, "tenant": "contoso.com"}
+    assert oauth.start("microsoft", ["notifications"], "x", by="u").startswith("https://login.microsoftonline.com/contoso.com/oauth2/v2.0/authorize?")
+    await Operations(store, Router(store, fallback)).app_set("microsoft", "dash-id", "dash-secret", "")
+    assert apps.get("microsoft")["client_id"] == "dash-id" and apps.describe("microsoft")["from_environment"] is False
     await apps.clear(store, "microsoft")
