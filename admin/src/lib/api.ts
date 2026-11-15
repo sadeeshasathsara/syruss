@@ -163,6 +163,7 @@ export const api = {
       request<{ url: string }>(`/mail/${provider}/start`, { method: "POST", body: json({ purposes }) }),
     oauthFinish: (provider: MailProvider, code: string, state: string) =>
       request<{ id: string; address: string; granted: string[]; purposes: MailPurpose[] }>(`/mail/${provider}/finish`, { method: "POST", body: json({ code, state }) }),
+    assignUse: (key: string, job: string | null) => request<MailOverview>(`/mail/uses/${encodeURIComponent(key)}`, { method: "PUT", body: json({ job }) }),
     setApp: (provider: MailProvider, body: MailAppInput) => request<MailOverview>(`/mail/apps/${provider}`, { method: "PUT", body: json(body) }),
     clearApp: (provider: MailProvider) => request<void>(`/mail/apps/${provider}`, { method: "DELETE" }),
   },

@@ -54,7 +54,7 @@ function Accounts({ o }: { o: MailOverview }) {
               {a.status === "needs_reconnect" && <Pill tone="negative">Needs reconnecting</Pill>}
             </div>
             <p className="text-meta text-muted">
-              {a.from_environment ? "From the mail service's environment (mail.env): every job's fallback. Changed there, not here." : `Used for: ${a.purposes.map(label).join(", ") || "nothing yet"}`}
+              {a.from_environment ? "Set up on the server, not here." : `Used for: ${a.purposes.map(label).join(", ") || "nothing yet"}`}
               {a.checked_at && ` · checked ${ago(a.checked_at).toLowerCase()}`}
             </p>
             {a.last_error && <p className="text-meta text-negative">{a.last_error}</p>}
@@ -169,12 +169,6 @@ function ImapForm({ o, onDone, onBack }: { o: MailOverview; onDone: () => void; 
       </div>
       <p className="text-meta font-medium text-muted">What is this mailbox for?</p>
       <JobSelect o={o} value={job} onChange={setJob} optional />
-      <p className="text-meta text-muted">
-        {sealing === null ? "" : sealing && publicKey
-          ? <>Passwords are sealed in this browser to the mail service&apos;s key before they are sent, so neither this app&apos;s server nor Kafka ever holds one.
-            Its fingerprint is <span className="num font-medium text-ink">{o.key.fingerprint}</span>: it should match what <code>python -m mail fingerprint</code> prints on the mail server.</>
-          : "This browser can't seal passwords itself, so the server seals them to the mail service's key before they go on. Use a current Chrome, Firefox or Safari to seal them here."}
-      </p>
       <div className="flex gap-2">
         <Button type="submit" size="sm" variant="primary" disabled={!v.address || (!v.smtp_host && !v.imap_host) || save.isPending}>{save.isPending ? "Saving…" : "Add mailbox"}</Button>
         <Button size="sm" onClick={onBack}>Back</Button>

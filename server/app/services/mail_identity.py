@@ -29,15 +29,11 @@ _override: Optional[Identity] = None
 
 
 def _from_directory() -> Optional[Identity]:
-    jobs = {j["key"]: j for j in bus.entries("job:")}
-
-    def address(key: str) -> Optional[str]:
-        return ((jobs.get(key) or {}).get("account") or {}).get("address")
-
-    sender = address("notifications")
+    from app.services import mail_uses
+    sender = mail_uses.address_of(mail_uses.APP_NOTIFICATIONS)
     if not sender:
         return None
-    support = address("support") or sender
+    support = mail_uses.address_of(mail_uses.SUPPORT_MAIL) or sender
     ours = {a["address"].lower() for a in bus.entries("account:") if a.get("address")} | {sender.lower(), support.lower()}
     return Identity(sender, support, frozenset(ours))
 

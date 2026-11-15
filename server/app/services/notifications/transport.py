@@ -22,7 +22,6 @@ from app.core.secrets import seal
 
 logger = logging.getLogger(__name__)
 
-PURPOSES = ("notifications", "support")  # what the server sends for (the mail service also has "accounts", for Keycloak)
 MAX_JOB_BYTES = 900_000                   # a job travels as one Kafka message (1 MB at most)
 
 
@@ -39,9 +38,9 @@ class EmailMessage:
     reply_to: Optional[str] = None
     # (file name, bytes, "type/subtype") for each file sent along
     attachments: Optional[List[tuple]] = None
-    # What it is for: "notifications" (everything the app tells people) or "support" (tickets). The mail service sends
-    # it through that purpose's account, which decides the From address; `sender_name` only names the sender.
-    purpose: str = "notifications"
+    # The function it is for (services/mail_uses.py): the mail service sends it through the job an owner chose for that function, and that
+    # job's mailbox decides the From address; `sender_name` only names the sender.
+    purpose: str = "app.notifications"
     sender_name: Optional[str] = None
     # A message in a conversation (support tickets): its own id, and the earlier messages it answers, so mail programs
     # thread it. A person's reply isn't marked automatic.
@@ -71,7 +70,8 @@ def job_of(message: EmailMessage, job_id: str) -> Dict[str, Any]:
 
 
 async def send(message: EmailMessage) -> None:
-    if message.purpose not in PURPOSES:
+    from app.services import mail_uses
+    if not mail_uses.valid(message.purpose):
         raise EmailError(f"Unknown mail purpose '{message.purpose}'.")
     backend = settings.MAIL_BACKEND.lower()
     if backend == "memory":

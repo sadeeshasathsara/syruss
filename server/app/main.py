@@ -14,6 +14,7 @@ from app.services.agent_events import agent_event_relay
 from app.services.delivery_service import delivery_worker
 from app.services.intake.sftp import sftp_receiver
 from app.services.live.bridge import kafka_ws_bridge
+from app.services import mail_uses
 from app.services.scheduler import scheduler
 from app.services.storage_service import storage_service
 from app.services import system_lessons
@@ -44,6 +45,7 @@ async def lifespan(_: FastAPI):
     await mail_relay.start()
     mail_bus.listeners.append(mail_feed.changed)  # the Email page is told when the mail service's state changes
     await mail_bus.start()  # the mail service's directory and answers
+    await mail_uses.registrar.start()  # tells it which functions of this server use mail
     await mail_events.start()
     await mail_inbound.start()
     await kafka_ws_bridge.start()
@@ -57,6 +59,7 @@ async def lifespan(_: FastAPI):
     await kafka_ws_bridge.stop()
     await mail_inbound.stop()
     await mail_events.stop()
+    await mail_uses.registrar.stop()
     await mail_bus.stop()
     await mail_relay.stop()
     await agent_event_relay.stop()
