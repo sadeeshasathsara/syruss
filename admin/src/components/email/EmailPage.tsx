@@ -2,7 +2,6 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { field } from "@/components/ops/Bits";
 import { Bar, Empty, ErrorNote, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
@@ -14,6 +13,7 @@ import type { MailJob } from "@/lib/types";
 import { AccountsView } from "./AccountsView";
 import { AppsView } from "./AppsView";
 import { JobsView } from "./JobsView";
+import { Select } from "@/components/ui/Select";
 
 const STATUS: Record<MailJob["status"], { label: string; tone: "positive" | "warning" | "negative" | "neutral" | "info" }> = {
   queued: { label: "Queued", tone: "info" }, sending: { label: "Sending", tone: "info" }, retrying: { label: "Trying again", tone: "warning" },
@@ -58,9 +58,9 @@ function Deliveries() {
   const retry = useMutation({ mutationFn: (id: string) => api.mail.retry(id), onSuccess: () => queryClient.invalidateQueries({ queryKey: ["mail"] }) });
   return (
     <Panel title="Delivery log" aside={
-      <select aria-label="Show" value={status} onChange={(e) => setStatus(e.target.value)} className={field}>
+      <Select aria-label="Show" value={status} onValueChange={(v) => setStatus(v)}>
         <option value="">Everything</option><option value="dead">Not sent</option><option value="retrying">Trying again</option><option value="sent">Sent</option>
-      </select>}>
+      </Select>}>
       {jobs.isError ? <ErrorNote message={jobs.error.message} onRetry={() => jobs.refetch()} /> : !jobs.data ? <Bar className="h-32 w-full" /> : !jobs.data.length ? (
         <Empty title="Nothing yet">Mail the service sends shows here: who it went to, what about, and how it went. The text itself isn&apos;t kept.</Empty>
       ) : (
