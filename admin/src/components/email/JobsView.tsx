@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { field } from "@/components/ops/Bits";
 import { Panel } from "@/components/ui/Blocks";
+import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Problem } from "@/components/ui/Problem";
@@ -29,7 +30,7 @@ function canServe(account: MailAccount, job: MailJobDef): boolean {
 const COLUMNS = "grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_9rem_2rem] items-center gap-x-4";
 
 /** The jobs mail does and the mailbox each uses; jobs of your own can be added. */
-export function JobsView({ o }: { o: MailOverview }) {
+export function JobsView({ o, adding, onClose }: { o: MailOverview; adding: boolean; onClose: () => void }) {
   const keys = Object.keys(o.purposes).sort((a, b) => {
     const ia = ORDER.indexOf(a);
     const ib = ORDER.indexOf(b);
@@ -45,7 +46,7 @@ export function JobsView({ o }: { o: MailOverview }) {
           {keys.map((key) => <Job key={`${key}:${JSON.stringify(o.purposes[key].settings)}`} id={key} job={o.purposes[key]} o={o} />)}
         </ul>
       </Panel>
-      <NewJob taken={keys} />
+      <NewJob taken={keys} open={adding} onClose={onClose} />
     </>
   );
 }
@@ -141,7 +142,7 @@ function Settings({ id, job }: { id: string; job: MailJobDef }) {
 
 const slug = (text: string) => text.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 39);
 
-function NewJob({ taken }: { taken: string[] }) {
+function NewJob({ taken, open, onClose }: { taken: string[]; open: boolean; onClose: () => void }) {
   const refresh = useRefresh();
   const [label, setLabel] = useState("");
   const [direction, setDirection] = useState<MailDirection>("send");
@@ -149,30 +150,30 @@ function NewJob({ taken }: { taken: string[] }) {
   const key = slug(label);
   const create = useMutation({
     mutationFn: () => api.mail.createJob({ key, label: label.trim(), direction, description: description.trim() || undefined }),
-    onSuccess: () => { refresh(); setLabel(""); setDescription(""); },
+    onSuccess: () => { refresh(); setLabel(""); setDescription(""); onClose(); },
   });
   const problem = key.length < 2 ? "Give it a name." : /^[a-z]/.test(key) ? taken.includes(key) ? `There is a job called “${key}” already.` : "" : "A name starts with a letter.";
   return (
-    <Panel title="Add a job">
-      <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); create.mutate(); }}>
-        <p className="text-meta text-muted">A job of your own gets a mailbox and settings like the built-in ones. Syruss acts only on the jobs it knows; yours sends and reads for whatever you connect to it.</p>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-meta text-muted">Name
-            <input value={label} className={cn(field, "w-56")} placeholder="Partner updates" onChange={(e) => setLabel(e.target.value)} />
-          </label>
-          <label className="flex flex-col gap-1 text-meta text-muted">It
-            <Select value={direction} onValueChange={(v) => setDirection(v as MailDirection)}>
-              <option value="send">Sends</option><option value="read">Reads</option><option value="both">Sends and reads</option>
-            </Select>
-          </label>
-          <label className="flex min-w-48 flex-1 flex-col gap-1 text-meta text-muted">What it is for (optional)
-            <input value={description} className={field} onChange={(e) => setDescription(e.target.value)} />
-          </label>
-          <Button type="submit" variant="primary" disabled={!!problem || create.isPending}>{create.isPending ? "Adding…" : "Add job"}</Button>
-        </div>
+    <Modal open={open} onClose={onClose} title="Add a job">
+      <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); create.mutate(); }}>
+        <label className="flex flex-col gap-1 text-meta text-muted">Name
+          <input value={label} className={cn(field, "w-full")} placeholder="Partner updates" autoFocus onChange={(e) => setLabel(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-meta text-muted">It
+          <Select value={direction} onValueChange={(v) => setDirection(v as MailDirection)} className="w-full">
+            <option value="send">Sends</option><option value="read">Reads</option><option value="both">Sends and reads</option>
+          </Select>
+        </label>
+        <label className="flex flex-col gap-1 text-meta text-muted">What it is for (optional)
+          <input value={description} className={cn(field, "w-full")} onChange={(e) => setDescription(e.target.value)} />
+        </label>
         {label && <p className="text-meta text-muted">{problem || `Its key will be “${key}”.`}</p>}
         <Problem error={create.error} />
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={!!problem || create.isPending}>{create.isPending ? "Adding…" : "Add job"}</Button>
+        </div>
       </form>
-    </Panel>
+    </Modal>
   );
 }

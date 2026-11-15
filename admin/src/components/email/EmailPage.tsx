@@ -40,13 +40,16 @@ export function EmailPage({ view }: { view: EmailView }) {
     if (e.kind === "mail.changed") queryClient.invalidateQueries({ queryKey: ["mail"] });
   });
   const overview = useQuery({ queryKey: ["mail", "overview"], queryFn: api.mail.overview, enabled: view !== "log" });
+  const [popup, setPopup] = useState(false);
+  const pill = <Pill tone={live.state === "live" ? "positive" : "neutral"}>{live.state === "live" ? "Live" : live.state === "closed" ? "Not live" : "Connecting…"}</Pill>;
+  const action = view === "jobs" ? "Add a job" : view === "accounts" ? "Connect a mailbox" : null;
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Email" subtitle={SUBTITLE[view]}
-        actions={<Pill tone={live.state === "live" ? "positive" : "neutral"}>{live.state === "live" ? "Live" : live.state === "closed" ? "Not live" : "Connecting…"}</Pill>} />
+        actions={<div className="flex items-center gap-3">{pill}{action && <Button variant="primary" disabled={!overview.data} onClick={() => setPopup(true)}>{action}</Button>}</div>} />
       {view === "log" ? <Deliveries /> : overview.isError ? <ErrorNote message={overview.error.message} onRetry={() => overview.refetch()} />
-        : !overview.data ? <Bar className="h-64 w-full" /> : view === "jobs" ? <JobsView o={overview.data} />
-          : view === "apps" ? <AppsView o={overview.data} /> : <AccountsView o={overview.data} />}
+        : !overview.data ? <Bar className="h-64 w-full" /> : view === "jobs" ? <JobsView o={overview.data} adding={popup} onClose={() => setPopup(false)} />
+          : view === "apps" ? <AppsView o={overview.data} /> : <AccountsView o={overview.data} connecting={popup} onClose={() => setPopup(false)} />}
     </div>
   );
 }

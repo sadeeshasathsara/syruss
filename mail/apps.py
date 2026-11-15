@@ -5,6 +5,7 @@ shown again: only whether one is set, its client id and (Microsoft) its tenant a
 
     get(provider)       {client_id, client_secret, tenant} or None; Google falls back to GOOGLE_MAIL_CLIENT_* in the environment
     configured(provider)
+    describe(provider)   what the directory may say: whether it is set (and Microsoft's tenant); never the client id or secret
     load(store)         reads them at start (and after a change)
     save / clear        what the commands provider_app.set / provider_app.clear do
 
@@ -43,7 +44,7 @@ def describe(provider: str) -> Dict[str, Any]:
     app = get(provider)
     if app is None:
         return {"configured": False}
-    out: Dict[str, Any] = {"configured": True, "client_id": app["client_id"], "from_environment": bool(app.get("from_environment"))}
+    out: Dict[str, Any] = {"configured": True, "from_environment": bool(app.get("from_environment"))}   # never the client id or secret
     if provider == "microsoft":
         out["tenant"] = app.get("tenant") or "common"
     return out

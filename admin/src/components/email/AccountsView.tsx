@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { field } from "@/components/ops/Bits";
 import { Panel } from "@/components/ui/Blocks";
+import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Problem } from "@/components/ui/Problem";
@@ -24,11 +25,11 @@ function useRefresh() {
 }
 
 /** The connected mailboxes, and ways to connect one: Google, Microsoft, or any mail server. */
-export function AccountsView({ o }: { o: MailOverview }) {
+export function AccountsView({ o, connecting, onClose }: { o: MailOverview; connecting: boolean; onClose: () => void }) {
   return (
     <>
       <Accounts o={o} />
-      <Connect o={o} />
+      <Connect o={o} open={connecting} onClose={onClose} />
     </>
   );
 }
@@ -73,61 +74,57 @@ function Accounts({ o }: { o: MailOverview }) {
   );
 }
 
-/** Which jobs a mailbox will serve: one checkbox each. */
-function JobPicker({ o, value, onChange }: { o: MailOverview; value: MailPurpose[]; onChange: (jobs: MailPurpose[]) => void }) {
-  const toggle = (k: MailPurpose) => onChange(value.includes(k) ? value.filter((x) => x !== k) : [...value, k]);
+/** The job a mailbox is for: one dropdown. (Other jobs can be pointed at it afterwards, on the Jobs tab.) */
+function JobSelect({ o, value, onChange, optional }: { o: MailOverview; value: MailPurpose; onChange: (job: MailPurpose) => void; optional?: boolean }) {
   return (
-    <div className="flex flex-wrap gap-4">
-      {Object.entries(o.purposes).map(([key, j]) => (
-        <label key={key} className="flex items-center gap-1.5 text-body text-ink">
-          <input type="checkbox" className="size-4" checked={value.includes(key)} onChange={() => toggle(key)} /> {j.label}
-        </label>
-      ))}
-    </div>
+    <Select aria-label="Job" value={value} onValueChange={onChange} className="w-full">
+      {optional && <option value="">No job yet</option>}
+      {Object.entries(o.purposes).map(([key, j]) => <option key={key} value={key}>{j.label}</option>)}
+    </Select>
   );
 }
 
-function Connect({ o }: { o: MailOverview }) {
-  const [jobs, setJobs] = useState<MailPurpose[]>(["notifications"]);
+function Connect({ o, open, onClose }: { o: MailOverview; open: boolean; onClose: () => void }) {
+  const [job, setJob] = useState<MailPurpose>("notifications");
   const [imap, setImap] = useState(false);
-  const start = useMutation({ mutationFn: (provider: MailProvider) => api.mail.oauthStart(provider, jobs), onSuccess: (r) => loadPage(r.url) });
+  const start = useMutation({ mutationFn: (provider: MailProvider) => api.mail.oauthStart(provider, [job]), onSuccess: (r) => loadPage(r.url) });
+  const close = () => { setImap(false); onClose(); };
   return (
-    <Panel title="Connect a mailbox">
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          <p className="text-body text-ink">Google or Microsoft (Gmail, Google Workspace, Outlook.com, Microsoft 365)</p>
-          <p className="text-meta text-muted">
-            You sign in and approve only what the chosen jobs need: sending, and reading where a job reads. Syruss can&apos;t delete or change
-            anything in the mailbox. Mail goes out from the address you sign in with. No app password is involved.
-          </p>
-          <JobPicker o={o} value={jobs} onChange={setJobs} />
-          <div className="flex flex-wrap gap-2">
+    <Modal open={open} onClose={close} title={imap ? "Add a mailbox on another mail server" : "Connect a mailbox"} wide={imap}>
+      {imap ? <ImapForm o={o} onDone={close} onBack={() => setImap(false)} /> : (
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-1.5">
+            <p className="text-meta text-muted">What is this mailbox for?</p>
+            <JobSelect o={o} value={job} onChange={setJob} />
+            <p className="text-meta text-muted">You approve only what that job needs: sending, and reading where it reads. Syruss can&apos;t delete or change anything in the mailbox.</p>
+          </div>
+          <div className="flex flex-col gap-2">
             {(["google", "microsoft"] as MailProvider[]).map((p) => (
-              <Button key={p} variant="primary" disabled={!jobs.length || !o.providers[p].configured || start.isPending} onClick={() => start.mutate(p)}>
-                {start.isPending && start.variables === p ? `Opening ${PROVIDER_LABEL[p]}…` : `Connect with ${PROVIDER_LABEL[p]}`}
-              </Button>
+              <div key={p} className="flex flex-col gap-1">
+                <Button variant="primary" className="w-full justify-center" disabled={!o.providers[p].configured || start.isPending} onClick={() => start.mutate(p)}>
+                  {start.isPending && start.variables === p ? `Opening ${PROVIDER_LABEL[p]}…` : `Connect with ${PROVIDER_LABEL[p]}`}
+                </Button>
+                {!o.providers[p].configured && (
+                  <p className="text-meta text-[var(--pill-warning-ink)]">Not set up yet: add its app under <Link href="/email/apps" className="underline">Provider apps</Link>.</p>
+                )}
+              </div>
             ))}
           </div>
-          {(["google", "microsoft"] as MailProvider[]).filter((p) => !o.providers[p].configured).map((p) => (
-            <p key={p} className="text-meta text-[var(--pill-warning-ink)]">
-              {PROVIDER_LABEL[p]} isn&apos;t set up yet: add its app under <Link href="/email/apps" className="underline">Provider apps</Link>.
-            </p>
-          ))}
           <Problem error={start.error} />
+          <div className="border-t border-rule pt-4">
+            <Button size="sm" onClick={() => setImap(true)}>Use another mail server instead</Button>
+          </div>
         </div>
-        <div className="border-t border-rule pt-4">
-          {imap ? <ImapForm o={o} onDone={() => setImap(false)} /> : <Button size="sm" onClick={() => setImap(true)}>Add a mailbox on another mail server</Button>}
-        </div>
-      </div>
-    </Panel>
+      )}
+    </Modal>
   );
 }
 
-function ImapForm({ o, onDone }: { o: MailOverview; onDone: () => void }) {
+function ImapForm({ o, onDone, onBack }: { o: MailOverview; onDone: () => void; onBack: () => void }) {
   const refresh = useRefresh();
   const [v, setV] = useState<MailImapInput>({ address: "", name: "Syruss", smtp_host: "", smtp_port: 587, smtp_security: "starttls", smtp_username: "",
     smtp_password: "", imap_host: "", imap_port: 993, imap_ssl: true, imap_folder: "INBOX", imap_username: "", imap_password: "" });
-  const [jobs, setJobs] = useState<MailPurpose[]>([]);
+  const [job, setJob] = useState<MailPurpose>("");
   const [sealing, setSealing] = useState<boolean | null>(null);
   useEffect(() => {
     canSeal().then(setSealing);
@@ -135,7 +132,7 @@ function ImapForm({ o, onDone }: { o: MailOverview; onDone: () => void }) {
   const publicKey = o.key.public_key;
   const save = useMutation({
     mutationFn: async () => {
-      const body: MailImapInput = { ...v, smtp_host: v.smtp_host || undefined, imap_host: v.imap_host || undefined, jobs };
+      const body: MailImapInput = { ...v, smtp_host: v.smtp_host || undefined, imap_host: v.imap_host || undefined, jobs: job ? [job] : [] };
       if (sealing && publicKey && (v.smtp_password || v.imap_password)) {
         // The passwords are sealed here, to the mail service's key: this app's server and Kafka only ever carry the sealed value.
         body.sealed = await sealForMail(publicKey, { smtp_password: v.smtp_password, imap_password: v.imap_password });
@@ -170,8 +167,8 @@ function ImapForm({ o, onDone }: { o: MailOverview; onDone: () => void }) {
         {text("imap_host", "Server")}{text("imap_port", "Port", "number", "w-24")}{text("imap_folder", "Folder", "text", "w-32")}
         {text("imap_username", "Username")}{text("imap_password", "Password", "password")}
       </div>
-      <p className="text-meta font-medium text-muted">Which jobs it serves</p>
-      <JobPicker o={o} value={jobs} onChange={setJobs} />
+      <p className="text-meta font-medium text-muted">What is this mailbox for?</p>
+      <JobSelect o={o} value={job} onChange={setJob} optional />
       <p className="text-meta text-muted">
         {sealing === null ? "" : sealing && publicKey
           ? <>Passwords are sealed in this browser to the mail service&apos;s key before they are sent, so neither this app&apos;s server nor Kafka ever holds one.
@@ -180,7 +177,7 @@ function ImapForm({ o, onDone }: { o: MailOverview; onDone: () => void }) {
       </p>
       <div className="flex gap-2">
         <Button type="submit" size="sm" variant="primary" disabled={!v.address || (!v.smtp_host && !v.imap_host) || save.isPending}>{save.isPending ? "Saving…" : "Add mailbox"}</Button>
-        <Button size="sm" onClick={onDone}>Cancel</Button>
+        <Button size="sm" onClick={onBack}>Back</Button>
       </div>
       <Problem error={save.error} />
     </form>
