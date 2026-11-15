@@ -128,6 +128,22 @@ export function describeAction(a: StaffAction): string {
       return `announced “${d.title ?? ""}” to ${d.audience ?? "everyone"}`;
     case "announcement.ended":
       return `ended the announcement “${d.title ?? ""}”`;
+    case "mail.account_added":
+      return `connected the mailbox ${d.address ?? a.target_id}`;
+    case "mail.google_connected":
+      return `connected the Google mailbox ${d.address ?? a.target_id}`;
+    case "mail.account_removed":
+      return `removed the mailbox ${a.target_id}`;
+    case "mail.route_changed":
+      return `chose the mailbox for the ${a.target_id} job`;
+    case "mail.job_created":
+      return `added the mail job “${d.label ?? a.target_id}”`;
+    case "mail.job_changed":
+      return `changed the mail job ${a.target_id}`;
+    case "mail.job_removed":
+      return `removed the mail job ${a.target_id}`;
+    case "mail.retried":
+      return "sent a given-up email again";
     default: {
       const flip = /^switch\.(signups|agent|intake)\.(on|off)$/.exec(a.action);
       if (flip) {

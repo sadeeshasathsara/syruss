@@ -20,6 +20,7 @@ from app.services.storage_service import storage_service
 from app.services import system_lessons
 from app.services.billing import catalog as billing_catalog
 from app.core.auth import validate_auth_config
+from app.services.live import mail_feed
 from app.services.mail_bus import bus as mail_bus
 from app.services.notifications.mail_relay import mail_events, mail_inbound, mail_relay
 from app.core.security_headers import Maintenance, RequestSizeLimit, SecurityHeaders
@@ -42,6 +43,7 @@ async def lifespan(_: FastAPI):
     storage_service.ensure_bucket_exists()
     await agent_event_relay.start()
     await mail_relay.start()
+    mail_bus.listeners.append(mail_feed.changed)  # the Email page is told when the mail service's state changes
     await mail_bus.start()  # the mail service's directory and answers
     await mail_events.start()
     await mail_inbound.start()
