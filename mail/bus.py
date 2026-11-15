@@ -22,6 +22,7 @@ from aiokafka.errors import TopicAlreadyExistsError
 
 from mail.commands import Commands
 from mail.config import settings
+from mail.kafka_security import kafka_security
 
 logger = logging.getLogger("mail.bus")
 HOUR_MS = 3_600_000
@@ -45,7 +46,7 @@ def topic_specs() -> List[NewTopic]:
 
 async def ensure_topics() -> None:
     """Creates what is missing. A topic that exists keeps its settings (the broker's own limits are in bridge/kafka)."""
-    admin = AIOKafkaAdminClient(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS)
+    admin = AIOKafkaAdminClient(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security())
     await admin.start()
     try:
         for spec in topic_specs():
@@ -92,7 +93,7 @@ class Bus:
 
 async def consume_acks(reader) -> None:
     """The server says it took a message in (mail.inbound.acks): it is deleted here."""
-    consumer = AIOKafkaConsumer(settings.MAIL_INBOUND_ACKS_TOPIC, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+    consumer = AIOKafkaConsumer(settings.MAIL_INBOUND_ACKS_TOPIC, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(),
                                 group_id="mail-acks", enable_auto_commit=False, auto_offset_reset="earliest")
     await consumer.start()
     try:
@@ -111,7 +112,7 @@ async def consume_acks(reader) -> None:
 async def consume_commands(commands: Commands) -> None:
     """Carries out each command on mail.commands, once (committed after it is handled). A new group reads from the start: a
     command too old is refused as stale and one seen before as a replay, so reading from the start can only be safe."""
-    consumer = AIOKafkaConsumer(settings.MAIL_COMMANDS_TOPIC, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+    consumer = AIOKafkaConsumer(settings.MAIL_COMMANDS_TOPIC, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(),
                                 group_id="mail-commands", enable_auto_commit=False, auto_offset_reset="earliest")
     await consumer.start()
     try:

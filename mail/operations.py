@@ -7,14 +7,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from mail import apps, oauth
 from mail.accounts import ENV_ACCOUNT_ID, account_from_row
 from mail.accounts.base import MailNotPermitted
 from mail.purposes import Job, JobError, clean_settings, validate_new
 from mail.router import Router
-from mail.store import AccountRow, CursorRow, JobRow, RouteRow, Store, seal, unseal
+from mail.store import AccountRow, CursorRow, JobRow, PurposeRow, Store, seal, unseal
 
 
 class OperationError(Exception):
@@ -48,8 +48,8 @@ class Operations:
             await self._check(account_from_row(row, secret), key)
         async with self.store.session() as s:
             s.add(row)
-            for key in jobs:
-                await s.merge(RouteRow(purpose=key, account_id=row.id))
+            if jobs:
+                await s.execute(update(PurposeRow).where(PurposeRow.key.in_(jobs)).values(account_id=row.id))
             await s.commit()
         return row
 
@@ -87,7 +87,7 @@ class Operations:
             await oauth.revoke(oauth.KINDS[row.kind], unseal(row.secret).get("refresh_token", ""))
             oauth.forget_tokens(row.id)
         async with self.store.session() as s:
-            await s.execute(delete(RouteRow).where(RouteRow.account_id == row.id))
+            await s.execute(update(PurposeRow).where(PurposeRow.account_id == row.id).values(account_id=None))
             await s.execute(delete(CursorRow).where(CursorRow.account_id == row.id))
             await s.execute(delete(AccountRow).where(AccountRow.id == row.id))
             await s.commit()
@@ -98,14 +98,12 @@ class Operations:
         """Makes `account_id` serve a job (None, or "env": the account from the environment again)."""
         if await self.store.job(purpose) is None:
             raise OperationError("No such job.")
-        async with self.store.session() as s:
-            if account_id in (None, ENV_ACCOUNT_ID):
-                await s.execute(delete(RouteRow).where(RouteRow.purpose == purpose))
-            else:
-                _, account = await self._account(account_id)
-                await self._check(account, purpose)
-                await s.merge(RouteRow(purpose=purpose, account_id=account_id))
-            await s.commit()
+        if account_id in (None, ENV_ACCOUNT_ID):
+            await self.store.set_route(purpose, None)
+        else:
+            _, account = await self._account(account_id)
+            await self._check(account, purpose)
+            await self.store.set_route(purpose, account_id)
 
     async def create_job(self, key: str, label: str, direction: str, description: str = "", settings: Optional[Dict[str, Any]] = None) -> Job:
         try:
@@ -186,10 +184,8 @@ class Operations:
             done = await oauth.finish(self.store, provider=provider, code=code, state=state, redirect_uri=redirect_uri, by=by)
         except oauth.ConnectError as e:
             raise OperationError(str(e)) from e
-        async with self.store.session() as s:  # it serves what it was connected for
-            for key in done["purposes"]:
-                await s.merge(RouteRow(purpose=key, account_id=done["id"]))
-            await s.commit()
+        for key in done["purposes"]:  # it serves what it was connected for
+            await self.store.set_route(key, done["id"])
         return done
 
     # ---- provider apps -------------------------------------------------------------------------------------

@@ -18,9 +18,9 @@ nothing is built on it. The folder holds everything the server needs besides its
    - `stack.env`: `POSTGRES_*`, `MINIO_ROOT_*`, `KAFKA_CLUSTER_ID`, `KEYCLOAK_*`, `KC_HOSTNAME`, `SYRUSS_*_URL`, the three
      client secrets. Use long random values (`openssl rand -base64 32`), never the development ones.
    - `server.env`, `agent.env`, `mail.env`, `www.env`, `site.env`, `admin.env`: start from each service's `.env.example`.
-     `mail.env` holds the only mail credentials (`MAIL_SMTP_*` and `MAIL_IMAP_*`, the fallback account),
+     `mail.env` holds no mail password or server: mailboxes are connected with `python -m mail connect` and then in the admin app. It does hold
      `MAIL_MASTER_KEYS` (`python -m mail keygen`; keep it apart from the database), the relay password Keycloak signs in with
-     (`MAIL_RELAY_PASSWORD`), the Google OAuth client (`GOOGLE_MAIL_CLIENT_*`, redirect URI `https://admin.<domain>/email/google`)
+     (`MAIL_RELAY_PASSWORD`), the Google OAuth client (set in the admin app's Provider apps tab; redirect URIs `https://admin.<domain>/email/google` and `/email/microsoft`)
      and `MAIL_TRUSTED_SERVER_KEY`. The server and the mail service talk only over Kafka: make the pair of signing keys once with
      `python -m app.mail_signing_key` (the first line goes in `server.env`, the second in `mail.env`). Connect mailboxes afterwards in
      the admin app's Email page (or `python -m mail connect` first, on the server, to get the first emails out). The
@@ -30,7 +30,7 @@ nothing is built on it. The folder holds everything the server needs besides its
      must be https and not localhost; the signing keys (`AGENT_TOKEN_PRIVATE_KEY` for the
      server, `AGENT_TOKEN_PUBLIC_KEY` for the agent). The test server (`ENV=test`) checks the same.
    - Live Stripe keys and the webhook secret (webhook URL `https://api.<domain>/api/v1/billing/webhooks/stripe`), the
-     model provider on a paid tier, `MODEL_PRICES`, and the mail service's `MAIL_SMTP_*` and `MAIL_FROM` (a real domain; in `mail.env`) from a mail provider with SPF, DKIM and DMARC set up.
+     model provider on a paid tier, `MODEL_PRICES`, and the mail service's `MAIL_FROM` (a real domain; in `mail.env`) with a mailbox from a mail provider that has SPF, DKIM and DMARC set up. Turn on Kafka TLS and SASL (mail/README.md, "Kafka security").
    - The support mailbox: `SUPPORT_EMAIL_ADDRESS` in `mail.env` (the server asks the mail service for it), and the mailbox itself connected in the admin app's
      Email page for Support (Google, or any server with IMAP): the mail service sends ticket answers from it and reads
      customers' replies.

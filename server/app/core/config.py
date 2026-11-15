@@ -134,6 +134,12 @@ class Settings(BaseSettings):
 
     # Kafka (agent events out, agent telemetry in)
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
+    # Kafka login (kafka_security.py): off by default. TLS and SASL for any broker that is not on a private network.
+    KAFKA_SECURITY_PROTOCOL: str = "PLAINTEXT"   # PLAINTEXT | SSL | SASL_PLAINTEXT | SASL_SSL
+    KAFKA_SASL_MECHANISM: str = "SCRAM-SHA-512"
+    KAFKA_SASL_USERNAME: str = ""
+    KAFKA_SASL_PASSWORD: str = ""
+    KAFKA_SSL_CA_FILE: str = ""
     AGENT_EVENTS_TOPIC: str = "agent.events"
     AGENT_TELEMETRY_TOPIC: str = "agent.telemetry"
 

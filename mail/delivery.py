@@ -79,6 +79,8 @@ class Delivery:
         try:
             account, _ = await self.router.account_for(job.purpose)
             account_id = account.id
+            if account.kind == "none":   # no mailbox yet: wait for one, and don't count it against the job's tries
+                return await self._wait(job, "No mailbox is connected for this job yet: connect one in the admin app (Email).")
             receipt = await account.open(await self.router.needs(job.purpose)).send(job)
             provider_id = receipt.provider_id
         except MailError as e:
@@ -89,6 +91,16 @@ class Delivery:
             logger.exception("Sending mail job %s failed unexpectedly", job_id)
             error = f"Unexpected error: {type(e).__name__}"
         return await self._record(job, account_id, provider_id, error, permanent)
+
+    async def _wait(self, job: Outbound, why: str) -> Dict[str, Any]:
+        async with self.store.session() as s:
+            row = await s.get(JobRow, job.id)
+            row.status, row.last_error, row.next_attempt_at = "retrying", why, _now() + timedelta(seconds=60)
+            event = {"id": row.id, "purpose": row.purpose, "status": "retrying", "attempts": row.attempts, "account_id": row.account_id,
+                     "provider_id": None, "error": why, "meta": row.meta or {}, "next_attempt_at": row.next_attempt_at.isoformat()}
+            await s.commit()
+        logger.warning("Mail job %s (%s) is waiting: %s", job.id, job.purpose, why)
+        return event
 
     async def _record(self, job: Outbound, account_id: Optional[str], provider_id: Optional[str], error: Optional[str],
                       permanent: bool) -> Dict[str, Any]:
