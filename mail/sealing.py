@@ -141,6 +141,14 @@ def sign(private: bytes, message: bytes) -> bytes:
     return ed25519.Ed25519PrivateKey.from_private_bytes(private).sign(message)
 
 
+DIRECTORY_CONTEXT = b"syruss-mail-directory-v1"
+
+
+def directory_message(public_key_b64: str, fingerprint: str) -> bytes:
+    """What the mail service signs about its box key: the key people seal secrets to, and its fingerprint."""
+    return DIRECTORY_CONTEXT + b"|" + public_key_b64.encode() + b"|" + fingerprint.encode()
+
+
 def verify(public_b64: str, message: bytes, signature: bytes) -> bool:
     try:
         ed25519.Ed25519PublicKey.from_public_bytes(base64.b64decode(public_b64)).verify(signature, message)

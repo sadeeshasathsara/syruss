@@ -98,6 +98,8 @@ The admin app's **Email** page (owners only) sends signed commands through the s
 
 ## First install
 
+(After the service has started once, run `python -m mail signer` and give what it prints to the server as `MAIL_SERVICE_PUBLIC_KEY`.)
+
 Nothing secret is in an environment file, so a fresh install has no mailbox. In `mail.env` set the database, `MAIL_MASTER_KEYS`
 (`python -m mail keygen`) and `MAIL_TRUSTED_SERVER_KEY` (the first of the pair `python -m app.mail_signing_key` makes on the server;
 the other goes in the server's env), then start the service and connect the first mailbox from the server's shell, so the first
@@ -146,6 +148,9 @@ the access it needs. This service and the server both read the same settings (`k
   every account has been connected again, since data sealed with a removed key can't be read.
 - **Box key** (what the browser seals secrets to): made on first use and kept sealed in the database. Its fingerprint is in the
   admin app and in `python -m mail fingerprint`; a changed fingerprint means a different database, so compare after a restore.
+- **Directory signing key** (this service signs what it publishes about its box key): `python -m mail signer` prints its public half; set it
+  on the server as `MAIL_SERVICE_PUBLIC_KEY`. Kafka has no login by default, and without this anyone able to write to `mail.directory` could
+  publish their own box key, so that passwords typed in the admin app are sealed to them. A real server refuses to start without it.
 - **Signing keys** (the server signs commands, this service trusts the public half): to rotate, make a new pair
   (`python -m app.mail_signing_key`), set the public half here and the private half on the server, restart both. Commands signed
   with the old key are refused from then on.

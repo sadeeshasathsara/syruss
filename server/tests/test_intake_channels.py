@@ -313,3 +313,9 @@ async def test_files_are_scanned_and_a_scanner_that_cannot_be_reached_lets_nothi
     down = await send(png_bytes())
     assert down.status_code == 503 and down.json()["detail"]["code"] == "unavailable"
     assert len(await documents(tpl)) == 1
+
+
+async def test_an_email_channels_address_is_not_guessable(client, mail_port):
+    tpl, ch = await new_channel(client, "email")
+    token = ch["address"].split("+", 1)[1].split("@")[0]
+    assert len(token.rsplit("-", 1)[1]) == 16                  # 64 random bits after the channel's name
