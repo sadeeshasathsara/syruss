@@ -140,6 +140,7 @@ services:
     env_file: env/server.env
     environment:
       ENV: test  # refuses development values (app/core/auth/dependencies.deployment_problems)
+      MAIL_SERVICE_URL: http://mail:8100
     depends_on:
       postgres:
         condition: service_healthy
@@ -181,6 +182,7 @@ services:
     environment:
       ENV: test
       MAIL_RELAY_HOST: 0.0.0.0  # Keycloak's way in: only the mail-relay network reaches it
+      MAIL_API_HOST: 0.0.0.0    # the server's way in, on the internal data network
     depends_on:
       postgres:
         condition: service_healthy

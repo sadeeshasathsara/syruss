@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Building2, LifeBuoy, CreditCard, FileText, Hourglass, LayoutDashboard, Layers, LockKeyhole, LogOut, Moon, Radio, ScrollText, ShieldCheck, SlidersHorizontal, Sun, UsersRound } from "lucide-react";
+import { Bot, Building2, LifeBuoy, CreditCard, FileText, Hourglass, LayoutDashboard, Layers, LockKeyhole, LogOut, Mail, Moon, Radio, ScrollText, ShieldCheck, SlidersHorizontal, Sun, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
@@ -34,6 +34,7 @@ const NAV = [
   { href: "/accounts", label: "Accounts", icon: Building2 },
   { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/platform", label: "Platform controls", icon: SlidersHorizontal },
+  { href: "/email", label: "Email", icon: Mail },
   { href: "/security", label: "Security", icon: LockKeyhole },
   { href: "/staff", label: "Staff", icon: UsersRound },
   { href: "/approvals", label: "Approvals", icon: Hourglass },

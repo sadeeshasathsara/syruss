@@ -54,7 +54,7 @@ READY = {
     "OIDC_ISSUER": "https://login.example.com/realms/syruss", "PUBLIC_SITE_URL": "https://www.example.com",
     "PUBLIC_APP_URL": "https://app.example.com", "PUBLIC_ADMIN_URL": "https://admin.example.com",
     "PUBLIC_API_URL": "https://api.example.com", "CORS_ORIGINS": "https://app.example.com,https://www.example.com",
-    "MAIL_FROM": "no-reply@example.com", "REQUIRE_TRUSTED_DEVICE": True,
+    "MAIL_FROM": "no-reply@example.com", "MAIL_SERVICE_TOKEN": "a-long-random-service-token-123", "REQUIRE_TRUSTED_DEVICE": True,
 }
 
 
@@ -66,7 +66,8 @@ def test_the_test_server_and_production_refuse_development_defaults(monkeypatch)
     dev = {"POSTGRES_PASSWORD": "postgrespassword", "MINIO_ROOT_PASSWORD": "minioadminpassword", "AGENT_TOKEN_SECRET": "dev-only-change-me",
            "SECRETS_ENCRYPTION_KEY": "", "OIDC_ISSUER": "http://localhost:8080/realms/syruss", "PUBLIC_APP_URL": "http://localhost:3000",
            "PUBLIC_ADMIN_URL": "https://admin.syruss.local", "PUBLIC_API_URL": "http://localhost:8000",
-           "CORS_ORIGINS": "https://app.example.com,http://localhost:3000", "MAIL_FROM": "no-reply@syruss.local"}
+           "CORS_ORIGINS": "https://app.example.com,http://localhost:3000", "MAIL_FROM": "no-reply@syruss.local",
+           "MAIL_SERVICE_TOKEN": "short"}
     for name, value in dev.items():
         monkeypatch.setattr(settings, name, value)
         assert any(name in p for p in deployment_problems()), name

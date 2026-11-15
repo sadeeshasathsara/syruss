@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useState } from "react";
 import { field } from "@/components/ops/Bits";
 import { useStaff } from "@/components/shell/AdminFrame";
@@ -26,11 +27,15 @@ export default function SupportSettingsPage() {
       <SupportTabs />
       {!s ? <Bar className="h-64 w-full" /> : (
         <>
-          <Panel title="Support mailbox" aside={<Pill tone={s.mailbox.reading ? "positive" : "warning"}>{s.mailbox.reading ? "Reading" : "Not read"}</Pill>}>
+          <Panel title="Support mailbox" aside={s.mailbox.reading === null ? <Pill tone="neutral">Unknown</Pill>
+            : <Pill tone={s.mailbox.reading ? "positive" : "warning"}>{s.mailbox.reading ? "Reading" : "Not read"}</Pill>}>
             <p className="text-body text-muted">
-              Ticket email is sent from <span className="font-medium text-ink">{s.mailbox.address}</span>.{" "}
+              {s.mailbox.reading === null ? "The mail service can't be reached right now, so how ticket email goes isn't known. "
+                : <>Ticket email is sent from <span className="font-medium text-ink">{s.mailbox.address}</span>{s.mailbox.connected ? "" : " (the mail service's own account, until a support mailbox is connected)"}. </>}
               {s.mailbox.reading ? "Replies sent to it are read every minute and added to their tickets."
-                : "Replies to it aren't read yet: set SUPPORT_IMAP_* in the server's environment (see server/.env.example)."}
+                : s.mailbox.reading === false ? "Replies to it aren't read yet: connect a mailbox that can read for Support on the "
+                : ""}
+              {s.mailbox.reading === false && <Link href="/email" className="text-ink underline">Email page</Link>}
             </p>
           </Panel>
           <Targets s={s} canChange={me.can("staff.manage")} />
