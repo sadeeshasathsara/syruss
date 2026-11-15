@@ -46,8 +46,29 @@ class RunResult:
     steps: List[Dict[str, Any]] = field(default_factory=list)
     usage: Dict[str, int] = field(default_factory=dict)
     model_calls: int = 0
+    # What the run was given before its first model call: the system prompt, the briefing, the tools' names. Each step
+    # records only what was new (its answer, its tool results, what the loop added), so any step's full input can be
+    # rebuilt from these without storing it again and again.
+    prompt: Optional[Dict[str, Any]] = None
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+def reasoning_text(msg: BaseMessage) -> str:
+    """The model's own thinking, when the provider returns it (thinking or reasoning parts), else ""."""
+    parts = []
+    for part in msg.content if isinstance(msg.content, list) else []:
+        if isinstance(part, dict) and part.get("type") in ("thinking", "reasoning"):
+            parts.append(str(part.get("thinking") or part.get("reasoning") or part.get("text") or ""))
+    extra = (getattr(msg, "additional_kwargs", None) or {}).get("reasoning_content")
+    if isinstance(extra, str):
+        parts.append(extra)
+    return "\n".join(p for p in parts if p).strip()
+
+
+def token_usage(msg: BaseMessage) -> Dict[str, int]:
+    """One model call's tokens (input, output, total, and any detail the provider counts as a number)."""
+    return {k: v for k, v in (getattr(msg, "usage_metadata", None) or {}).items() if isinstance(v, int)}
 
 
 def message_text(msg: BaseMessage) -> str:
@@ -175,6 +196,8 @@ class WorkspaceAgent:
         chatting = ctx.event.type == "human.message" and self.mode == "chat"
         briefing = await (build_chat_briefing(ctx) if chatting else build_briefing(ctx))
         messages: List[BaseMessage] = [SystemMessage(content=self.charter), HumanMessage(content=briefing)]
+        result.prompt = {"system": self.charter, "briefing": briefing, "tools": list(tools)}
+        added: List[str] = []  # what the loop adds before the next model call (a reminder, requested page images)
         nonce = spotlight.new_nonce()  # marks this run's data blocks: tool results are data, never instructions
         await telemetry.emit("processing_started", {"trigger": ctx.event.type, "status": "RUNNING", "origin": ctx.event.actor})
 
@@ -197,15 +220,17 @@ class WorkspaceAgent:
                 break
             messages.append(response)
             result.model_calls += 1
-            for key, value in (getattr(response, "usage_metadata", None) or {}).items():
-                if isinstance(value, int):
-                    result.usage[key] = result.usage.get(key, 0) + value
+            usage = token_usage(response)
+            for key, value in usage.items():
+                result.usage[key] = result.usage.get(key, 0) + value
 
             thought = message_text(response)
             if thought:
                 last_thought = thought
                 await telemetry.thought(step, thought)
-            record = {"step_number": step, "step_started_at": step_started.isoformat(), "thought": thought, "tool_calls": []}
+            record = {"step_number": step, "step_started_at": step_started.isoformat(), "thought": thought, "tool_calls": [],
+                      "usage": usage, **({"reasoning": r} if (r := reasoning_text(response)) else {}), **({"added": added} if added else {})}
+            added = []
             result.steps.append(record)
 
             if not response.tool_calls:
@@ -215,7 +240,9 @@ class WorkspaceAgent:
                 owed = open_obligations(ctx)
                 if owed and reminders < settings.MAX_OUTCOME_REMINDERS:
                     reminders += 1
-                    messages.append(HumanMessage(content="You stopped, but " + "; ".join(owed) + ". Continue."))
+                    reminder = "You stopped, but " + "; ".join(owed) + ". Continue."
+                    messages.append(HumanMessage(content=reminder))
+                    added.append(reminder)
                     continue
                 result.final_thought = thought or last_thought
                 break
@@ -240,6 +267,7 @@ class WorkspaceAgent:
                     content.append({"type": "text", "text": img["caption"]})
                     content.append({"type": "image_url", "image_url": {"url": f"data:{img['mime']};base64,{img['b64']}"}})
                 messages.append(HumanMessage(content=content))
+                added.append("Requested image(s). " + spotlight.IMAGE_NOTE + " " + " · ".join(img["caption"] for img in images))
             await step_done(record)
             await asyncio.sleep(0)
         else:

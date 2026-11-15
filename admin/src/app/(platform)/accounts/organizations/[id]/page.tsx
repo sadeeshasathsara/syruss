@@ -179,14 +179,8 @@ function Notes({ id, notes, me, onDone }: { id: string; notes: OrganizationProfi
 function History({ p }: { p: OrganizationProfile }) {
   return (
     <Panel title="What staff did" aside={<Link href="/audit" className="hover:text-ink">Audit log</Link>}>
-      {!p.staff_actions.length && !p.access_grants.length ? <p className="text-body text-muted">Nothing yet.</p> : (
+      {!p.staff_actions.length ? <p className="text-body text-muted">Nothing yet.</p> : (
         <ul className="flex flex-col divide-y divide-rule">
-          {p.access_grants.map((g) => (
-            <li key={`g-${g.created_at}`} className="py-2 text-body">
-              <span className="font-medium text-ink">{g.staff_name}</span> <span className="text-ink">opened its content</span>
-              <span className="text-muted"> · {g.reason} · {ago(g.created_at)}</span>
-            </li>
-          ))}
           {p.staff_actions.map((a) => (
             <li key={a.id} className="py-2 text-body">
               <span className="font-medium text-ink">{a.actor_name}</span> <span className="text-ink">{describeAction(a)}</span>

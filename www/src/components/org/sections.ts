@@ -15,7 +15,7 @@ export interface OrgSettingsSection {
 export const ORG_SETTINGS: OrgSettingsSection[] = [
   { key: "organization", label: "Organization", icon: Building2, subs: [
     { key: "general", label: "General" },
-    { key: "support", label: "Support access" },
+    { key: "support", label: "Support and privacy" },
     { key: "danger", label: "Close the organization" },
   ] },
   { key: "billing", label: "Billing", icon: CreditCard, subs: [

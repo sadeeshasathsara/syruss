@@ -47,21 +47,6 @@ export default function SecurityPage() {
             )}
           </Panel>
 
-          <Panel title="Customers' content open now" aside={<span className="num">{v.open_access.length}</span>}>
-            {!v.open_access.length ? <p className="text-body text-muted">No staff member has any organization&apos;s content open.</p> : (
-              <ul className="flex flex-col divide-y divide-rule">
-                {v.open_access.map((g, i) => (
-                  <li key={i} className="flex flex-wrap items-baseline gap-x-3 py-2 text-body">
-                    <span className="font-medium text-ink">{g.staff_name}</span>
-                    <Link href={`/accounts/organizations/${g.tenant_id}`} className="text-ink hover:underline">{g.organization}</Link>
-                    <span className="min-w-0 flex-1 text-muted">{g.reason}</span>
-                    <span className="num text-meta text-muted">until {new Date(g.expires_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-
           <Panel title="Staff access review" aside={<Link href="/staff" className="hover:text-ink">Manage the staff</Link>} bodyClassName="p-0">
             <p className="px-4 pt-3 text-meta text-muted">Remove anyone who no longer needs these tools. Not seen for 60 days is marked.</p>
             <ul className="flex flex-col divide-y divide-rule">

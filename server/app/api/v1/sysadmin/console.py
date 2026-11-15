@@ -1,7 +1,7 @@
 """
 The operator's console: how the business is doing, which customers need a look, everything about one organization or one
-person, the platform's own switches and announcements, one search box, and a security view. Facts only, never a
-customer's content (that still takes an access grant, support_access.py); every change asks for a reason and is recorded.
+person, the platform's own switches and announcements, one search box, and a security view. Every change asks for a
+reason and is recorded.
 """
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -18,7 +18,7 @@ from app.models.audit import AuditLog
 from app.models.billing import CatalogItem, Invoice, OrgSubscription, OrgSubscriptionAddon, UsageEvent
 from app.models.document import Document, DocumentRole, DocumentStatus
 from app.models.identity import OrgMember, SecurityEvent, TrustedDevice, User
-from app.models.platform import OrganizationNote, PlatformAccessGrant, PlatformAnnouncement, PlatformAuditEntry, PlatformStaff
+from app.models.platform import OrganizationNote, PlatformAnnouncement, PlatformAuditEntry, PlatformStaff
 from app.models.tenant import Tenant
 from app.models.trace import AgentExecutionTrace as Run
 from app.models.workspace import Workspace
@@ -205,8 +205,6 @@ async def organization_profile(tenant_id: str, db: AsyncSession = Depends(get_db
                               .order_by(OrganizationNote.pinned.desc(), OrganizationNote.created_at.desc()).limit(50))).scalars().all()
     staff_actions = (await db.execute(select(PlatformAuditEntry).where(PlatformAuditEntry.tenant_id == tenant_id)
                                       .order_by(PlatformAuditEntry.created_at.desc()).limit(15))).scalars().all()
-    grants = (await db.execute(select(PlatformAccessGrant).where(PlatformAccessGrant.tenant_id == tenant_id)
-                               .order_by(PlatformAccessGrant.created_at.desc()).limit(10))).scalars().all()
     runs = (await db.execute(select(func.count(Run.id), func.sum(Run.cost_usd), func.max(Run.started_at)).where(
         Run.tenant_id == tenant_id, Run.started_at >= now - timedelta(days=30)))).one()
     controls = await platform_controls.current()
@@ -228,8 +226,6 @@ async def organization_profile(tenant_id: str, db: AsyncSession = Depends(get_db
                         "created_at": w.created_at} for w, n, last in ws_rows],
         "notes": [_note(n) for n in notes],
         "staff_actions": [_action(e) for e in staff_actions],
-        "access_grants": [{"staff_name": g.staff_name, "reason": g.reason, "created_at": g.created_at, "expires_at": g.expires_at, "ended_at": g.ended_at}
-                          for g in grants],
         "agent_paused": tenant_id in controls.agent_paused_orgs,
     }
 
@@ -492,8 +488,6 @@ async def security(db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]
     kinds = dict((await db.execute(select(SecurityEvent.kind, func.count()).where(SecurityEvent.created_at >= now - timedelta(days=7))
                                    .group_by(SecurityEvent.kind))).all())
     users = {u.id: u for u in (await db.execute(select(User).where(User.id.in_([b[0] for b in bursts])))).scalars().all()} if bursts else {}
-    grants = (await db.execute(select(PlatformAccessGrant, Tenant.name).join(Tenant, Tenant.id == PlatformAccessGrant.tenant_id).where(
-        PlatformAccessGrant.ended_at.is_(None), PlatformAccessGrant.expires_at > now).order_by(PlatformAccessGrant.expires_at))).all()
     staff_rows = (await db.execute(select(PlatformStaff, User).join(User, User.id == PlatformStaff.user_id))).all()
     staff = [(u, row.role) for row, u in staff_rows]
     configured = settings.platform_admin_ids - {u.id for u, _ in staff}
@@ -507,8 +501,6 @@ async def security(db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]
                         "browsers_removed": kinds.get("device_removed", 0) + kinds.get("devices_removed", 0), "codes_sent": kinds.get("code_sent", 0)},
         "wrong_code_bursts": [{"user_id": uid, "name": users[uid].display_name if uid in users else uid, "email": users[uid].email if uid in users else None,
                                "count": n, "last_at": last} for uid, n, last in bursts],
-        "open_access": [{"staff_name": g.staff_name, "organization": name, "tenant_id": g.tenant_id, "reason": g.reason, "expires_at": g.expires_at}
-                        for g, name in grants],
         "staff_review": sorted([{"user_id": u.id, "name": u.display_name, "email": u.email, "role": role, "status": u.status,
                                  "last_seen_at": u.last_seen_at, "last_action_at": last_action.get(u.id),
                                  "stale": not u.last_seen_at or u.last_seen_at < now - timedelta(days=60)} for u, role in staff],

@@ -4,7 +4,6 @@ import { Menu, MessageSquareText, PanelRightClose } from "lucide-react";
 import { IconButton, Button } from "@/components/ui/Button";
 import { Sheet, SheetClose } from "@/components/ui/Sheet";
 import { cn } from "@/lib/format";
-import { SupportAccessBanner } from "@/components/org/support";
 import { Announcements } from "./Announcements";
 import { NotificationBell, NotificationToasts } from "./NotificationBell";
 import { OfflineBanner } from "./OfflineBanner";
@@ -81,7 +80,7 @@ export function AppFrame({
               id="main"
               className="@container relative min-h-0 min-w-0 flex-1 overflow-y-auto bg-well scrollbar-thin lg:rounded-sheet lg:border lg:border-border"
             >
-              <div className="mx-auto w-full max-w-[1280px] px-4 py-5 sm:px-6 sm:py-6"><Announcements /><SupportAccessBanner />{children}</div>
+              <div className="mx-auto w-full max-w-[1280px] px-4 py-5 sm:px-6 sm:py-6"><Announcements />{children}</div>
             </main>
 
             {showDocked && (

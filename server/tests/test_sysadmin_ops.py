@@ -10,11 +10,10 @@ from app.models.audit import AuditLog
 from app.models.document import Document, DocumentStatus
 from app.models.extraction_log import ExtractionLogEntry
 from app.models.outbox import AgentEventOutbox
-from app.models.platform import PlatformAuditEntry
-from app.models.trace import AgentExecutionTrace as Run
+from app.models.trace import AgentExecutionTrace as Run, AgentPrompt
 from app.services import run_watch
 from app.services.live import platform_feed
-from tests.conftest import TENANT, AsyncSessionLocal, create_template, outbox_events, person, register, upload, ws, make_staff
+from tests.conftest import TENANT, AsyncSessionLocal, create_template, outbox_events, person, register, upload, make_staff
 
 API = "/api/v1"
 SYS = "/api/v1/sysadmin"
@@ -90,46 +89,64 @@ async def test_a_run_that_stops_reporting_is_marked_lost(client):
         assert await run_watch.mark_lost(db) == 0  # already lost: nothing more
 
 
-async def test_staff_see_facts_and_open_content_only_through_an_audited_grant(client):
+PROMPT = {"system": "You are Syruss, the AI colleague. (test charter)", "briefing": "A document arrived: read it.", "tools": ["view_page", "submit_record"]}
+
+
+async def test_staff_see_documents_and_runs_in_full_with_their_prompt_tokens_and_links(client):
     tpl, doc, event_id, token = await queued_document(client)
     run_id, trace_id = await start(client, token, doc)
-    await client.patch(f"{AGENT}/traces/{run_id}", headers=token, json={"steps": [STEP]})
+    step = {**STEP, "usage": {"input_tokens": 40, "output_tokens": 10, "total_tokens": 50}, "reasoning": "The total is on page 1."}
+    await client.patch(f"{AGENT}/traces/{run_id}", headers=token, json={"steps": [step], "prompt": PROMPT, "usage": {"input_tokens": 40, "output_tokens": 10}})
+    await client.patch(f"{AGENT}/traces/{run_id}", headers=token, json={"steps": [step], "prompt": PROMPT,  # sent again: kept once
+                                                                         "usage": {"input_tokens": 40, "output_tokens": 10}})
 
-    facts = (await client.get(f"{SYS}/runs/{trace_id}", headers=ADMIN_APP)).json()
-    assert not facts["run"]["content_open"] and facts["final_thought"] is None
-    assert facts["steps"] == [{"step_number": 1, "step_started_at": None, "step_completed_at": None, "thought_chars": len(STEP["thought"]),
-                               "tool_calls": [{"tool_name": "view_page", "status": "success", "duration_ms": 12.5}]}]
-    assert "secret page text" not in str(facts) and "41.20" not in str(facts)
-    doc_facts = (await client.get(f"{SYS}/processes/{doc}", headers=ADMIN_APP)).json()
-    assert "name" not in doc_facts["document"] and doc_facts["record"] is None
-    assert (await client.get(f"{SYS}/processes/{doc}/file", headers=ADMIN_APP)).json()["detail"]["code"] == "content_access_required"
-
-    # A viewer can't open content at all.
+    # Any staff member, without opening anything: the run in full, with what it was given and each step's tokens
     viewer = {**ADMIN_APP, **person("usr_ops_viewer", "Vera Viewer")}
     await register(viewer, None)
     await make_staff(client, viewer, "viewer")
-    assert (await client.post(f"{SYS}/access", headers=viewer, json={"tenant_id": TENANT, "reason": "Just looking"})).status_code == 403
-    assert (await client.post(f"{SYS}/access", headers=ADMIN_APP, json={"tenant_id": TENANT, "reason": "x"})).status_code == 422
-
-    grant = (await client.post(f"{SYS}/access", headers=ADMIN_APP, json={"tenant_id": TENANT, "reason": "Ticket 42: a wrong total", "minutes": 30})).json()
-    full = (await client.get(f"{SYS}/runs/{trace_id}", headers=ADMIN_APP)).json()
+    full = (await client.get(f"{SYS}/runs/{trace_id}", headers=viewer)).json()
     assert full["run"]["content_open"] and full["steps"][0]["tool_calls"][0]["observation"] == "secret page text"
-    await client.get(f"{SYS}/runs/{trace_id}", headers=ADMIN_APP)
-    opened = (await client.get(f"{SYS}/processes/{doc}", headers=ADMIN_APP)).json()
-    assert opened["document"]["name"] and opened["content_open"]
-    file = await client.get(f"{SYS}/processes/{doc}/file", headers=ADMIN_APP)
+    assert full["steps"][0]["usage"]["total_tokens"] == 50 and full["steps"][0]["reasoning"] == "The total is on page 1."
+    assert full["prompt"]["system"] == PROMPT["system"] and full["prompt"]["briefing"] == PROMPT["briefing"] and full["prompt"]["tools"] == PROMPT["tools"]
+    assert full["document"]["id"] == doc and full["position"] == {"number": 1, "of": 1} and full["previous"] is None and full["next"] is None
+    async with AsyncSessionLocal() as db:
+        assert len((await db.execute(select(AgentPrompt).where(AgentPrompt.text == PROMPT["system"]))).scalars().all()) == 1  # kept once
+
+    # The document: its file, its name, every step's details, and what the agent's work cost in tokens
+    journey = (await client.get(f"{SYS}/processes/{doc}", headers=viewer)).json()
+    assert journey["document"]["name"] and journey["document"]["page_count"] >= 1
+    assert journey["timings"]["input_tokens"] == 40 and journey["timings"]["tokens"] == 50
+    run_step = next(t for t in journey["timeline"] if t["stage"] == "run")
+    assert run_step["run"] == trace_id and {"label": "Tokens in all", "value": 50, "kind": "text"} in run_step["details"]
+    assert all("details" in t for t in journey["timeline"])
+    file = await client.get(f"{SYS}/processes/{doc}/file", headers=viewer)
     assert file.status_code == 200 and file.headers["content-type"] == "image/png"
 
-    async with AsyncSessionLocal() as db:
-        viewed = (await db.execute(select(PlatformAuditEntry.target_type).where(
-            PlatformAuditEntry.action == "content.viewed", PlatformAuditEntry.created_at >= datetime.fromisoformat(grant["created_at"])))).scalars().all()
-        assert sorted(viewed) == ["document", "run"]   # once each, however often it is opened
-    activity = (await client.get(f"{API}/organization/activity")).json()["items"]
-    assert activity[0]["actor"] == "Syruss support" and "Ticket 42" in activity[0]["text"]
+    # A second run of the same document links to the first, and the first to it
+    second_id, second_trace = await start(client, token, doc)
+    again = (await client.get(f"{SYS}/runs/{second_trace}", headers=viewer)).json()
+    assert again["previous"]["id"] == trace_id and again["position"] == {"number": 2, "of": 2}
+    assert (await client.get(f"{SYS}/runs/{trace_id}", headers=viewer)).json()["next"]["id"] == second_trace
 
-    assert (await client.delete(f"{SYS}/access/{grant['id']}", headers=ADMIN_APP)).status_code == 204
-    assert not (await client.get(f"{SYS}/runs/{trace_id}", headers=ADMIN_APP)).json()["run"]["content_open"]
-    assert (await client.get(f"{SYS}/access", headers=ADMIN_APP)).json()["items"] == []
+
+async def test_old_steps_and_briefings_are_dropped_and_unused_prompts_with_them(client):
+    tpl, doc, event_id, token = await queued_document(client)
+    run_id, trace_id = await start(client, token, doc)
+    await client.patch(f"{AGENT}/traces/{run_id}", headers=token, json={"steps": [STEP], "prompt": {**PROMPT, "system": "an old charter"}})
+    async with AsyncSessionLocal() as db:
+        await db.execute(update(Run).where(Run.id == trace_id).values(started_at=datetime.now(timezone.utc) - timedelta(days=400)))
+        await db.commit()
+        assert await run_watch.prune_steps(db) >= 1
+        old = await db.get(Run, trace_id)
+        await db.refresh(old)
+        assert old.steps == [] and old.briefing is None
+        old.system_prompt_hash = None
+        await db.commit()
+        await db.execute(update(Run).where(Run.id == trace_id).values(steps=[STEP]))
+        await db.commit()
+        await run_watch.prune_steps(db)
+        hashes = (await db.execute(select(AgentPrompt.text))).scalars().all()
+    assert "an old charter" not in hashes
 
 
 async def test_a_documents_journey_comes_in_order_with_what_each_run_changed(client):
@@ -142,7 +159,7 @@ async def test_a_documents_journey_comes_in_order_with_what_each_run_changed(cli
     assert stages.index("received") < stages.index("queued") < stages.index("run") < stages.index("reading")
     assert [r["id"] for r in journey["runs"]] == [trace_id] and journey["events"][0]["id"] == event_id
     assert journey["timings"]["queue_wait_ms"] is not None
-    assert any(c["kind"] == "log" and c["what"] == "reading" and "text" not in c for c in journey["changes"])
+    assert any(c["kind"] == "log" and c["what"] == "reading" and "text" in c for c in journey["changes"])  # every staff member sees it
     listed = (await client.get(f"{SYS}/processes", headers=ADMIN_APP, params={"workspace_id": tpl})).json()
     assert listed["items"][0]["id"] == doc and listed["items"][0]["last_run"]["status"] == "RUNNING"
     runs = (await client.get(f"{SYS}/runs", headers=ADMIN_APP, params={"workspace_id": tpl, "status": "RUNNING"})).json()
