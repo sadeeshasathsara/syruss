@@ -1,17 +1,16 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Building2, LifeBuoy, CreditCard, FileText, Hourglass, LayoutDashboard, Layers, LockKeyhole, LogOut, Mail, Moon, Radio, ScrollText, ShieldCheck, SlidersHorizontal, Sun, UsersRound } from "lucide-react";
-import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
+import { LogOut, Menu, Moon, ShieldCheck, Sun, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { BrandMark } from "@/components/shell/Brand";
 import { IdleSignOut } from "@/components/shell/IdleSignOut";
+import { Nav } from "@/components/shell/Nav";
 import { PresenceProvider } from "@/components/support/Presence";
 import { GlobalSearch } from "@/components/shell/Search";
 import { Button, IconButton } from "@/components/ui/Button";
-import { APPROVAL_EVENT, ApiError, api } from "@/lib/api";
-import { cn } from "@/lib/format";
+import { ApiError, api } from "@/lib/api";
 import type { StaffMe } from "@/lib/types";
 import { loadPage } from "@/lib/navigate";
 
@@ -22,41 +21,6 @@ export function useStaff(): StaffMe & { can: (permission: string) => boolean } {
   const me = useContext(StaffContext);
   if (!me) throw new Error("useStaff outside the admin frame");
   return { ...me, can: (permission: string) => me.permissions.includes(permission) };
-}
-
-const NAV = [
-  { href: "/overview", label: "Overview", icon: LayoutDashboard },
-  { href: "/live", label: "Live", icon: Radio },
-  { href: "/runs", label: "Agent runs", icon: Bot },
-  { href: "/documents", label: "Documents", icon: FileText },
-  { href: "/queues", label: "Queues", icon: Layers },
-  { href: "/support", label: "Support", icon: LifeBuoy },
-  { href: "/accounts", label: "Accounts", icon: Building2 },
-  { href: "/billing", label: "Billing", icon: CreditCard },
-  { href: "/platform", label: "Platform controls", icon: SlidersHorizontal },
-  { href: "/email", label: "Email", icon: Mail },
-  { href: "/security", label: "Security", icon: LockKeyhole },
-  { href: "/staff", label: "Staff", icon: UsersRound },
-  { href: "/approvals", label: "Approvals", icon: Hourglass },
-  { href: "/audit", label: "Audit log", icon: ScrollText },
-];
-
-/** How many risky actions wait for a second owner (kept fresh, and at once when this browser asks for one). */
-function useWaitingApprovals(): number {
-  const queryClient = useQueryClient();
-  const waiting = useQuery({ queryKey: ["approvals", "pending"], queryFn: () => api.approvals.list("pending"), refetchInterval: 60_000 });
-  useEffect(() => {
-    const refresh = () => queryClient.invalidateQueries({ queryKey: ["approvals"] });
-    window.addEventListener(APPROVAL_EVENT, refresh);
-    return () => window.removeEventListener(APPROVAL_EVENT, refresh);
-  }, [queryClient]);
-  return waiting.data?.waiting ?? 0;
-}
-
-/** Tickets nobody has taken, late ones, and chats waiting for a person: the Support badge. */
-function useSupportBadge(): number {
-  const summary = useQuery({ queryKey: ["support", "summary"], queryFn: api.support.summary, refetchInterval: 60_000 });
-  return (summary.data?.unassigned ?? 0) + (summary.data?.breached ?? 0) + (summary.data?.live_waiting ?? 0);
 }
 
 // Signing out ends the session on this app's server and at Keycloak, so it is a real form post, not a fetch.
@@ -158,48 +122,60 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
 }
 
 function Frame({ me, children }: { me: StaffMe; children: React.ReactNode }) {
-  const path = usePathname();
-  const waiting = useWaitingApprovals();
-  const support = useSupportBadge();
+  const can = (permission: string) => me.permissions.includes(permission);
+  const pathname = usePathname();
+  // The menu belongs to the page it was opened on: going anywhere closes it. Escape closes it; Tab stays inside it.
+  const [menuAt, setMenuAt] = useState<string | null>(null);
+  const menu = menuAt === pathname;
+  const setMenu = (open: boolean) => setMenuAt(open ? pathname : null);
+  const drawer = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    drawer.current?.querySelector<HTMLElement>("a, button")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuAt(null);
+      if (e.key !== "Tab" || !drawer.current) return;
+      const focusable = [...drawer.current.querySelectorAll<HTMLElement>("a[href]:not([tabindex='-1']), button:not([disabled])")];
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menu]);
+  const brand = (
+    <div className="flex items-center gap-2 px-1">
+      <BrandMark />
+      <span className="text-section font-semibold text-ink">Syruss</span>
+      <span className="rounded-chip bg-[var(--pill-accent-bg)] px-1.5 text-meta font-medium text-[var(--pill-accent-ink)]">System admin</span>
+    </div>
+  );
   return (
           <div className="flex h-dvh flex-col overflow-hidden bg-frame lg:flex-row">
-            <aside className="flex flex-none flex-col gap-1 border-b border-border px-3 py-2 lg:w-[228px] lg:border-b-0 lg:pt-3">
-              <div className="flex items-center gap-2 px-1 pb-1 lg:pb-3">
-                <BrandMark />
-                <span className="text-section font-semibold text-ink">Syruss</span>
-                <span className="rounded-chip bg-[var(--pill-accent-bg)] px-1.5 text-meta font-medium text-[var(--pill-accent-ink)]">System admin</span>
-                <span className="ml-auto flex items-center lg:hidden"><ThemeToggle /><IconButton aria-label="Sign out" onClick={signOut}><LogOut /></IconButton></span>
-              </div>
-              <nav aria-label="Platform tools" className="-mx-3 overflow-x-auto px-3 lg:mx-0 lg:px-0">
-                <ul className="flex gap-1 lg:flex-col">
-                  {NAV.map(({ href, label, icon: Icon }) => {
-                    const active = path === href || path.startsWith(`${href}/`);
-                    return (
-                      <li key={href} className="flex-none">
-                        <Link
-                          href={href}
-                          aria-current={active ? "page" : undefined}
-                          className={cn(
-                            "flex h-8 items-center gap-2 rounded-control px-2.5 text-body transition-colors pointer-coarse:h-10",
-                            active ? "bg-active font-medium text-ink" : "text-muted hover:bg-raised hover:text-ink",
-                          )}
-                        >
-                          <Icon className="size-4" aria-hidden /> {label}
-                          {href === "/support" && support > 0 && (
-                            <span className="num ml-auto rounded-chip bg-[var(--pill-warning-bg)] px-1.5 text-meta font-medium text-[var(--pill-warning-ink)]"
-                                  aria-label={`${support} need attention`}>{support}</span>
-                          )}
-                          {href === "/approvals" && waiting > 0 && (
-                            <span className="num ml-auto rounded-chip bg-[var(--pill-warning-bg)] px-1.5 text-meta font-medium text-[var(--pill-warning-ink)]"
-                                  aria-label={`${waiting} waiting`}>{waiting}</span>
-                          )}
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </nav>
+            {/* Wide screens: the sidebar */}
+            <aside className="hidden w-[236px] flex-none flex-col gap-4 overflow-y-auto px-3 pb-4 pt-3 scrollbar-thin lg:flex">
+              <div className="pb-1">{brand}</div>
+              <Nav can={can} />
             </aside>
+
+            {/* Narrow screens: a bar with the menu button; the sidebar slides over the page */}
+            <div className="flex h-12 flex-none items-center gap-2 border-b border-border px-3 lg:hidden">
+              <IconButton aria-label="Open the menu" aria-expanded={menu} aria-controls="admin-menu" onClick={() => setMenu(true)}><Menu /></IconButton>
+              {brand}
+              <span className="ml-auto flex items-center"><ThemeToggle /><IconButton aria-label="Sign out" onClick={signOut}><LogOut /></IconButton></span>
+            </div>
+            {menu && (
+              <div className="fixed inset-0 z-40 lg:hidden">
+                <button type="button" aria-label="Close the menu" tabIndex={-1} className="absolute inset-0 bg-black/40 animate-fade" onClick={() => setMenu(false)} />
+                <div ref={drawer} id="admin-menu" role="dialog" aria-modal="true" aria-label="Menu"
+                  className="absolute inset-y-0 left-0 flex w-[min(300px,86vw)] flex-col gap-4 overflow-y-auto border-r border-border bg-frame px-3 pb-6 pt-3 shadow-xl">
+                  <div className="flex items-center justify-between">{brand}<IconButton aria-label="Close the menu" onClick={() => setMenu(false)}><X /></IconButton></div>
+                  <div className="px-1"><GlobalSearch /></div>
+                  <Nav can={can} onNavigate={() => setMenu(false)} />
+                  <p className="mt-auto px-2.5 text-meta text-muted">{me.name} · {me.role_name}</p>
+                </div>
+              </div>
+            )}
 
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <div className="hidden h-12 flex-none items-center gap-2 pr-3 lg:flex">

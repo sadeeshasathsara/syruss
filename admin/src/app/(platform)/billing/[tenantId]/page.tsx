@@ -26,7 +26,7 @@ export default function OrganizationBilling() {
   const d = org.data;
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader back={{ href: "/billing", label: "← Billing" }} title={d ? d.organization.name : "Organization"}
+      <PageHeader back={{ href: "/billing/organizations", label: "← Billing" }} title={d ? d.organization.name : "Organization"}
         subtitle={d ? `${d.subscription.plan.name} plan · period ${day(d.subscription.period_start)} to ${day(d.subscription.period_end)}` : "Loading…"} />
       {org.isError && <ErrorNote message="Couldn't load this organization's billing." onRetry={() => org.refetch()} />}
       {!d || !setup.data || !catalog.data ? <Bar className="h-96 w-full rounded-card" /> : (

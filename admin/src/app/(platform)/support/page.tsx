@@ -5,7 +5,7 @@ import { Mail, MessageSquare, Bot, Search } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { field } from "@/components/ops/Bits";
-import { CATEGORY, PriorityPill, StatusPill, SupportTabs, dueIn } from "@/components/support/Bits";
+import { CATEGORY, PriorityPill, StatusPill, dueIn } from "@/components/support/Bits";
 import { Bar, Empty, ErrorNote, PageHeader } from "@/components/ui/Blocks";
 import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
@@ -34,7 +34,6 @@ export default function SupportPage() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="Support" subtitle="Tickets from customers: from their chat with the assistant, the Help page, and the support email address." />
-      <SupportTabs counts={{ active: s?.active }} />
       {s && (
         <div className="flex flex-wrap gap-2 text-meta">
           {[["New", s.new, () => { setStatus("new"); setAssignee(""); }], ["Unassigned", s.unassigned, () => { setStatus("active"); setAssignee("none"); }],
