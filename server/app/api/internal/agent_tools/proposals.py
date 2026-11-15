@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from app.models.knowledge import Entity, KnowledgeProposal, KnowledgeProposalStatus, KnowledgeProposalType
 from app.models.question import AgentQuestion, AgentQuestionStatus
+from app.models.template import DocumentTemplate
+from app.services import object_icons
 from app.services import workspace_events
 from app.services.rules.engine import check_rule_definitions
 from app.services.live.ui_events import publish_ui_event
@@ -33,7 +35,14 @@ async def create_proposal(body: ProposalBody, ws: Workspace = Depends(get_worksp
         schema = body.proposed_data.get("schema_definition")
         if not isinstance(schema, dict):
             raise HTTPException(status_code=422, detail="TEMPLATE_CHANGE needs proposed_data.schema_definition (the complete new schema).")
-        problems = check_rule_definitions(schema)
+        # An object the agent left without an icon keeps the one it has now (a person may have chosen it)
+        current = await ws.db.get(DocumentTemplate, ws.template_id)
+        chosen = {o.get("type"): o.get("icon") for o in ((current.schema_definition if current else None) or {}).get("objects") or []
+                  if isinstance(o, dict) and object_icons.is_icon(o.get("icon"))}
+        for obj in schema.get("objects") or []:
+            if isinstance(obj, dict) and not obj.get("icon") and chosen.get(obj.get("type")):
+                obj["icon"] = chosen[obj.get("type")]
+        problems = check_rule_definitions(schema) + object_icons.problems(schema)
         if problems:
             raise HTTPException(status_code=422, detail={"message": "Proposed schema is invalid", "problems": problems})
     elif body.proposal_type == KnowledgeProposalType.ENTITY_MERGE:
