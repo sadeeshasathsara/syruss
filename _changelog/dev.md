@@ -14,11 +14,83 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.11.0-dev.1` | 2026-11-15 | [What changed](#admin-0110-dev1) |
+| **admin** | `0.12.0-dev.1` | 2026-11-15 | [What changed](#admin-0120-dev1) |
 | **agent** | `0.11.1-dev.1` | 2026-11-15 | [What changed](#agent-0111-dev1) |
-| **server** | `0.19.1-dev.1` | 2026-11-15 | [What changed](#server-0191-dev1) |
+| **mail** | `0.2.0-dev.1` | 2026-11-15 | [What changed](#mail-020-dev1) |
+| **server** | `0.20.0-dev.1` | 2026-11-15 | [What changed](#server-0200-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
 | **www** | `0.14.0-dev.1` | 2026-11-15 | [What changed](#www-0140-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### admin (0.12.0-dev.1)
+- **Mail accounts are set up in the admin app**, on a new **Email** page (owners only).
+- **Google mail:** "Set up Google mail" signs in to Google and asks only for what the chosen uses need. Sending needs `gmail.send`; Support also needs `gmail.readonly`. Syruss can't delete or change anything in the mailbox.
+- A Workspace account with an Internal OAuth app needs no review from Google.
+- A personal Gmail works while the app is in Testing, but Google ends its sign-in every 7 days. The account then shows "Needs reconnecting", and mail uses the fallback account until someone reconnects it.
+- **Any other mail server:** add a mailbox with SMTP to send and IMAP to read (read-only).
+- **Choose which account does what:** notifications, sign-in emails (Keycloak) or support. A choice the account can't serve is refused when it's made.
+- **Test** an account, and **remove** one (a Google sign-in is revoked).
+- **The delivery log:** what went to whom and how it went. Mail that was given up can be sent again.
+- Every change is in the platform audit log.
+- **The mail service reads the support mailbox**, whichever account is connected for Support, and hands each new message to the server, which turns it into a ticket reply.
+- It starts from when it was switched on, and nothing is read twice.
+- The server's own IMAP polling and `SUPPORT_IMAP_*` are gone. The fallback account can read too (`MAIL_IMAP_*` in `mail.env`).
+- **The server reaches the mail service's internal API** with `MAIL_SERVICE_URL` and `MAIL_SERVICE_TOKEN`, the same token as in `mail.env`. The test server and production refuse to start without a long one.
+- **Support settings** now say whether the support mailbox is read, and link to the Email page.
+
+### mail (0.2.0-dev.1)
+- **A mail service: every email Syruss sends goes through one place** (the new `mail/` service). It holds the only mail credentials.
+- **The server never talks to a mail server again.** Sending an email queues it in the database (`mail_outbox`, sealed while it waits). A relay publishes it on Kafka (`mail.outbound`), and the mail service sends it and reports back (`mail.events`). Mail waits safely while Kafka or the mail service is down.
+- **Keycloak's emails** (verify an address, reset a password, a new staff member's set-up link) go to the mail service's SMTP door on the internal network, with their own login. `harden.py --smtp` points Keycloak there.
+- **One mail interface with permissions:** a mail account says what it was given (send, read), and each use opens it for only what it needs.
+- **Purposes route to accounts:** `notifications`, `accounts` (Keycloak) and `support`. Until an account is connected for a purpose, the mail service's own account (`MAIL_SMTP_*` in `mail.env`) sends.
+- **Delivery:** each email is sent once, even if handed over twice. Failures are retried with growing waits and given up after a while; an address the server refuses is given up at once. The text isn't kept once an email is done.
+- **Admin overview:** a new Email health check shows mail that couldn't be sent or is waiting too long.
+- **Settings moved:** `SMTP_*` and `SUPPORT_SMTP_*` leave the server; the mail server is set in `mail.env` (`MAIL_SMTP_*`). The server's `MAIL_BACKEND` is now `service` (or `console`, `memory`).
+- **Mail accounts are set up in the admin app**, on a new **Email** page (owners only).
+- **Google mail:** "Set up Google mail" signs in to Google and asks only for what the chosen uses need. Sending needs `gmail.send`; Support also needs `gmail.readonly`. Syruss can't delete or change anything in the mailbox.
+- A Workspace account with an Internal OAuth app needs no review from Google.
+- A personal Gmail works while the app is in Testing, but Google ends its sign-in every 7 days. The account then shows "Needs reconnecting", and mail uses the fallback account until someone reconnects it.
+- **Any other mail server:** add a mailbox with SMTP to send and IMAP to read (read-only).
+- **Choose which account does what:** notifications, sign-in emails (Keycloak) or support. A choice the account can't serve is refused when it's made.
+- **Test** an account, and **remove** one (a Google sign-in is revoked).
+- **The delivery log:** what went to whom and how it went. Mail that was given up can be sent again.
+- Every change is in the platform audit log.
+- **The mail service reads the support mailbox**, whichever account is connected for Support, and hands each new message to the server, which turns it into a ticket reply.
+- It starts from when it was switched on, and nothing is read twice.
+- The server's own IMAP polling and `SUPPORT_IMAP_*` are gone. The fallback account can read too (`MAIL_IMAP_*` in `mail.env`).
+- **The server reaches the mail service's internal API** with `MAIL_SERVICE_URL` and `MAIL_SERVICE_TOKEN`, the same token as in `mail.env`. The test server and production refuse to start without a long one.
+- **Support settings** now say whether the support mailbox is read, and link to the Email page.
+
+### server (0.20.0-dev.1)
+- **A mail service: every email Syruss sends goes through one place** (the new `mail/` service). It holds the only mail credentials.
+- **The server never talks to a mail server again.** Sending an email queues it in the database (`mail_outbox`, sealed while it waits). A relay publishes it on Kafka (`mail.outbound`), and the mail service sends it and reports back (`mail.events`). Mail waits safely while Kafka or the mail service is down.
+- **Keycloak's emails** (verify an address, reset a password, a new staff member's set-up link) go to the mail service's SMTP door on the internal network, with their own login. `harden.py --smtp` points Keycloak there.
+- **One mail interface with permissions:** a mail account says what it was given (send, read), and each use opens it for only what it needs.
+- **Purposes route to accounts:** `notifications`, `accounts` (Keycloak) and `support`. Until an account is connected for a purpose, the mail service's own account (`MAIL_SMTP_*` in `mail.env`) sends.
+- **Delivery:** each email is sent once, even if handed over twice. Failures are retried with growing waits and given up after a while; an address the server refuses is given up at once. The text isn't kept once an email is done.
+- **Admin overview:** a new Email health check shows mail that couldn't be sent or is waiting too long.
+- **Settings moved:** `SMTP_*` and `SUPPORT_SMTP_*` leave the server; the mail server is set in `mail.env` (`MAIL_SMTP_*`). The server's `MAIL_BACKEND` is now `service` (or `console`, `memory`).
+- **Mail accounts are set up in the admin app**, on a new **Email** page (owners only).
+- **Google mail:** "Set up Google mail" signs in to Google and asks only for what the chosen uses need. Sending needs `gmail.send`; Support also needs `gmail.readonly`. Syruss can't delete or change anything in the mailbox.
+- A Workspace account with an Internal OAuth app needs no review from Google.
+- A personal Gmail works while the app is in Testing, but Google ends its sign-in every 7 days. The account then shows "Needs reconnecting", and mail uses the fallback account until someone reconnects it.
+- **Any other mail server:** add a mailbox with SMTP to send and IMAP to read (read-only).
+- **Choose which account does what:** notifications, sign-in emails (Keycloak) or support. A choice the account can't serve is refused when it's made.
+- **Test** an account, and **remove** one (a Google sign-in is revoked).
+- **The delivery log:** what went to whom and how it went. Mail that was given up can be sent again.
+- Every change is in the platform audit log.
+- **The mail service reads the support mailbox**, whichever account is connected for Support, and hands each new message to the server, which turns it into a ticket reply.
+- It starts from when it was switched on, and nothing is read twice.
+- The server's own IMAP polling and `SUPPORT_IMAP_*` are gone. The fallback account can read too (`MAIL_IMAP_*` in `mail.env`).
+- **The server reaches the mail service's internal API** with `MAIL_SERVICE_URL` and `MAIL_SERVICE_TOKEN`, the same token as in `mail.env`. The test server and production refuse to start without a long one.
+- **Support settings** now say whether the support mailbox is read, and link to the Email page.
+
+## [2026-11-15] - Release via dev
+
+### server (0.19.2-dev.1)
+- **`get_db_session` is typed as what it is**, an async iterator of sessions. Pylance reported it as invalid (`reportInvalidTypeForm`). Behaviour doesn't change.
 
 ## [2026-11-15] - Release via dev
 
