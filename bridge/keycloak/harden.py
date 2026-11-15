@@ -3,8 +3,8 @@ Checks the running Keycloak realm against the sign-in settings Syruss expects, a
 
     python bridge/keycloak/harden.py            # show what differs and fix it
     python bridge/keycloak/harden.py --check    # only show (exit 1 if anything differs)
-    python bridge/keycloak/harden.py --smtp     # also give Keycloak the mail server in server/.env, so it can send
-                                                # "forgot your password" emails (stores the SMTP password in Keycloak)
+    python bridge/keycloak/harden.py --smtp     # also point Keycloak's email at the mail service (mail/), so its
+                                                # "forgot your password" emails go out like all of Syruss's mail
 
 The same settings are in realm-syruss.json, which a brand-new Keycloak imports; this script brings an existing one in line.
 It also adds any client the realm file has and the running realm lacks (such as syruss-admin), and gives the system admin
@@ -87,16 +87,22 @@ def call(method, path, token=None, body=None, form=None):
 
 
 def smtp_from_env() -> dict:
+    """Keycloak's mail server: the mail service's relay (mail/relay.py), with the login and From address it accepts.
+    Read from the environment, else mail/.env. KEYCLOAK_SMTP_HOST is how Keycloak's container reaches the mail service:
+    "mail" on the servers (their mail-relay network), host.docker.internal on your machine (the default)."""
     values = {}
-    for line in (Path(__file__).resolve().parents[2] / "server" / ".env").read_text(encoding="utf-8").splitlines():
-        if "=" in line and not line.lstrip().startswith("#"):
-            k, _, v = line.partition("=")
-            values[k.strip()] = v.strip()
-    host, port, security = values.get("SMTP_HOST", ""), values.get("SMTP_PORT", "587"), values.get("SMTP_SECURITY", "starttls").lower()
+    env_file = Path(__file__).resolve().parents[2] / "mail" / ".env"
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            if "=" in line and not line.lstrip().startswith("#"):
+                k, _, v = line.partition("=")
+                values[k.strip()] = v.strip()
+    get = lambda name, default="": os.environ.get(name) or values.get(name) or default  # noqa: E731
     return {
-        "host": host, "port": port, "from": values.get("MAIL_FROM", ""), "fromDisplayName": values.get("MAIL_FROM_NAME", "Syruss"),
-        "auth": "true" if values.get("SMTP_USERNAME") else "false", "user": values.get("SMTP_USERNAME", ""), "password": values.get("SMTP_PASSWORD", ""),
-        "starttls": "true" if security == "starttls" else "false", "ssl": "true" if security == "ssl" else "false",
+        "host": get("KEYCLOAK_SMTP_HOST", "host.docker.internal"), "port": get("MAIL_RELAY_PORT", "2525"),
+        "from": get("MAIL_FROM"), "fromDisplayName": get("MAIL_FROM_NAME", "Syruss"),
+        "auth": "true", "user": get("MAIL_RELAY_USERNAME", "keycloak"), "password": get("MAIL_RELAY_PASSWORD"),
+        "starttls": "false", "ssl": "false",  # an internal hop: the relay is reachable only from Keycloak's network
     }
 
 
@@ -261,13 +267,13 @@ def main() -> int:
         print("Updated.")
     if "--smtp" in sys.argv and not check_only:
         smtp = smtp_from_env()
-        if not smtp["host"]:
-            print("No SMTP_HOST in server/.env: Keycloak's mail server left as it is.")
+        if not smtp["password"] or not smtp["from"]:
+            print("No MAIL_RELAY_PASSWORD or MAIL_FROM (environment or mail/.env): Keycloak's mail server left as it is.")
         else:
             realm = call("GET", f"/admin/realms/{REALM}", token)
             realm["smtpServer"] = smtp
             call("PUT", f"/admin/realms/{REALM}", token, realm)
-            print(f"Keycloak will send mail through {smtp['host']}:{smtp['port']}.")
+            print(f"Keycloak will send mail through the mail service at {smtp['host']}:{smtp['port']}.")
     return 1 if (changes or header_changes or admin_sign_in) and check_only else 0
 
 

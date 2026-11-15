@@ -59,22 +59,22 @@ class Settings(BaseSettings):
     # The system admin app, for links in emails to Syruss's own staff (a payment slip to check)
     PUBLIC_ADMIN_URL: str = "http://localhost:3200"
 
-    # Email. "smtp" sends through SMTP_*; "console" only logs the message (local work without a mail server);
-    # "memory" keeps messages in a list (tests). Locally, Mailpit (bridge/docker-compose.yml) catches everything on 1025.
-    MAIL_BACKEND: str = "smtp"
-    SMTP_HOST: str = "localhost"
-    SMTP_PORT: int = 1025
-    SMTP_USERNAME: str = ""
-    SMTP_PASSWORD: str = ""
-    SMTP_SECURITY: str = "none"  # none | starttls | ssl
-    SMTP_TIMEOUT_SECONDS: int = 15
+    # Email. The server never talks to a mail server: "service" queues each message for the mail service (mail/), which
+    # holds the mail accounts and sends it; "console" only logs it (local work without the mail service); "memory" keeps
+    # messages in a list (tests). See services/notifications/transport.py.
+    MAIL_BACKEND: str = "service"
+    MAIL_OUTBOUND_TOPIC: str = "mail.outbound"
+    MAIL_EVENTS_TOPIC: str = "mail.events"
+    # The address app mail comes from (set the same in the mail service's MAIL_FROM, or on the account connected for
+    # notifications): it names the domain of message ids and keeps the support mailbox from reading our own mail.
     MAIL_FROM: str = "no-reply@syruss.local"
     MAIL_FROM_NAME: str = "Syruss"
     MAIL_REPLY_TO: str = ""
 
     # Support tickets by email. Customers write to SUPPORT_EMAIL_ADDRESS; Syruss reads that mailbox over IMAP every
-    # SUPPORT_POLL_SECONDS (nothing is read while SUPPORT_IMAP_HOST is empty) and answers from it over SUPPORT_SMTP_*
-    # (the app's SMTP_* when SUPPORT_SMTP_HOST is empty). Gmail / Google Workspace: imap.gmail.com, port 993, an app password.
+    # SUPPORT_POLL_SECONDS (nothing is read while SUPPORT_IMAP_HOST is empty). Answers go out through the mail service's
+    # "support" purpose: the account connected for support in the admin app sends them from its own address, which should
+    # be SUPPORT_EMAIL_ADDRESS. Gmail / Google Workspace: imap.gmail.com, port 993, an app password.
     SUPPORT_EMAIL_ADDRESS: str = ""
     SUPPORT_FROM_NAME: str = "Syruss Support"
     SUPPORT_IMAP_HOST: str = ""
@@ -83,11 +83,6 @@ class Settings(BaseSettings):
     SUPPORT_IMAP_PASSWORD: str = ""
     SUPPORT_IMAP_FOLDER: str = "INBOX"
     SUPPORT_IMAP_SSL: bool = True
-    SUPPORT_SMTP_HOST: str = ""
-    SUPPORT_SMTP_PORT: int = 587
-    SUPPORT_SMTP_USERNAME: str = ""
-    SUPPORT_SMTP_PASSWORD: str = ""
-    SUPPORT_SMTP_SECURITY: str = "starttls"
     SUPPORT_POLL_SECONDS: int = 60
     # An invitation email can be sent again this often, no sooner
     MAIL_RESEND_SECONDS: int = 60

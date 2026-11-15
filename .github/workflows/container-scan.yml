@@ -38,6 +38,7 @@ jobs:
         include:
           - { name: server, context: server, gate: true }
           - { name: agent, context: agentic_framework, gate: true }
+          - { name: mail, context: mail, gate: true }
           - { name: www, context: www, gate: true }
           - { name: site, context: site, gate: true }
           - { name: admin, context: admin, gate: true }

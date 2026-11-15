@@ -1,22 +1,33 @@
 """
-Sending email. One function, `send`, takes a finished message and hands it to the configured backend; everything that
-can go wrong with a mail server comes back as an `EmailError` with a message that is safe to show a person.
+Sending email. One function, `send`, takes a finished message. The server never talks to a mail server itself: the
+message goes into the mail outbox (in the database, so nothing is lost while Kafka or the mail service is down), the
+relay publishes it on Kafka (mail.outbound), and the mail service (mail/) sends it through the account set up for its
+purpose. How each message went comes back on mail.events (services/notifications/mail_relay.py).
+
+`send` succeeds once the message is safely queued; it raises `EmailError` (with a message that is safe to show a
+person) only when it can't be queued at all.
+
+    MAIL_BACKEND  service  queue it for the mail service (every real server)
+                  console  only log it (local work without the mail service)
+                  memory   keep it in `outbox` (tests)
 """
-import asyncio
+import base64
+import json
 import logging
-import smtplib
-import ssl
-from dataclasses import dataclass
-from email.message import EmailMessage as MimeMessage
-from email.utils import formataddr, formatdate, make_msgid
-from typing import List, Optional, Tuple
+import uuid
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 from app.core.config import settings
+from app.core.secrets import seal
 
 logger = logging.getLogger(__name__)
 
+PURPOSES = ("notifications", "support")  # what the server sends for (the mail service also has "accounts", for Keycloak)
+MAX_JOB_BYTES = 900_000                   # a job travels as one Kafka message (1 MB at most)
+
 
 class EmailError(Exception):
-    """The message could not be delivered to the mail server."""
+    """The message couldn't be queued for sending."""
 
 
 @dataclass
@@ -28,97 +39,74 @@ class EmailMessage:
     reply_to: Optional[str] = None
     # (file name, bytes, "type/subtype") for each file sent along
     attachments: Optional[List[tuple]] = None
-    # A message in a conversation (support tickets): who it is from, its own id, and the earlier messages it answers,
-    # so mail programs thread it. A person's reply isn't marked automatic.
-    sender: Optional[Tuple[str, str]] = None        # (name, address); the app's MAIL_FROM when not set
+    # What it is for: "notifications" (everything the app tells people) or "support" (tickets). The mail service sends
+    # it through that purpose's account, which decides the From address; `sender_name` only names the sender.
+    purpose: str = "notifications"
+    sender_name: Optional[str] = None
+    # A message in a conversation (support tickets): its own id, and the earlier messages it answers, so mail programs
+    # thread it. A person's reply isn't marked automatic.
     message_id: Optional[str] = None
     in_reply_to: Optional[str] = None
     references: Optional[List[str]] = None
     automatic: bool = True
-    smtp: Optional["SmtpServer"] = None              # another mail server (the support mailbox's), else SMTP_*
-
-
-@dataclass(frozen=True)
-class SmtpServer:
-    host: str
-    port: int
-    username: str
-    password: str
-    security: str = "starttls"
+    # Passed back with how it went (mail.events), e.g. which invitation it was
+    meta: Dict[str, Any] = field(default_factory=dict)
 
 
 # Messages "sent" by the memory backend (tests read these).
 outbox: List[EmailMessage] = []
 
 
-def _mime(message: EmailMessage) -> MimeMessage:
-    mime = MimeMessage()
-    name, address = message.sender or (settings.MAIL_FROM_NAME, settings.MAIL_FROM)
-    mime["From"] = formataddr((name, address))
-    mime["To"] = message.to
-    mime["Subject"] = message.subject
-    mime["Date"] = formatdate(localtime=False)
-    mime["Message-ID"] = message.message_id or make_msgid(domain=address.rpartition("@")[2] or None)
-    if message.in_reply_to:
-        mime["In-Reply-To"] = message.in_reply_to
-    if message.references:
-        mime["References"] = " ".join(message.references[-20:])
-    if message.automatic:
-        mime["Auto-Submitted"] = "auto-generated"  # keeps out-of-office replies from answering back
-    reply_to = message.reply_to or settings.MAIL_REPLY_TO
-    if reply_to:
-        mime["Reply-To"] = reply_to
-    mime.set_content(message.text)
-    mime.add_alternative(message.html, subtype="html")
-    for name, data, kind in message.attachments or []:
-        maintype, _, subtype = kind.partition("/")
-        mime.add_attachment(data, maintype=maintype, subtype=subtype, filename=name)
-    return mime
-
-
-def _deliver_smtp(mime: MimeMessage, via: Optional[SmtpServer] = None) -> None:
-    via = via or SmtpServer(settings.SMTP_HOST, settings.SMTP_PORT, settings.SMTP_USERNAME, settings.SMTP_PASSWORD, settings.SMTP_SECURITY)
-    security = via.security.lower()
-    try:
-        if security == "ssl":
-            server = smtplib.SMTP_SSL(via.host, via.port, timeout=settings.SMTP_TIMEOUT_SECONDS, context=ssl.create_default_context())
-        else:
-            server = smtplib.SMTP(via.host, via.port, timeout=settings.SMTP_TIMEOUT_SECONDS)
-        with server:
-            if security == "starttls":
-                server.starttls(context=ssl.create_default_context())
-            if via.username:
-                server.login(via.username, via.password)
-            server.send_message(mime)
-    except smtplib.SMTPAuthenticationError as e:
-        raise EmailError("The mail server refused our sign-in.") from e
-    except smtplib.SMTPRecipientsRefused as e:
-        raise EmailError("The mail server refused that address.") from e
-    except (smtplib.SMTPException, OSError, ssl.SSLError) as e:
-        raise EmailError("The mail server couldn't be reached or didn't accept the message.") from e
+def job_of(message: EmailMessage, job_id: str) -> Dict[str, Any]:
+    """The message as the mail service takes it (mail/accounts/base.Outbound)."""
+    return {
+        "id": job_id, "purpose": message.purpose, "to": message.to, "subject": message.subject, "text": message.text,
+        "html": message.html, "sender_name": message.sender_name or settings.MAIL_FROM_NAME,
+        "reply_to": message.reply_to or settings.MAIL_REPLY_TO or None, "message_id": message.message_id,
+        "in_reply_to": message.in_reply_to, "references": list(message.references or []), "automatic": message.automatic,
+        "attachments": [{"filename": name, "content_type": kind, "data_b64": base64.b64encode(data).decode()}
+                        for name, data, kind in message.attachments or []],
+        "meta": message.meta or {},
+    }
 
 
 async def send(message: EmailMessage) -> None:
+    if message.purpose not in PURPOSES:
+        raise EmailError(f"Unknown mail purpose '{message.purpose}'.")
     backend = settings.MAIL_BACKEND.lower()
     if backend == "memory":
         outbox.append(message)
     elif backend == "console":
-        logger.info("Email to %s\nSubject: %s\n\n%s", message.to, message.subject, message.text)
-    elif backend == "smtp":
-        await asyncio.to_thread(_deliver_smtp, _mime(message), message.smtp)
-        logger.info("Email sent to %s (%s)", message.to, message.subject)
+        logger.info("Email to %s (%s)\nSubject: %s\n\n%s", message.to, message.purpose, message.subject, message.text)
+    elif backend == "service":
+        await _queue(message)
     else:
         raise EmailError(f"Unknown MAIL_BACKEND '{settings.MAIL_BACKEND}'.")
 
 
+async def _queue(message: EmailMessage) -> None:
+    from app.core.database import AsyncSessionLocal
+    from app.models.mail import MailOutbox
+    from app.services.notifications.mail_relay import mail_relay
+    job_id = str(uuid.uuid4())
+    job = job_of(message, job_id)
+    if len(json.dumps(job)) > MAX_JOB_BYTES:
+        raise EmailError("The message is too large to send (attachments over about 650 KB).")
+    try:
+        async with AsyncSessionLocal() as db:
+            db.add(MailOutbox(id=job_id, purpose=message.purpose, to=message.to[:320], subject=message.subject[:500],
+                              payload=seal(job), status="queued", meta=message.meta or {}))
+            await db.commit()
+    except Exception as e:  # noqa: BLE001
+        raise EmailError("The message couldn't be queued for sending.") from e
+    mail_relay.notify()
+    logger.info("Email to %s queued (%s: %s)", message.to, message.purpose, message.subject)
+
+
 def check_mail_config() -> None:
-    """Fails startup when a real server (the test server or production) would send mail nowhere useful."""
+    """Fails startup on an unknown backend, or a real server (the test server or production) not sending mail at all."""
     backend = settings.MAIL_BACKEND.lower()
-    if backend not in ("smtp", "console", "memory"):
-        raise RuntimeError("MAIL_BACKEND must be smtp, console or memory.")
-    if settings.is_deployed and backend != "smtp":
-        raise RuntimeError(f"MAIL_BACKEND must be 'smtp' on a real server ({settings.ENV}).")
-    if settings.is_deployed and settings.SMTP_HOST in ("localhost", "127.0.0.1"):
-        raise RuntimeError(f"SMTP_HOST must point at a real mail server ({settings.ENV}).")
-    if settings.SMTP_SECURITY.lower() not in ("none", "starttls", "ssl"):
-        raise RuntimeError("SMTP_SECURITY must be none, starttls or ssl.")
+    if backend not in ("service", "console", "memory"):
+        raise RuntimeError("MAIL_BACKEND must be service, console or memory.")
+    if settings.is_deployed and backend != "service":
+        raise RuntimeError(f"MAIL_BACKEND must be 'service' on a real server ({settings.ENV}).")
