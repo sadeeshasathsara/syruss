@@ -14,12 +14,31 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.13.0-dev.1` | 2026-11-15 | [What changed](#admin-0130-dev1) |
+| **admin** | `0.14.0-dev.1` | 2026-11-15 | [What changed](#admin-0140-dev1) |
 | **agent** | `0.12.0-dev.1` | 2026-11-15 | [What changed](#agent-0120-dev1) |
 | **mail** | `0.2.0-dev.1` | 2026-11-15 | [What changed](#mail-020-dev1) |
 | **server** | `0.21.0-dev.1` | 2026-11-15 | [What changed](#server-0210-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
 | **www** | `0.15.0-dev.1` | 2026-11-15 | [What changed](#www-0150-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### admin (0.14.0-dev.1)
+- **The admin app's sidebar is in sections with sub-tabs, like the customer app.**
+- **Three groups:** Watch (Overview, Operations), Customers (Accounts, Billing, Support) and Platform (Platform controls, Email, Staff, Security, Approvals, Audit log).
+- **Sub-tabs:** the section you're in opens to show them. Each sub-tab is its own address, and detail pages keep theirs lit: a ticket under Tickets, an invoice under Invoices.
+- **New sub-tabs:**
+- **Operations:** Live, Agent runs, Documents, Queues.
+- **Accounts:** Organizations, People.
+- **Billing:** Organizations, Invoices, Payments to check, Plans and packs, Settings.
+- **Support:** Tickets, Live chats, Saved replies, Settings.
+- **Platform controls:** Switches and maintenance, Announcements, How Syruss works.
+- **Email:** Accounts and purposes, Delivery log.
+- **Staff:** People, Roles, Invitations, Access review.
+- **Old addresses still work:** `/accounts` and `/billing?tab=…` lead to the new ones.
+- **Counts show where the work is:** tickets to take, live chats waiting, payments to check, approvals waiting. A closed section shows its total.
+- **Email** is shown only to staff who can change it.
+- **On phones and narrow windows** a menu button opens the sidebar as a slide-over: it closes when you go somewhere or press Escape, and Tab stays inside it while open.
 
 ## [2026-11-15] - Release via dev
 
