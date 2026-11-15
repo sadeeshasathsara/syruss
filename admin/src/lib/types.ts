@@ -764,14 +764,6 @@ export interface PlatformControls {
   announcements: Announcement[];
 }
 
-export interface SearchResults {
-  organizations: { id: string; name: string; slug: string; status: string }[];
-  people: { id: string; name: string; email: string; status: string }[];
-  invoices: { id: string; number: string; status: string; tenant_id: string }[];
-  documents: { id: string; tenant_id: string; status: string }[];
-  runs: { id: string; tenant_id: string; status: string }[];
-}
-
 export interface SecurityView {
   last_7_days: { wrong_codes: number; browsers_confirmed: number; browsers_removed: number; codes_sent: number };
   wrong_code_bursts: { user_id: string; name: string; email: string | null; count: number; last_at: string }[];
