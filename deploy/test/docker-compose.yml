@@ -9,16 +9,12 @@ name: syruss-test
 x-app: &app
   restart: unless-stopped
   pull_policy: missing  # updates come from the explicit `docker compose pull` the deploy hook runs
-  # Every container: no Linux capabilities (root powers) unless a service adds back the few it needs, no gaining privileges
-  # through setuid programs, and a cap on processes (a fork bomb or a runaway thread pool stops there).
+  # Every container: runs as a non-root user, has no Linux capabilities (root powers), can't gain privileges through
+  # setuid programs, and has a cap on processes (a fork bomb or a runaway thread pool stops there).
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
   pids_limit: 1024
 
-# Database images start as root only to fix their data folder's owner, then switch to their own user: these are the
-# powers that takes, and nothing more.
-x-switches-user: &switches-user
-  cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
 
 # Syruss's own services run as an unprivileged user and can't change their files: the filesystem is read-only except
 # for scratch space in memory.
@@ -27,7 +23,9 @@ x-read-only: &read-only
 
 services:
   postgres:
-    <<: [*app, *switches-user]
+    # Runs as the image's postgres user from the start (its data folder belongs to it): never root
+    <<: *app
+    user: "70:70"
     networks: [data]
     # Postgres 16 with pgvector and Apache AGE, built by CI from bridge/postgres
     image: ghcr.io/sadeeshasathsara/syruss/postgres:test
@@ -46,7 +44,9 @@ services:
       retries: 10
 
   minio:
-    <<: [*app, *switches-user]
+    # Runs as the image's minio user from the start (bridge/minio/Dockerfile gives it /data): never root
+    <<: *app
+    user: "100:101"
     networks: [data, files]
     image: ghcr.io/sadeeshasathsara/syruss/minio:test
     environment:
@@ -76,7 +76,9 @@ services:
       start_period: 60s
 
   keycloak-db:
-    <<: [*app, *switches-user]
+    # Runs as the image's postgres user from the start (its data folder belongs to it): never root
+    <<: *app
+    user: "70:70"
     networks: [auth]
     image: ghcr.io/sadeeshasathsara/syruss/keycloak-db:test
     environment:
