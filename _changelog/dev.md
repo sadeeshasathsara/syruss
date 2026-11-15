@@ -19,7 +19,12 @@
 | **mail** | `0.2.0-dev.1` | 2026-11-15 | [What changed](#mail-020-dev1) |
 | **server** | `0.23.0-dev.1` | 2026-11-15 | [What changed](#server-0230-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
-| **www** | `0.17.0-dev.1` | 2026-11-15 | [What changed](#www-0170-dev1) |
+| **www** | `0.17.1-dev.1` | 2026-11-15 | [What changed](#www-0171-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### www (0.17.1-dev.1)
+- **The app shows which version it is, under the sidebar** ("Syruss 0.9.0"). The release job gives each build its version from the changesets, so production shows its own release, the test environment its test release and dev its dev release (for example `0.16.0-dev.1`). Only the app's own number is shown: no list of services. A build made by hand shows nothing.
 
 ## [2026-11-15] - Release via dev
 
