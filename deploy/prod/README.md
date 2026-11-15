@@ -25,11 +25,11 @@ nothing is built on it. The folder holds everything the server needs besides its
      compose file sets `ENV=production`, and then the server and the agent refuse to start while a development value is
      left, and say which: the database, storage and token passwords; `SECRETS_ENCRYPTION_KEY`; the public addresses
      (`OIDC_ISSUER`, `PUBLIC_SITE_URL`, `PUBLIC_APP_URL`, `PUBLIC_ADMIN_URL`, `PUBLIC_API_URL`) and `CORS_ORIGINS`, which
-     must be https and not localhost; `MAIL_FROM` at a real domain; the signing keys (`AGENT_TOKEN_PRIVATE_KEY` for the
+     must be https and not localhost; the signing keys (`AGENT_TOKEN_PRIVATE_KEY` for the
      server, `AGENT_TOKEN_PUBLIC_KEY` for the agent). The test server (`ENV=test`) checks the same.
    - Live Stripe keys and the webhook secret (webhook URL `https://api.<domain>/api/v1/billing/webhooks/stripe`), the
-     model provider on a paid tier, `MODEL_PRICES`, and the mail service's `MAIL_SMTP_*` (in `mail.env`) from a mail provider with SPF, DKIM and DMARC set up.
-   - The support mailbox: `SUPPORT_EMAIL_ADDRESS` in `server.env`, and the mailbox itself connected in the admin app's
+     model provider on a paid tier, `MODEL_PRICES`, and the mail service's `MAIL_SMTP_*` and `MAIL_FROM` (a real domain; in `mail.env`) from a mail provider with SPF, DKIM and DMARC set up.
+   - The support mailbox: `SUPPORT_EMAIL_ADDRESS` in `mail.env` (the server asks the mail service for it), and the mailbox itself connected in the admin app's
      Email page for Support (Google, or any server with IMAP): the mail service sends ticket answers from it and reads
      customers' replies.
 3. `echo 'SYRUSS_DOMAIN=<domain>' | sudo tee -a /etc/default/caddy`, copy the `Caddyfile` to `/etc/caddy/`, reload Caddy.

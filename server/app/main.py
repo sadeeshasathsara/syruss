@@ -20,6 +20,7 @@ from app.services.storage_service import storage_service
 from app.services import system_lessons
 from app.services.billing import catalog as billing_catalog
 from app.core.auth import validate_auth_config
+from app.services import mail_identity
 from app.services.notifications.mail_relay import mail_events, mail_inbound, mail_relay
 from app.core.security_headers import Maintenance, RequestSizeLimit, SecurityHeaders
 from app.core.permissions import ensure_system_roles
@@ -41,6 +42,10 @@ async def lifespan(_: FastAPI):
     storage_service.ensure_bucket_exists()
     await agent_event_relay.start()
     await mail_relay.start()
+    try:
+        await mail_identity.refresh()  # the mail service's addresses; asked again when needed if it isn't up yet
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("main").warning("The mail service didn't answer yet (%s); its addresses are asked for again when needed", exc)
     await mail_events.start()
     await mail_inbound.start()
     await kafka_ws_bridge.start()

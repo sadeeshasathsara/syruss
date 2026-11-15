@@ -140,6 +140,19 @@ async def test_mailboxes_are_read_from_where_they_left_off(store):
     assert await Reader(store, Router(store, MemoryAccount(id="env", granted=Capability.SEND))).read("support") == 0
 
 
+async def test_the_api_tells_the_server_its_addresses(store, monkeypatch):
+    monkeypatch.setattr(settings, "MAIL_SERVICE_TOKEN", TOKEN)
+    monkeypatch.setattr(settings, "MAIL_FROM", "no-reply@example.com")
+    app = build_api(store, Router(store, MemoryAccount(id="env", granted=Capability.SEND)))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://mail") as client:
+        assert (await client.get("/identity")).status_code == 401
+        auth = {"Authorization": f"Bearer {TOKEN}"}
+        monkeypatch.setattr(settings, "SUPPORT_EMAIL_ADDRESS", "")
+        assert (await client.get("/identity", headers=auth)).json() == {"from_address": "no-reply@example.com", "support_address": "no-reply@example.com"}
+        monkeypatch.setattr(settings, "SUPPORT_EMAIL_ADDRESS", "help@example.com")
+        assert (await client.get("/identity", headers=auth)).json() == {"from_address": "no-reply@example.com", "support_address": "help@example.com"}
+
+
 async def test_the_api_is_only_for_the_server_and_never_shows_secrets(store, monkeypatch):
     monkeypatch.setattr(settings, "MAIL_SERVICE_TOKEN", TOKEN)
     app = build_api(store, Router(store, MemoryAccount(id="env", granted=Capability.SEND)))

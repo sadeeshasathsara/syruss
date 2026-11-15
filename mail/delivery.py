@@ -27,6 +27,15 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def with_defaults(job: Outbound) -> Outbound:
+    """The sender's name and the reply address the job didn't set itself: from this service's settings, so no publisher
+    needs to know them (support mail is in the support name and answered at the support address)."""
+    support = job.purpose == "support"
+    sender_name = job.sender_name or (settings.SUPPORT_FROM_NAME if support else settings.MAIL_FROM_NAME)
+    reply_to = job.reply_to or ((settings.SUPPORT_EMAIL_ADDRESS or settings.MAIL_FROM) if support else settings.MAIL_REPLY_TO) or None
+    return job.model_copy(update={"sender_name": sender_name, "reply_to": reply_to})
+
+
 def backoff(attempts: int) -> timedelta:
     """How long to wait after the `attempts`-th failure: RETRY_BASE_SECONDS, doubling, at most RETRY_MAX_SECONDS."""
     return timedelta(seconds=min(settings.RETRY_BASE_SECONDS * 2 ** max(0, attempts - 1), settings.RETRY_MAX_SECONDS))
@@ -62,6 +71,7 @@ class Delivery:
         job = await self._claim(job_id)
         if job is None:
             return None
+        job = with_defaults(job)
         account_id, provider_id, error, permanent = None, None, None, False
         try:
             account, _ = await self.router.account_for(job.purpose)
