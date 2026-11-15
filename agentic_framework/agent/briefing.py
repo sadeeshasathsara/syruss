@@ -29,6 +29,8 @@ def _transcript(history: List[Dict[str, Any]], skip: str) -> str:
             lines.append(f"You: {text}" + (f"\n  (before that reply you {did})" if did else ""))
         elif m["role"] == "user":
             lines.append(f"Them: {text}")
+        elif m["role"] == "staff":
+            lines.append(f"Syruss team ({m.get('name') or 'staff'}): {text}")
         else:
             lines.append(f"Note: {text}")
     return "\n".join(lines) or "(this is the start of the conversation)"

@@ -5,7 +5,7 @@ import type {
   Grant, GrantList, Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
   StaffActionPage, StaffInvitation, StaffList, StaffMe, StaffMember, StaffRole, JoinView, SystemLesson,
   Approval, ApprovalList, ApprovalRule, StaffPolicy,
-  SavedReply, SupportSettings, SupportSummary, Ticket, TicketDetail, TicketMessage,
+  LiveChat, LiveMessage, LiveQueue, Presence, SavedReply, SupportSettings, SupportSummary, Ticket, TicketDetail, TicketMessage,
 } from "./types";
 import { loadPage } from "./navigate";
 
@@ -129,6 +129,18 @@ export const api = {
     settings: () => request<SupportSettings>("/support/settings"),
     setSettings: (body: Omit<SupportSettings, "mailbox"> & { reason: string }) =>
       request<unknown>("/support/settings", { method: "PUT", body: json(body) }),
+    live: {
+      presence: () => request<{ status: Presence }>("/support/live/presence"),
+      setPresence: (status: Presence) => request<{ status: Presence }>("/support/live/presence", { method: "PUT", body: json({ status }) }),
+      queue: () => request<LiveQueue>("/support/live/queue"),
+      accept: (id: string) => request<LiveChat>(`/support/live/chats/${encodeURIComponent(id)}/accept`, { method: "POST" }),
+      chat: (id: string) => request<LiveChat>(`/support/live/chats/${encodeURIComponent(id)}`),
+      say: (id: string, body: string) => request<LiveMessage>(`/support/live/chats/${encodeURIComponent(id)}/messages`, { method: "POST", body: json({ body }) }),
+      typing: (id: string) => request<void>(`/support/live/chats/${encodeURIComponent(id)}/typing`, { method: "POST" }),
+      transfer: (id: string, to: string) => request<unknown>(`/support/live/chats/${encodeURIComponent(id)}/transfer`, { method: "POST", body: json({ to }) }),
+      ticket: (id: string) => request<{ id: string; number: string }>(`/support/live/chats/${encodeURIComponent(id)}/ticket`, { method: "POST" }),
+      end: (id: string) => request<unknown>(`/support/live/chats/${encodeURIComponent(id)}/end`, { method: "POST" }),
+    },
   },
   approvals: {
     list: (status: "pending" | "done" | "rejected" | "cancelled" | "failed" | "all" = "pending") => request<ApprovalList>(`/approvals?status=${status}`),

@@ -38,6 +38,7 @@ export interface Run {
 export type TimelineItem =
   | { kind: "user"; id: string; text: string; at: string; pending?: boolean }
   | { kind: "agent"; id: string; text: string; at: string }
+  | { kind: "staff"; id: string; text: string; name: string; at: string }
   | { kind: "note"; id: string; text: string; href?: string; at: string }
   | { kind: "run"; id: string; run: Run; at: string }
   | { kind: "question"; id: string; question: AgentQuestion; at: string }
@@ -99,6 +100,7 @@ export function buildTimeline(input: {
   for (const m of input.thread) {
     if (m.role === "user") items.push({ kind: "user", id: m.id, text: m.content, at: m.created_at });
     else if (m.role === "assistant") items.push({ kind: "agent", id: m.id, text: m.content, at: m.created_at });
+    else if (m.role === "staff") items.push({ kind: "staff", id: m.id, text: m.content, name: m.agent_trace?.staff?.name ?? "Syruss team", at: m.created_at });
     else items.push({ kind: "note", id: m.id, text: m.content, at: m.created_at });
   }
   const sentTexts = new Set(input.thread.filter((m) => m.role === "user").map((m) => m.content.trim()));
@@ -109,6 +111,16 @@ export function buildTimeline(input: {
     if (e.event_type === "agent_message" && typeof e.message_id === "string" && !messageIds.has(e.message_id)) {
       items.push({ kind: "agent", id: e.message_id, text: str(e.content), at: e.timestamp ?? new Date().toISOString() });
       messageIds.add(e.message_id);
+    }
+    // Live support: a team member's message, and the platform's notes (joined, left) as they happen
+    if (e.event_type === "support_message" && typeof e.id === "string" && !messageIds.has(e.id)) {
+      items.push({ kind: "staff", id: e.id, text: str(e.content), name: str(e.staff_name) || "Syruss team", at: str(e.at) || new Date().toISOString() });
+      messageIds.add(e.id);
+    }
+    const note = e.event_type === "support_state" ? (e.note as { id?: string; content?: string; at?: string } | undefined) : undefined;
+    if (note?.id && !messageIds.has(note.id)) {
+      items.push({ kind: "note", id: note.id, text: note.content ?? "", at: note.at ?? new Date().toISOString() });
+      messageIds.add(note.id);
     }
   }
   for (const run of buildRuns(input.events)) items.push({ kind: "run", id: run.id, run, at: run.startedAt });

@@ -1,5 +1,6 @@
 from typing import Literal, Optional
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
@@ -13,6 +14,7 @@ from app.schemas.conversation import (
     ConversationUpdate,
 )
 from app.services.conversation_service import conversation_service
+from app.services.support import live as support_live
 
 router = APIRouter(prefix="/conversations", tags=["Workspace Chat"], dependencies=[Depends(require("agent.chat"))])
 
@@ -115,3 +117,44 @@ async def stream_message(
         conversation_service.stream_reply(db, scope, conversation_id, payload),
         media_type="text/event-stream",
     )
+
+
+# ---- live support from the Syruss team in this chat (services/support/live) ----------------------------------------
+
+class RatingIn(BaseModel):
+    rating: Literal["up", "down"]
+    note: Optional[str] = Field(None, max_length=1000)
+
+
+async def _live_chat(db: AsyncSession, scope: TemplateScope, conversation_id: str):
+    conv = await conversation_service.get_conversation(db, scope, conversation_id)
+    if conv.kind != "chat" or conv.user_id != scope.user_id or not conv.support_state:
+        raise HTTPException(status_code=404, detail="No live support in this chat.")
+    return conv
+
+
+@router.post("/{conversation_id}/support/typing", status_code=status.HTTP_204_NO_CONTENT)
+async def support_typing(conversation_id: str, db: AsyncSession = Depends(get_db_session), scope: TemplateScope = Depends(get_template_scope)):
+    """You are typing to the Syruss team member in this chat (send it at most every 3 seconds)."""
+    conv = await _live_chat(db, scope, conversation_id)
+    await support_live.typing(conv, side="person", name=scope.username or "They")
+
+
+@router.post("/{conversation_id}/support/end")
+async def support_end(conversation_id: str, db: AsyncSession = Depends(get_db_session), scope: TemplateScope = Depends(get_template_scope)):
+    """Ends live support (or stops waiting for it): Syruss's assistant answers again."""
+    conv = await _live_chat(db, scope, conversation_id)
+    await support_live.end(db, conv, by="person")
+    return {"support": support_live.public(conv)}
+
+
+@router.post("/{conversation_id}/support/rating")
+async def support_rating(conversation_id: str, body: RatingIn, db: AsyncSession = Depends(get_db_session),
+                         scope: TemplateScope = Depends(get_template_scope)):
+    """How the live chat went: thumbs up or down, and a comment if you like."""
+    conv = await _live_chat(db, scope, conversation_id)
+    try:
+        await support_live.rate(db, conv, rating=body.rating, note=body.note)
+    except support_live.LiveError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    return {"support": support_live.public(conv)}

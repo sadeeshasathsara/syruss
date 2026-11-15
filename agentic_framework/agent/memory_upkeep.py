@@ -74,7 +74,7 @@ async def summarize_conversation(ctx: RunContext, model: BaseChatModel) -> None:
     fresh = [m for m in older if covered is None or _when(str(m["at"])) > covered]
     if len(fresh) < settings.SUMMARY_BATCH:
         return
-    speaker = {"assistant": "Syruss", "user": "Them"}
+    speaker = {"assistant": "Syruss", "user": "Them", "staff": "Syruss team"}
     transcript = "\n".join(f"{speaker.get(m['role'], 'Note')}: {m['content'][:800]}" for m in fresh)
     response = await model.ainvoke([
         SystemMessage(content=SUMMARY_PROMPT),
