@@ -1,6 +1,7 @@
 "use client";
 
 import { Link2, Plus, Trash2 } from "lucide-react";
+import { IconPicker } from "@/components/objects/IconPicker";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
@@ -92,6 +93,7 @@ export function SchemaEditor({ schema, onChange }: { schema: TemplateSchema; onC
           return (
             <section key={oi} className="rounded-card border border-border bg-card">
               <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-3">
+                <IconPicker value={obj.icon} objectName={obj.type} onChange={(icon) => setObject(oi, { ...obj, icon })} />
                 <div className="min-w-0 flex-1">
                   <h3 className="flex flex-wrap items-center gap-2 text-section font-semibold text-ink">
                     {obj.type}

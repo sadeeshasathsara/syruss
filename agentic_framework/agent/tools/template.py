@@ -7,12 +7,12 @@ from agentic_framework.agent.tools.base import RunContext, ToolOutcome, dump, js
 # the correct shape without needing a separate read_guide call. Placeholder names only: no kind of document.
 _SCHEMA_EXAMPLE = (
     '{"document_type":"<kind>","objects":['
-    '{"type":"Party","identity":{"id_field":"code","label_field":"name"},"multiple":false,'
+    '{"type":"Party","icon":"<icon>","identity":{"id_field":"code","label_field":"name"},"multiple":false,'
     '"fields":[{"name":"code","type":"string","required":true},{"name":"name","type":"string","required":true}]},'
-    '{"type":"Head","multiple":false,'
+    '{"type":"Head","icon":"<icon>","multiple":false,'
     '"fields":[{"name":"number","type":"string","required":true},{"name":"date","type":"date"},'
     '{"name":"party","type":"string","resolves_to":"Party"},{"name":"total","type":"number"}]},'
-    '{"type":"Item","multiple":true,'
+    '{"type":"Item","icon":"<icon>","multiple":true,'
     '"fields":[{"name":"label","type":"string"},{"name":"quantity","type":"number"},'
     '{"name":"amount","type":"number"}]}],'
     '"identification":{"parts":[{"object":"Head","field":"number"},{"object":"Head","field":"date"}],"separator":"_"},'
@@ -36,6 +36,8 @@ class ProposeTemplateArgs(BaseModel):
             "it names each document to people (e.g. a name + a date) instead of its file name. Choose "
             "descriptive fields people understand (names, dates), not IDs or codes: if "
             "the page shows a name next to a code, put the name in a one-per-document field and use it. "
+            "(5) Every object has an \"icon\": a name from the icon list in the template-design guide, chosen by what the "
+            "object is and does (a person, a place, something that moves, money, a period, a record, an item). "
             f"Minimal example: {_SCHEMA_EXAMPLE}"
         ),
     )

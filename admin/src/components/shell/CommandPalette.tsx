@@ -2,13 +2,14 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
-  ArrowRight, Bot, Building2, CornerDownLeft, FileText, History, LayoutGrid, LifeBuoy, Loader2, MessageSquareText, Receipt,
+  ArrowRight, Bot, Boxes, Building2, CornerDownLeft, FileText, History, LayoutGrid, LifeBuoy, Loader2, MessageSquareText, Receipt,
   Search as SearchIcon, ShieldCheck, UserRound, X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ComponentType,
 } from "react";
+import { ObjectIcon } from "@/components/objects/ObjectIcon";
 import { cn } from "@/lib/format";
 
 /*
@@ -69,7 +70,7 @@ interface Row {
 
 const ICONS: Record<string, ComponentType<{ className?: string }>> = {
   organizations: Building2, people: UserRound, documents: FileText, runs: Bot, tickets: LifeBuoy, invoices: Receipt,
-  workspaces: LayoutGrid, staff: ShieldCheck, chats: MessageSquareText, places: ArrowRight, recent: History, searches: SearchIcon,
+  workspaces: LayoutGrid, staff: ShieldCheck, objects: Boxes, things: Boxes, chats: MessageSquareText, places: ArrowRight, recent: History, searches: SearchIcon,
 };
 
 interface Section {
@@ -361,11 +362,14 @@ function Palette({ config, onClose }: { config: PaletteConfig; onClose: () => vo
                     onMouseMove={() => { if (i !== at) setActive(i); }}
                     onClick={(e) => pick(row, e.metaKey || e.ctrlKey)}
                     className={cn("group flex cursor-pointer items-center gap-2.5 rounded-control px-2 py-2 pointer-coarse:py-2.5", i === at ? "bg-active" : "hover:bg-raised")}>
-                    <Icon className="size-4 flex-none text-muted" aria-hidden />
+                    {typeof row.item?.icon === "string" ? <ObjectIcon name={row.item.icon} size="sm" /> : <Icon className="size-4 flex-none text-muted" aria-hidden />}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-body text-ink"><Highlight text={row.title} query={text} /></span>
                       {row.detail && <span className="block truncate text-meta text-muted"><Highlight text={row.detail} query={text} /></span>}
                     </span>
+                    {Array.isArray(row.item?.tags) && (row.item.tags as string[]).map((t) => (
+                      <span key={t} className="hidden max-w-[10rem] flex-none truncate rounded-chip bg-[var(--pill-info-bg)] px-1.5 text-meta text-[var(--pill-info-ink)] sm:inline">{t}</span>
+                    ))}
                     {row.status && <span className="flex-none rounded-chip bg-raised px-1.5 text-meta text-muted">{row.status.replace(/_/g, " ")}</span>}
                     {i === at && <CornerDownLeft className="hidden size-3.5 flex-none text-faint sm:block" aria-hidden />}
                   </div>

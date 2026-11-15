@@ -56,11 +56,11 @@ SCHEMA = {
     "document_type": "security_roster",
     "description": "Daily guard roster",
     "objects": [
-        {"type": "Roster", "multiple": False, "fields": [
+        {"type": "Roster", "icon": "calendar-days", "multiple": False, "fields": [
             {"name": "site_id", "type": "string", "required": True},
             {"name": "date", "type": "date", "required": True},
         ]},
-        {"type": "Guard", "multiple": True, "fields": [
+        {"type": "Guard", "icon": "shield-user", "multiple": True, "fields": [
             {"name": "employee_id", "type": "string", "required": True},
             {"name": "name", "type": "string", "required": True},
             {"name": "in_time", "type": "time"},

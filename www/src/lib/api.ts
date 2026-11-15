@@ -1,7 +1,7 @@
 import type { SearchAnswer } from "@/components/shell/CommandPalette";
 import type {
   Access, AgentQuestion, AgentRun, AgentRunDetail, MemoryItem, MemoryKind, ApiKeyInfo, ApiSourceInput, AppNotification, AuditEntry, Billing, ChatMessage, Conversation,
-  DocumentItem, Entity, MyOrganization, Screen, ScreenCatalogue, ScreenDefinition, ScreenFilter, ScreenRun, ScreenStarter, ScreenSummary, Extraction, Invitation, InvitationPreview, KnowledgeSource, Me, Member, NotificationPref,
+  DocumentItem, Entity, MyOrganization, ObjectProfile, ObjectSummary, Paged, ThingProfile, ThingSummary, Screen, ScreenCatalogue, ScreenDefinition, ScreenFilter, ScreenRun, ScreenStarter, ScreenSummary, Extraction, Invitation, InvitationPreview, KnowledgeSource, Me, Member, NotificationPref,
   InviteIssued, LogPage, OrgActivityPage, OrgOverview, OrgPeriod, Organization, Overview, SecurityEventPage, TrustedDevice, Proposal, RecordSet, ReviewTask, Role, RoleCatalogue, Template, TemplateSchema, TemplateVersion, OrgMemberInfo, OrgInvitationInfo, OrgRole, Permission,
   WebhookDeliveryInfo, WebhookInfo, Workspace, WorkspaceEventType, WorkspaceSettingsData, BudgetStatus, ReflectionState,
   IntakeActivityPage, IntakeChannelInfo, IntakeKeyInfo, DeveloperInfo, ChannelConfigPatch, NewIntakeKey,
@@ -314,6 +314,16 @@ export const api = {
       request<Proposal[]>(`/knowledge/proposals?status=${status}`, { workspaceId }),
     review: (workspaceId: string, id: string, action: "APPROVE" | "REJECT", notes?: string) =>
       request<Proposal>(`/knowledge/proposals/${id}/review`, { method: "POST", workspaceId, body: json({ action, notes }) }),
+  },
+
+  objects: {
+    list: (workspaceId: string) => request<ObjectSummary[]>("/objects", { workspaceId }),
+    get: (workspaceId: string, type: string, page = 0) =>
+      request<ObjectProfile>(`/objects/${encodeURIComponent(type)}?page=${page}`, { workspaceId }),
+    things: (workspaceId: string, type: string, q = "", page = 0) =>
+      request<Paged<ThingSummary>>(`/objects/${encodeURIComponent(type)}/things?page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`, { workspaceId }),
+    thing: (workspaceId: string, type: string, id: string, page = 0) =>
+      request<ThingProfile>(`/objects/${encodeURIComponent(type)}/things/${encodeURIComponent(id)}?page=${page}`, { workspaceId }),
   },
 
   entities: {

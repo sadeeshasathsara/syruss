@@ -3,6 +3,7 @@ The search box in the customer app: one query across the organization, showing o
 
 - Workspaces they belong to (an organization admin also finds the others, as the workspace list shows them).
 - Documents, only in workspaces where their role there can view documents.
+- Objects of those workspaces' templates, and the things they have met (each has a profile).
 - People in the organization.
 - Their own chats with the agent (titles only), in workspaces they belong to.
 - Support requests they can see (their own; every one of the organization's for an owner or admin).
@@ -25,7 +26,7 @@ from app.models.identity import OrgMember, User, WorkspaceRole
 from app.models.support import SupportTicket
 from app.models.workspace import Workspace
 from app.models.workspace_admin import WorkspaceMember
-from app.services import search as find
+from app.services import object_profiles, search as find
 from app.services.support import tickets as support_tickets
 
 router = APIRouter(tags=["search"])
@@ -57,6 +58,8 @@ async def search(q: str = Query(..., min_length=2, max_length=120), db: AsyncSes
             or_(s.matches(Document.original_filename, Document.external_id, Document.identified_key), Document.id == s.text))
             .order_by(s.rank(Document.identified_key, Document.original_filename, Document.external_id), Document.created_at.desc()).limit(6))).scalars().all()
 
+    found = await object_profiles.search(db, s, [tid for tid in can_view_documents if tid in all_workspaces])
+
     full_name = User.first_name + " " + User.last_name
     people = (await db.execute(select(User, OrgMember.role).join(OrgMember, OrgMember.user_id == User.id)
                                .where(OrgMember.tenant_id == tenant, s.matches(User.email, full_name))
@@ -86,6 +89,12 @@ async def search(q: str = Query(..., min_length=2, max_length=120), db: AsyncSes
         find.group("documents", "Documents", [find.item(d.id, d.identified_key or d.original_filename, href=f"/w/{ws(d.template_id).slug}/documents/{d.id}",
                                                         detail=find.joined(ws(d.template_id).name, d.original_filename if d.identified_key else None),
                                                         status=d.status.value.lower()) for d in documents]),
+        find.group("things", "Things", [find.item(x["key"], x["label"], href=f"/w/{ws(x['template_id']).slug}/{x['path']}",
+                                                  detail=find.joined(x["type"], ws(x["template_id"]).name, f"{x['documents']} documents"),
+                                                  icon=x["icon"]) for x in found["things"]]),
+        find.group("objects", "Objects", [find.item(f"{x['template_id']}:{x['type']}", x["type"], href=f"/w/{ws(x['template_id']).slug}/{x['path']}",
+                                                    detail=find.joined(ws(x["template_id"]).name, f"{x['fields']} attributes"), icon=x["icon"])
+                                          for x in found["objects"]]),
         find.group("chats", "Your chats", [find.item(c.id, c.title, href=f"/w/{ws(c.template_id).slug}", detail=ws(c.template_id).name,
                                                      workspace_id=c.template_id) for c in chats]),
         find.group("people", "People", [find.item(u.id, u.display_name, href="/people", detail=find.joined(u.email, role)) for u, role in people]),

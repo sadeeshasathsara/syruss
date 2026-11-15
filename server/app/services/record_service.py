@@ -23,7 +23,7 @@ from app.models.document import Document, DocumentStatus
 from app.models.extraction import ExtractionResult
 from app.models.review import ReviewTask, ReviewStatus
 from app.models.template import DocumentTemplate
-from app.services import delivery_service, duplicate_check, graph_service
+from app.services import delivery_service, duplicate_check, graph_service, object_index
 from app.services.rules import service as rule_service
 from app.services.identity_check import find_identity_conflicts, find_unsupported_identities
 from app.services.rules.engine import validate_record
@@ -128,8 +128,13 @@ class RecordService:
                 db, tenant_id=document.tenant_id, template_id=template.id, document_id=document.id,
                 schema=template.schema_definition, data=data,
             )
+            await object_index.index_record(
+                db, tenant_id=document.tenant_id, template_id=template.id, document_id=document.id,
+                seen_at=document.created_at, schema=template.schema_definition, data=data,
+            )
         else:
             await graph_service.forget_sightings(db, template.id, document.id)
+            await object_index.forget_record(db, document.id)
             document.status = DocumentStatus.NEEDS_REVIEW
             if review is None:
                 review = ReviewTask(
