@@ -368,8 +368,9 @@ Ensure none of the default service ports are already bound by host processes:
 - `9092` (Kafka)
 
 ### 4. Email & SFTP Intake Channels Disabled in UI
-- In `server/.env`, `INTAKE_SMTP_PORT=0` and `INTAKE_SFTP_PORT=0` disable email and SFTP ingestion by default in local development.
-- To enable local SFTP and email receivers, assign non-zero ports (e.g. `INTAKE_SMTP_PORT=2525`, `INTAKE_SFTP_PORT=2222`).
+- SFTP is off while `INTAKE_SFTP_PORT=0` in `server/.env`; set a port (e.g. `INTAKE_SFTP_PORT=2222`) to enable it.
+- Email has no server setting: in the admin app, Email > Jobs, give the **Document inbound** job a mailbox that can read (Google, Microsoft or an IMAP server).
+  Channels then get addresses like `docs+<token>@yourdomain`, and the mail service reads the mailbox and hands each message over on Kafka.
 
 ---
 

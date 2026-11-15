@@ -1,39 +1,69 @@
 """
-Documents sent by e-mail. A channel of kind "email" has its own address (<token>@INTAKE_EMAIL_DOMAIN); each image attached to a message
-sent there becomes a document of that channel, exactly as if it had been sent through the API. This is a small SMTP receiver that runs inside
-the API process (port INTAKE_SMTP_PORT) and only accepts mail for those addresses, so it is never an open relay.
+Documents sent by e-mail. A channel of kind "email" has an address of its own, made from the mailbox the mail service reads for the
+"documents" job (set in the admin app, Email › Jobs): for a mailbox docs@example.com the channel's address is docs+<token>@example.com.
+People write to that address; the mail service reads the mailbox and hands each message over (services/notifications/mail_relay.py),
+and every file attached to a message sent there becomes a document of that channel, exactly as if it had been sent through the API.
+This server runs no mail receiver of its own and knows no mail setting: the one mailbox, and the plus-addresses that tell channels
+apart, are all there is.
 
 What it does and does not check:
-  * the recipient must be a live channel address, one channel per message;
+  * the message must be addressed to a live channel's plus-address (To, Cc, Delivered-To or X-Original-To), one channel per message;
   * the channel's allowed senders (addresses or @domains) are compared with the message's From header;
-  * a channel can require that the mail gateway in front of this receiver has vouched for the sender (an Authentication-Results header with
-    spf=pass or dkim=pass). This receiver does not verify SPF or DKIM itself: put it behind a mail gateway that does, and turn that on;
+  * a channel can require that the mailbox's provider vouched for the sender (an Authentication-Results header with spf=pass or
+    dkim=pass, which Gmail, Outlook and most mail servers add). This code does not verify SPF or DKIM itself;
   * only attached files count (not images in the body or the signature), and every one is held to the same rules as any other document.
-Mail that is refused gets a permanent error that says why, so the sender sees it in their bounce.
+A message that is refused is written to the channel's log with the reason, where its owner sees it. Nothing is mailed back to the
+sender: the From address of unwanted mail is often forged, so a reply would only reach someone who never wrote.
 """
-import asyncio
 import hashlib
 import logging
 import re
 from email import message_from_bytes, policy
 from email.message import EmailMessage
-from email.utils import parseaddr
+from email.utils import getaddresses, parseaddr
 from typing import List, Optional, Tuple
-from aiosmtpd.smtp import SMTP, Envelope, Session
+
 from sqlalchemy import select
-from app.core.config import settings
+
 from app.core.database import AsyncSessionLocal
 from app.models.intake import IntakeChannel
 from app.services.intake import service as intake_service
 from app.services.intake.rules import IntakeRejected
+from app.services.mail_bus import bus
 
 logger = logging.getLogger("core.intake.email")
-MAX_MESSAGE_BYTES = 40_000_000
+ADDRESSED_TO = ("To", "Cc", "Delivered-To", "X-Original-To", "Envelope-To", "X-Envelope-To")
 
 
-def address_for(channel: IntakeChannel) -> Optional[str]:
+def mailbox() -> Optional[str]:
+    """The address mail for documents arrives at (lowercase), from the mail service's directory: None until a mailbox that can read is
+    chosen for the documents job."""
+    job = next((j for j in bus.entries("job:") if j.get("key") == "documents"), None)
+    if not job or not job.get("reads"):
+        return None
+    address = ((job.get("account") or {}).get("address") or "").strip().lower()
+    return address if "@" in address else None
+
+
+def address_for(channel: IntakeChannel, base: Optional[str] = None) -> Optional[str]:
+    """The channel's own address: the documents mailbox with the channel's token after a plus sign."""
+    base = base or mailbox()
     token = (channel.config or {}).get("email_token")
-    return f"{token}@{settings.INTAKE_EMAIL_DOMAIN}" if token and channel.kind == "email" and settings.INTAKE_EMAIL_DOMAIN else None
+    if not (base and token and channel.kind == "email"):
+        return None
+    local, _, domain = base.rpartition("@")
+    return f"{local}+{token}@{domain}"
+
+
+def token_in(msg: EmailMessage, base: str) -> Optional[str]:
+    """The channel token a message was addressed to (the part after the plus sign of the mailbox's address)."""
+    local, _, domain = base.rpartition("@")
+    for header in ADDRESSED_TO:
+        for _, address in getaddresses([str(v) for v in msg.get_all(header, [])]):
+            who, _, where = address.strip().lower().rpartition("@")
+            if where == domain and who.startswith(local + "+") and len(who) > len(local) + 1:
+                return who[len(local) + 1:]
+    return None
 
 
 async def channel_for_token(token: str) -> Optional[IntakeChannel]:
@@ -51,7 +81,7 @@ def sender_allowed(address: str, allowlist: List[str]) -> bool:
 
 
 def vouched_for(msg: EmailMessage) -> bool:
-    """Whether a mail gateway upstream recorded that the sender's domain passed SPF or DKIM."""
+    """Whether the mailbox's provider recorded that the sender's domain passed SPF or DKIM."""
     results = " ".join(str(v) for v in msg.get_all("Authentication-Results", []))
     return bool(re.search(r"\b(spf|dkim)=pass\b", results, re.I))
 
@@ -71,90 +101,41 @@ def attachments_of(msg: EmailMessage) -> List[Tuple[str, bytes]]:
     return found
 
 
-def smtp_answer(rejected: IntakeRejected) -> str:
-    reason = re.sub(r"\s+", " ", rejected.reason)[:200]
-    if rejected.status == 413:
-        return f"552 5.3.4 {reason}"
-    if rejected.status in (429, 503):
-        return f"451 4.7.1 {reason} Try again later."
-    return f"554 5.7.1 {reason}"
-
-
-class IntakeHandler:
-    async def handle_RCPT(self, server, session: Session, envelope: Envelope, address: str, rcpt_options) -> str:
-        local, _, domain = address.lower().rpartition("@")
-        if domain != settings.INTAKE_EMAIL_DOMAIN.lower():
-            return "550 5.7.1 Relaying is not allowed"
-        channel = await channel_for_token(local)
-        if channel is None:
-            return "550 5.1.1 No such mailbox"
-        if channel.status != "active":
-            return "550 5.7.1 This mailbox is paused"
-        if envelope.rcpt_tos:
-            return "452 4.5.3 Send to one mailbox at a time"
-        envelope.rcpt_tos.append(address)
-        envelope.channel_id = channel.id          # type: ignore[attr-defined]
-        return "250 OK"
-
-    async def handle_DATA(self, server, session: Session, envelope: Envelope) -> str:
-        channel_id = getattr(envelope, "channel_id", None)
-        async with AsyncSessionLocal() as db:
-            channel = await db.get(IntakeChannel, channel_id) if channel_id else None
-        if channel is None:
-            return "550 5.1.1 No such mailbox"
+async def take_in(raw: bytes) -> str:
+    """Turns one email read from the documents mailbox into documents. Returns what happened, in a word, for the logs: "ignored" (not
+    for a channel), "refused" (a rule said no; it is in the channel's log) or "accepted". Raises when it couldn't be done now."""
+    base = mailbox()
+    if base is None:
+        raise RuntimeError("The documents mailbox isn't known yet.")
+    msg = message_from_bytes(raw, policy=policy.default)
+    token = token_in(msg, base)
+    channel = await channel_for_token(token) if token else None
+    if channel is None:
+        logger.info("Mail for the documents mailbox wasn't addressed to a channel's address; ignored")
+        return "ignored"
+    if channel.status != "active":
+        logger.info("Mail for the paused channel %s was ignored", channel.id)
+        return "ignored"
+    sender = parseaddr(str(msg.get("From") or ""))[1] or "unknown"
+    cfg = channel.config or {}
+    who = intake_service.Sender(label=sender[:255], via="email", ip="")
+    where = {"tenant_id": channel.tenant_id, "template_id": channel.template_id, "channel_id": channel.id}
+    if not sender_allowed(sender, cfg.get("sender_allowlist") or []):
+        await intake_service.reject(**where, sender=who, reason=f"{sender} is not one of the senders this channel accepts.")
+        return "refused"
+    if cfg.get("require_authentication") and not vouched_for(msg):
+        await intake_service.reject(**where, sender=who, reason=f"The mail from {sender} was not vouched for by SPF or DKIM.")
+        return "refused"
+    files = attachments_of(msg)
+    if not files:
+        await intake_service.reject(**where, sender=who, reason="The message has no attached file. Attach the document as a PDF or an image file.")
+        return "refused"
+    message_id = re.sub(r"[^\w .:/#@+=,-]", "", str(msg.get("Message-ID") or "")).strip()[:150] or hashlib.sha1(raw).hexdigest()
+    meta = {"subject": str(msg.get("Subject") or "")[:200], "from": sender[:200]}
+    outcome = "accepted"
+    for index, (name, data) in enumerate(files, start=1):
         try:
-            msg = message_from_bytes(envelope.content, policy=policy.default)
-            sender = parseaddr(str(msg.get("From") or ""))[1] or envelope.mail_from or "unknown"
-            cfg = channel.config or {}
-            who = intake_service.Sender(label=sender[:255], via="email", ip=(session.peer[0] if session.peer else ""))
-            where = {"tenant_id": channel.tenant_id, "template_id": channel.template_id, "channel_id": channel.id}
-            if not sender_allowed(sender, cfg.get("sender_allowlist") or []):
-                await intake_service.reject(**where, sender=who, reason=f"{sender} is not one of the senders this channel accepts.")
-                return "550 5.7.1 This mailbox does not accept mail from your address"
-            if cfg.get("require_authentication") and not vouched_for(msg):
-                await intake_service.reject(**where, sender=who, reason=f"The mail from {sender} was not vouched for by SPF or DKIM.")
-                return "550 5.7.26 This mailbox only accepts mail that passes SPF or DKIM"
-            files = attachments_of(msg)
-            if not files:
-                await intake_service.reject(**where, sender=who, reason="The message has no attached file. Attach the document as a PDF or an image file.")
-                return "554 5.6.0 No attached file found. Attach the document as a PDF or an image file (JPG, PNG, TIFF or WebP)"
-            message_id = re.sub(r"[^\w .:/#@+=,-]", "", str(msg.get("Message-ID") or "")).strip()[:150] or hashlib.sha1(envelope.content).hexdigest()
-            meta = {"subject": str(msg.get("Subject") or "")[:200], "from": sender[:200]}
-            for index, (name, data) in enumerate(files, start=1):
-                await intake_service.ingest(channel.id, content=data, filename=name, sender=who, external_id=f"{message_id}#{index}", metadata=meta)
-        except IntakeRejected as rejected:
-            return smtp_answer(rejected)
-        except Exception:  # noqa: BLE001
-            logger.exception("Could not take in a message for channel %s", channel_id)
-            return "451 4.3.0 Could not be processed right now. Try again later"
-        return "250 OK, received"
-
-
-class EmailReceiver:
-    def __init__(self) -> None:
-        self._server: Optional[asyncio.AbstractServer] = None
-        self.port: Optional[int] = None
-
-    async def start(self) -> None:
-        """Begins listening when the server is set up for e-mail intake (INTAKE_SMTP_PORT)."""
-        if settings.INTAKE_SMTP_PORT:
-            await self.listen(settings.INTAKE_SMTP_HOST, settings.INTAKE_SMTP_PORT)
-
-    async def listen(self, host: str, port: int) -> int:
-        """Listens on this address (port 0: any free one) and returns the port."""
-        if self._server is None:
-            handler = IntakeHandler()
-            self._server = await asyncio.get_running_loop().create_server(
-                lambda: SMTP(handler, hostname=settings.INTAKE_EMAIL_DOMAIN, data_size_limit=MAX_MESSAGE_BYTES, enable_SMTPUTF8=True, ident="Syruss intake"), host, port)
-            self.port = self._server.sockets[0].getsockname()[1]
-            logger.info("E-mail intake listening on port %s for @%s", self.port, settings.INTAKE_EMAIL_DOMAIN)
-        return self.port or 0
-
-    async def stop(self) -> None:
-        if self._server is not None:
-            self._server.close()
-            await self._server.wait_closed()
-            self._server = None
-
-
-email_receiver = EmailReceiver()
+            await intake_service.ingest(channel.id, content=data, filename=name, sender=who, external_id=f"{message_id}#{index}", metadata=meta)
+        except IntakeRejected:
+            outcome = "refused"   # the rules said no to this file; ingest recorded why in the channel's log
+    return outcome

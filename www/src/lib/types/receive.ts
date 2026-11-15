@@ -66,7 +66,7 @@ export interface DeveloperInfo {
   upload_minutes: number;
   workspace: string;
   trusts_proxy_headers: boolean;
-  email: { enabled: boolean; domain: string };
+  email: { enabled: boolean; mailbox: string | null };
   sftp: { enabled: boolean; host: string; port: number };
 }
 

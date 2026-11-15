@@ -182,7 +182,7 @@ _unhandled: set = set()
 
 
 async def take_in(item_id: str, job: str, raw: bytes, too_large: bool = False) -> bool:
-    """Takes in one email the mail service read: support mail is added to its ticket (or opens one), then it is acknowledged.
+    """Takes in one email the mail service read: support mail is added to its ticket (or opens one), document mail becomes documents of the channel it was addressed to, then it is acknowledged.
     Returns False when nothing here handles that job yet: it isn't acknowledged, so the mail service keeps it and offers it again.
     Raises when it couldn't be taken in now (also not acknowledged: it comes again)."""
     from app.services.support import mailbox as support_mailbox
@@ -191,6 +191,9 @@ async def take_in(item_id: str, job: str, raw: bytes, too_large: bool = False) -
     elif job == "support":
         async with AsyncSessionLocal() as db:
             await support_mailbox.handle(db, raw)
+    elif job == "documents":
+        from app.services.intake import email as intake_email
+        await intake_email.take_in(raw)
     else:
         if item_id not in _unhandled:
             _unhandled.add(item_id)

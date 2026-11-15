@@ -57,7 +57,7 @@ function NewChannelDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   });
   const kinds: { value: "api" | "email" | "sftp"; title: string; help: string; ready: boolean }[] = [
     { value: "api", title: "API", help: "Another system sends files to a web address with a key.", ready: true },
-    { value: "email", title: "Email", help: "People or systems email documents to an address of its own.", ready: info.data?.email.enabled ?? false },
+    { value: "email", title: "Email", help: "People or systems email documents to an address of its own (the workspace's document mailbox, with a tag).", ready: info.data?.email.enabled ?? false },
     { value: "sftp", title: "SFTP", help: "Scanners and older systems drop files on a server.", ready: info.data?.sftp.enabled ?? false },
   ];
   return (
