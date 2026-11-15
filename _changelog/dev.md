@@ -14,11 +14,93 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.9.2-dev.1` | 2026-11-14 | [What changed](#admin-092-dev1) |
-| **agent** | `0.9.0-dev.1` | 2026-11-15 | [What changed](#agent-090-dev1) |
-| **server** | `0.17.1-dev.1` | 2026-11-15 | [What changed](#server-0171-dev1) |
+| **admin** | `0.10.0-dev.1` | 2026-11-15 | [What changed](#admin-0100-dev1) |
+| **agent** | `0.10.0-dev.1` | 2026-11-15 | [What changed](#agent-0100-dev1) |
+| **server** | `0.18.0-dev.1` | 2026-11-15 | [What changed](#server-0180-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
-| **www** | `0.12.1-dev.1` | 2026-11-15 | [What changed](#www-0121-dev1) |
+| **www** | `0.13.0-dev.1` | 2026-11-15 | [What changed](#www-0130-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### admin (0.10.0-dev.1)
+- **Support tickets.** Customers can ask the Syruss team for help, and staff answer from the admin app.
+- **Three ways in:**
+- the assistant in a workspace's chat opens one when it can't solve the problem itself;
+- the new Settings → Help & support page;
+- email to the support address.
+- **Who sees a request:** the person who made it, plus the organization's owners and admins.
+- **By email, both ways:**
+- every answer is emailed from the support address, with the ticket number in the subject;
+- replies to it are read from the support mailbox (`SUPPORT_IMAP_*`) and added to the ticket;
+- automatic replies, mail loops and floods from one sender are ignored;
+- mail from an unknown address becomes an "unverified" ticket that gets no email back.
+- **Admin app: a new Support section.**
+- **The inbox:** late tickets first, then the most urgent.
+- **Each ticket:** the conversation, internal notes, files, and who the customer is (organization, plan, bills, other requests).
+- **Handling:** assign, change priority or status, merge duplicates.
+- **Saved replies:** pick one from a menu, or type `/` and its shortcut.
+- **Service targets:** hours to the first answer and to a solution, by priority. Unanswered tickets are marked late and the team is told; tickets waiting on the customer are solved and later closed automatically.
+- **Who answers:** the new `support.respond` permission, given to the support and billing roles.
+
+### agent (0.10.0-dev.1)
+- **Support tickets.** Customers can ask the Syruss team for help, and staff answer from the admin app.
+- **Three ways in:**
+- the assistant in a workspace's chat opens one when it can't solve the problem itself;
+- the new Settings → Help & support page;
+- email to the support address.
+- **Who sees a request:** the person who made it, plus the organization's owners and admins.
+- **By email, both ways:**
+- every answer is emailed from the support address, with the ticket number in the subject;
+- replies to it are read from the support mailbox (`SUPPORT_IMAP_*`) and added to the ticket;
+- automatic replies, mail loops and floods from one sender are ignored;
+- mail from an unknown address becomes an "unverified" ticket that gets no email back.
+- **Admin app: a new Support section.**
+- **The inbox:** late tickets first, then the most urgent.
+- **Each ticket:** the conversation, internal notes, files, and who the customer is (organization, plan, bills, other requests).
+- **Handling:** assign, change priority or status, merge duplicates.
+- **Saved replies:** pick one from a menu, or type `/` and its shortcut.
+- **Service targets:** hours to the first answer and to a solution, by priority. Unanswered tickets are marked late and the team is told; tickets waiting on the customer are solved and later closed automatically.
+- **Who answers:** the new `support.respond` permission, given to the support and billing roles.
+
+### server (0.18.0-dev.1)
+- **Support tickets.** Customers can ask the Syruss team for help, and staff answer from the admin app.
+- **Three ways in:**
+- the assistant in a workspace's chat opens one when it can't solve the problem itself;
+- the new Settings → Help & support page;
+- email to the support address.
+- **Who sees a request:** the person who made it, plus the organization's owners and admins.
+- **By email, both ways:**
+- every answer is emailed from the support address, with the ticket number in the subject;
+- replies to it are read from the support mailbox (`SUPPORT_IMAP_*`) and added to the ticket;
+- automatic replies, mail loops and floods from one sender are ignored;
+- mail from an unknown address becomes an "unverified" ticket that gets no email back.
+- **Admin app: a new Support section.**
+- **The inbox:** late tickets first, then the most urgent.
+- **Each ticket:** the conversation, internal notes, files, and who the customer is (organization, plan, bills, other requests).
+- **Handling:** assign, change priority or status, merge duplicates.
+- **Saved replies:** pick one from a menu, or type `/` and its shortcut.
+- **Service targets:** hours to the first answer and to a solution, by priority. Unanswered tickets are marked late and the team is told; tickets waiting on the customer are solved and later closed automatically.
+- **Who answers:** the new `support.respond` permission, given to the support and billing roles.
+
+### www (0.13.0-dev.1)
+- **Support tickets.** Customers can ask the Syruss team for help, and staff answer from the admin app.
+- **Three ways in:**
+- the assistant in a workspace's chat opens one when it can't solve the problem itself;
+- the new Settings → Help & support page;
+- email to the support address.
+- **Who sees a request:** the person who made it, plus the organization's owners and admins.
+- **By email, both ways:**
+- every answer is emailed from the support address, with the ticket number in the subject;
+- replies to it are read from the support mailbox (`SUPPORT_IMAP_*`) and added to the ticket;
+- automatic replies, mail loops and floods from one sender are ignored;
+- mail from an unknown address becomes an "unverified" ticket that gets no email back.
+- **Admin app: a new Support section.**
+- **The inbox:** late tickets first, then the most urgent.
+- **Each ticket:** the conversation, internal notes, files, and who the customer is (organization, plan, bills, other requests).
+- **Handling:** assign, change priority or status, merge duplicates.
+- **Saved replies:** pick one from a menu, or type `/` and its shortcut.
+- **Service targets:** hours to the first answer and to a solution, by priority. Unanswered tickets are marked late and the team is told; tickets waiting on the customer are solved and later closed automatically.
+- **Who answers:** the new `support.respond` permission, given to the support and billing roles.
 
 ## [2026-11-15] - Release via dev
 
