@@ -38,7 +38,7 @@ export default function OrganizationPage({ params }: { params: Promise<{ id: str
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        back={{ href: "/accounts", label: "Accounts" }}
+        back={{ href: "/accounts/organizations", label: "Accounts" }}
         title={o.name}
         subtitle={<span className="flex flex-wrap items-center gap-2"><Pill tone={tone}>{label}</Pill><span>{o.slug} · created {dateTime(o.created_at)}</span>{p.agent_paused && <Pill tone="warning">Agent paused</Pill>}</span>}
         actions={

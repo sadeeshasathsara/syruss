@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { field } from "@/components/ops/Bits";
 import { useStaff } from "@/components/shell/AdminFrame";
-import { SupportTabs } from "@/components/support/Bits";
 import { Bar, Empty, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { Problem } from "@/components/ui/Problem";
@@ -20,7 +19,6 @@ export default function SavedRepliesPage() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="Support" subtitle="Saved replies: answers the team sends often. {{first_name}}, {{ticket}} and {{name}} (yours) are filled in." />
-      <SupportTabs />
       {me.can("support.respond") && editing === null && <div><Button variant="primary" size="sm" onClick={() => setEditing("new")}>New saved reply</Button></div>}
       {editing !== null && <Editor reply={editing === "new" ? null : editing} onDone={() => setEditing(null)} />}
       {!list.data ? <Bar className="h-40 w-full" /> : !list.data.length ? <Empty title="No saved replies yet">Add the answers the team writes again and again.</Empty> : (

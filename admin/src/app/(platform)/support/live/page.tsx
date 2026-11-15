@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { field } from "@/components/ops/Bits";
 import { useStaff } from "@/components/shell/AdminFrame";
 import { usePresence } from "@/components/support/Presence";
-import { CustomerPanel, SupportTabs, fillReply } from "@/components/support/Bits";
+import { CustomerPanel, fillReply } from "@/components/support/Bits";
 import { Bar, Empty, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
@@ -67,7 +67,6 @@ export default function LiveSupportPage() {
     return (
       <div className="flex flex-col gap-5">
         <PageHeader title="Support" subtitle="Live chats with customers." />
-        <SupportTabs />
         <p className="text-body text-muted">Live chats are for staff who answer support (the Support or Billing role).</p>
       </div>
     );
@@ -76,7 +75,6 @@ export default function LiveSupportPage() {
     <div className="flex flex-col gap-5">
       <PageHeader title="Support" subtitle="Customers who asked Syruss's assistant for a person. Accept one to talk with them in their own chat."
         actions={<PresencePicker status={status} onChange={set} />} />
-      <SupportTabs counts={{ waiting: queue.data?.waiting.length }} />
       {status !== "online" && (
         <p className="rounded-control bg-[var(--pill-warning-bg)] px-3 py-2 text-body text-[var(--pill-warning-ink)]">
           You&apos;re {status}. While nobody is online, the assistant offers customers a ticket instead of a live chat.
