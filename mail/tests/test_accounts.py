@@ -14,6 +14,7 @@ from mail.accounts.gmail import SCOPES, GmailAccount, _tokens
 from mail.api import build_api
 from mail.config import settings
 from mail.inbound import Reader
+from mail.sealing import open_bytes
 from mail.router import Router
 from mail.store import AccountRow, InboundRow, JobRow, seal
 from mail.tests.conftest import job
@@ -135,7 +136,8 @@ async def test_mailboxes_are_read_from_where_they_left_off(store):
     assert await reader.read("support") == 1 and await reader.read("support") == 0
     assert announced[0]["purpose"] == "support" and announced[0]["size"] > 0
     async with store.session() as s:
-        assert (await s.get(InboundRow, announced[0]["id"])).raw == b"Subject: new\r\n\r\nnew"
+        kept = (await s.get(InboundRow, announced[0]["id"])).raw
+        assert b"Subject: new" not in kept and open_bytes(kept) == b"Subject: new\r\n\r\nnew"   # sealed at rest
     # A fallback that can't read reads nothing
     assert await Reader(store, Router(store, MemoryAccount(id="env", granted=Capability.SEND))).read("support") == 0
 

@@ -13,7 +13,7 @@ from mail.accounts import MemoryAccount
 from mail.accounts.base import Capability, Outbound
 from mail.delivery import Delivery
 from mail.router import Router
-from mail.store import AccountRow, CursorRow, InboundRow, JobRow, RouteRow, Store
+from mail.store import AccountRow, CommandRow, CursorRow, InboundRow, JobRow, PurposeRow, RouteRow, Store
 
 
 @pytest.fixture(scope="session")
@@ -27,8 +27,9 @@ async def store():
 @pytest.fixture(autouse=True)
 async def clean(store):
     async with store.session() as s:
-        for table in (JobRow, RouteRow, AccountRow, CursorRow, InboundRow):
+        for table in (JobRow, RouteRow, AccountRow, CursorRow, InboundRow, CommandRow):
             await s.execute(delete(table))
+        await s.execute(delete(PurposeRow).where(PurposeRow.system.is_(False)))   # jobs a test added
         await s.commit()
 
 
