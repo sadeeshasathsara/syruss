@@ -303,11 +303,11 @@ class TargetsIn(BaseModel):
 
 @router.get("/settings", dependencies=[VIEW])
 async def targets(db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
-    from app.services import mail_service
-    try:
-        support = (await mail_service.status())["purposes"]["support"]
+    from app.services.mail_bus import bus as mail_bus
+    support = mail_bus.overview()["purposes"].get("support")
+    if support:
         mailbox = {"address": support["address"], "reading": bool(support["reads"]), "connected": bool(support["routed"])}
-    except (mail_service.MailServiceError, KeyError, TypeError):
+    else:
         mailbox = {"address": mail.support_address(), "reading": None, "connected": None}
     return {**await tickets.policy(db), "mailbox": mailbox,
             "categories": list(CATEGORIES), "priorities": list(PRIORITIES), "statuses": list(STATUSES)}

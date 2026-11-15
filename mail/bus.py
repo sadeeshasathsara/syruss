@@ -78,6 +78,36 @@ class Bus:
             logger.exception("Couldn't publish the reply to %s", reply.get("id"))
 
 
+    async def inbound(self, event: Dict[str, Any], raw: bytes) -> None:
+        """One email on mail.inbound: its own bytes as the message, what it is in the headers (an email too big to carry: no body, too_large)."""
+        headers = [("id", event["id"].encode()), ("job", event["purpose"].encode()), ("account", event["account_id"].encode()),
+                   ("size", str(event["size"]).encode())]
+        if event.get("too_large"):
+            headers.append(("too_large", b"1"))
+        try:
+            await self.producer.send_and_wait(settings.MAIL_INBOUND_TOPIC, key=event["id"].encode(), value=raw, headers=headers)
+        except Exception:  # noqa: BLE001  (it stays here; it is published again until the server acknowledges it)
+            logger.exception("Couldn't publish inbound mail %s", event["id"])
+
+
+async def consume_acks(reader) -> None:
+    """The server says it took a message in (mail.inbound.acks): it is deleted here."""
+    consumer = AIOKafkaConsumer(settings.MAIL_INBOUND_ACKS_TOPIC, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                                group_id="mail-acks", enable_auto_commit=False, auto_offset_reset="earliest")
+    await consumer.start()
+    try:
+        async for message in consumer:
+            try:
+                await reader.acknowledged(json.loads(message.value)["id"])
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001
+                logger.exception("Couldn't take an acknowledgement")
+            await consumer.commit()
+    finally:
+        await consumer.stop()
+
+
 async def consume_commands(commands: Commands) -> None:
     """Carries out each command on mail.commands, once (committed after it is handled). A new group reads from the start: a
     command too old is refused as stale and one seen before as a replay, so reading from the start can only be safe."""

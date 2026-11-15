@@ -2,7 +2,7 @@
 The service's loops: jobs from mail.outbound are recorded and sent, a retry loop sends the ones due again, every
 outcome is published on mail.events for the server, each reading job has a poller (inbound.py), the server's signed
 commands are carried out and answered (commands.py, bus.py), the directory of public state is published (directory.py),
-the server's API answers (api.py, until the server speaks Kafka only) and Keycloak's SMTP door listens (relay.py).
+and Keycloak's SMTP door listens (relay.py). There is no other way in: the server speaks Kafka only.
 """
 import asyncio
 import json
@@ -12,13 +12,11 @@ from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from pydantic import ValidationError
 from mail.accounts.base import Outbound
 from mail.config import check_config, settings
-import uvicorn
-from mail.api import build_api
 from mail import bus
 from mail.commands import Commands
 from mail.delivery import Delivery
 from mail.directory import Directory
-from mail.inbound import Pollers, Reader, kafka_announcer
+from mail.inbound import Pollers, Reader
 from mail.operations import Operations
 from mail.relay import Relay
 from mail.router import Router
@@ -107,21 +105,18 @@ async def main() -> None:
     logger.info("Mail service started (fallback account %s via %s), consuming '%s'", router.fallback.address,
                 router.fallback.kind, settings.MAIL_OUTBOUND_TOPIC)
     retry = asyncio.create_task(worker.retry_forever())
-    reading = asyncio.create_task(Pollers(Reader(store, router, kafka_announcer(producer))).forever())
+    reader = Reader(store, router, transport.inbound)
+    reading = asyncio.create_task(Pollers(reader).forever())
+    taking_acks = asyncio.create_task(bus.consume_acks(reader))
     serving_commands = asyncio.create_task(bus.consume_commands(commands))
     publishing = asyncio.create_task(directory_forever(directory))
-    api = uvicorn.Server(uvicorn.Config(build_api(store, router), host=settings.MAIL_API_HOST, port=settings.MAIL_API_PORT,
-                                        log_level="warning", access_log=False))
-    api.install_signal_handlers = lambda: None  # this loop owns the process
-    serving = asyncio.create_task(api.serve())
     relay = Relay(worker.send)
     await relay.start()
     try:
         await worker.consume(consumer)
     finally:
         await relay.stop()
-        api.should_exit = True
-        for task in (retry, reading, serving, serving_commands, publishing):
+        for task in (retry, reading, serving_commands, publishing, taking_acks):
             task.cancel()
         await consumer.stop()
         await producer.stop()

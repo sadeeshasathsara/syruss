@@ -82,12 +82,6 @@ class MailSettings(BaseSettings):
     MAIL_INBOUND_TOPIC: str = "mail.inbound"
     INBOUND_KEEP_DAYS: int = 7         # mail read but never collected by the server is dropped after this
 
-    # The internal API the server uses (api.py): accounts, routes, the delivery log, connecting Google, collecting
-    # mail read from mailboxes. Only the server calls it, with MAIL_SERVICE_TOKEN (the same value in the server's env).
-    MAIL_API_HOST: str = "127.0.0.1"
-    MAIL_API_PORT: int = 8100
-    MAIL_SERVICE_TOKEN: str = ""
-
     # Google mail (accounts/gmail.py): an OAuth client of type "Web application" in Google Cloud, with the admin app's
     # <PUBLIC_ADMIN_URL>/email/google as its redirect URI. Empty: Google can't be connected.
     GOOGLE_MAIL_CLIENT_ID: str = ""
@@ -134,8 +128,8 @@ def deployment_problems(s: MailSettings) -> list:
         problems.append("MAIL_SMTP_HOST must point at a real mail server")
     if s.MAIL_FROM.endswith((".local", ".localhost", ".test")):
         problems.append("MAIL_FROM must be an address at a real domain")
-    if len(s.MAIL_SERVICE_TOKEN) < 24:
-        problems.append("MAIL_SERVICE_TOKEN must be a long random value (the server's key to this service)")
+    if not s.MAIL_TRUSTED_SERVER_KEY:
+        problems.append("MAIL_TRUSTED_SERVER_KEY is not set (the public half of the server's signing key: python -m app.mail_signing_key)")
     if s.MAIL_RELAY_PORT and len(s.MAIL_RELAY_PASSWORD) < 16:
         problems.append("MAIL_RELAY_PASSWORD must be a long random value (Keycloak's login to the mail relay)")
     return problems
