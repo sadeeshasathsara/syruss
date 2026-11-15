@@ -14,12 +14,18 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.18.0-dev.1` | 2026-11-15 | [What changed](#admin-0180-dev1) |
+| **admin** | `0.19.0-dev.1` | 2026-11-15 | [What changed](#admin-0190-dev1) |
 | **agent** | `0.13.0-dev.1` | 2026-11-15 | [What changed](#agent-0130-dev1) |
 | **mail** | `0.6.0-dev.1` | 2026-11-15 | [What changed](#mail-060-dev1) |
 | **server** | `0.27.0-dev.1` | 2026-11-15 | [What changed](#server-0270-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
 | **www** | `0.17.2-dev.1` | 2026-11-15 | [What changed](#www-0172-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### admin (0.19.0-dev.1)
+- **Every dropdown in the admin app now looks like the customer app's, not the browser's own.** The same trigger and menu everywhere (billing, support, runs, staff, email, platform notices), with keyboard support: arrow keys, Enter and Escape.
+- **Long lists have a search box.** A dropdown with more than seven choices, such as organizations or plans, filters as you type.
 
 ## [2026-11-15] - Release via dev
 
