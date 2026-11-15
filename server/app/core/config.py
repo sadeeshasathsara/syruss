@@ -69,6 +69,24 @@ class Settings(BaseSettings):
     MAIL_FROM: str = "no-reply@syruss.local"
     MAIL_FROM_NAME: str = "Syruss"
     MAIL_REPLY_TO: str = ""
+
+    # Support tickets by email. Customers write to SUPPORT_EMAIL_ADDRESS; Syruss reads that mailbox over IMAP every
+    # SUPPORT_POLL_SECONDS (nothing is read while SUPPORT_IMAP_HOST is empty) and answers from it over SUPPORT_SMTP_*
+    # (the app's SMTP_* when SUPPORT_SMTP_HOST is empty). Gmail / Google Workspace: imap.gmail.com, port 993, an app password.
+    SUPPORT_EMAIL_ADDRESS: str = ""
+    SUPPORT_FROM_NAME: str = "Syruss Support"
+    SUPPORT_IMAP_HOST: str = ""
+    SUPPORT_IMAP_PORT: int = 993
+    SUPPORT_IMAP_USERNAME: str = ""
+    SUPPORT_IMAP_PASSWORD: str = ""
+    SUPPORT_IMAP_FOLDER: str = "INBOX"
+    SUPPORT_IMAP_SSL: bool = True
+    SUPPORT_SMTP_HOST: str = ""
+    SUPPORT_SMTP_PORT: int = 587
+    SUPPORT_SMTP_USERNAME: str = ""
+    SUPPORT_SMTP_PASSWORD: str = ""
+    SUPPORT_SMTP_SECURITY: str = "starttls"
+    SUPPORT_POLL_SECONDS: int = 60
     # An invitation email can be sent again this often, no sooner
     MAIL_RESEND_SECONDS: int = 60
 

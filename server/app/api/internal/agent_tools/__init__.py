@@ -19,7 +19,7 @@ scope.py checks every request's token; each other module is one area of the API.
 """
 from fastapi import APIRouter
 from app.api.internal.agent_tools import (
-    conversations, documents, entities, memory, proposals, records, rules, screens, sources, traces, workspace,
+    conversations, documents, entities, memory, proposals, records, rules, screens, sources, support, traces, workspace,
 )
 
 router = APIRouter(tags=["Agent Tool API (internal)"])
@@ -34,3 +34,4 @@ router.include_router(sources.router)
 router.include_router(memory.router)
 router.include_router(traces.router)
 router.include_router(rules.router)
+router.include_router(support.router)

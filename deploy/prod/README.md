@@ -21,6 +21,8 @@ nothing is built on it. The folder holds everything the server needs besides its
      refuses to start in production without https addresses, its own signing keys and `SECRETS_ENCRYPTION_KEY`.
    - Live Stripe keys and the webhook secret (webhook URL `https://api.<domain>/api/v1/billing/webhooks/stripe`), the
      model provider on a paid tier, `MODEL_PRICES`, and `SMTP_*` from a mail provider with SPF, DKIM and DMARC set up.
+   - The support mailbox in `server.env`: `SUPPORT_EMAIL_ADDRESS`, and `SUPPORT_IMAP_*` so replies from customers reach
+     their tickets (`SUPPORT_SMTP_*` too if it sends through a different server). See `server/.env.example`.
 3. `echo 'SYRUSS_DOMAIN=<domain>' | sudo tee -a /etc/default/caddy`, copy the `Caddyfile` to `/etc/caddy/`, reload Caddy.
 4. `docker compose --env-file env/stack.env pull && docker compose --env-file env/stack.env up -d`.
 5. Harden the Keycloak realm on the server itself (Caddy keeps `/admin` closed from outside):

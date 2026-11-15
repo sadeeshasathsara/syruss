@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Building2, CreditCard, FileText, Hourglass, LayoutDashboard, Layers, LockKeyhole, LogOut, Moon, Radio, ScrollText, ShieldCheck, SlidersHorizontal, Sun, UsersRound } from "lucide-react";
+import { Bot, Building2, LifeBuoy, CreditCard, FileText, Hourglass, LayoutDashboard, Layers, LockKeyhole, LogOut, Moon, Radio, ScrollText, ShieldCheck, SlidersHorizontal, Sun, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
@@ -29,6 +29,7 @@ const NAV = [
   { href: "/runs", label: "Agent runs", icon: Bot },
   { href: "/documents", label: "Documents", icon: FileText },
   { href: "/queues", label: "Queues", icon: Layers },
+  { href: "/support", label: "Support", icon: LifeBuoy },
   { href: "/accounts", label: "Accounts", icon: Building2 },
   { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/platform", label: "Platform controls", icon: SlidersHorizontal },
@@ -48,6 +49,12 @@ function useWaitingApprovals(): number {
     return () => window.removeEventListener(APPROVAL_EVENT, refresh);
   }, [queryClient]);
   return waiting.data?.waiting ?? 0;
+}
+
+/** Tickets nobody has taken, and late ones: the Support badge. */
+function useSupportBadge(): number {
+  const summary = useQuery({ queryKey: ["support", "summary"], queryFn: api.support.summary, refetchInterval: 60_000 });
+  return (summary.data?.unassigned ?? 0) + (summary.data?.breached ?? 0);
 }
 
 // Signing out ends the session on this app's server and at Keycloak, so it is a real form post, not a fetch.
@@ -149,6 +156,7 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
 function Frame({ me, children }: { me: StaffMe; children: React.ReactNode }) {
   const path = usePathname();
   const waiting = useWaitingApprovals();
+  const support = useSupportBadge();
   return (
           <div className="flex h-dvh flex-col overflow-hidden bg-frame lg:flex-row">
             <aside className="flex flex-none flex-col gap-1 border-b border-border px-3 py-2 lg:w-[228px] lg:border-b-0 lg:pt-3">
@@ -173,6 +181,10 @@ function Frame({ me, children }: { me: StaffMe; children: React.ReactNode }) {
                           )}
                         >
                           <Icon className="size-4" aria-hidden /> {label}
+                          {href === "/support" && support > 0 && (
+                            <span className="num ml-auto rounded-chip bg-[var(--pill-warning-bg)] px-1.5 text-meta font-medium text-[var(--pill-warning-ink)]"
+                                  aria-label={`${support} need attention`}>{support}</span>
+                          )}
                           {href === "/approvals" && waiting > 0 && (
                             <span className="num ml-auto rounded-chip bg-[var(--pill-warning-bg)] px-1.5 text-meta font-medium text-[var(--pill-warning-ink)]"
                                   aria-label={`${waiting} waiting`}>{waiting}</span>

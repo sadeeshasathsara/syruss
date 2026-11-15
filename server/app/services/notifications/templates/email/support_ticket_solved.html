@@ -1,0 +1,11 @@
+{#- A support ticket was marked solved. Variables: ticket, subject, name, url, support -#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+{% block preheader %}{{ ticket }} is solved{% endblock %}
+{% block heading %}Your request is solved{% endblock %}
+{% block content %}
+{{ ui.paragraph("Hi " ~ name ~ ", we've marked your request solved. If anything is still wrong, reply to this email and it opens again.") }}
+{{ ui.facts([("Ticket", ticket), ("Subject", subject)]) }}
+{% if url %}{{ ui.button("Open the ticket", url) }}{% endif %}
+{% endblock %}
+{% block footer %}Replies to {{ support }} with [#{{ ticket }}] in the subject reopen it.{% endblock %}
