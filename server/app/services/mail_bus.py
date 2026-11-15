@@ -202,10 +202,14 @@ class MailBus:
 
     async def _directory(self, key: str, value: Optional[bytes]) -> None:
         if value is None:
+            if key not in self.state:
+                return
             self.state.pop(key, None)
             entry = None
         else:
             entry = json.loads(value)
+            if self.state.get(key) == entry:
+                return          # the mail service publishes everything every minute: nothing new, nobody is told
             self.state[key] = entry
         for listener in list(self.listeners):
             try:
