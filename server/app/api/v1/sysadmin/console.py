@@ -483,8 +483,14 @@ async def search(q: str = Query(..., min_length=2, max_length=120), db: AsyncSes
     staff = (await db.execute(select(PlatformStaff, User).join(User, User.id == PlatformStaff.user_id)
                               .where(or_(s.matches(User.email, full_name), User.id == text))
                               .order_by(s.rank(User.email, full_name)).limit(5))).all()
+    from app.services import object_profiles
+    found = await object_profiles.search(db, s)
+    found_in = {x["template_id"] for x in (*found["objects"], *found["things"])}
+    ws_names = dict((await db.execute(select(Workspace.id, Workspace.name).where(Workspace.id.in_(found_in)))).all()) if found_in else {}
+    ws_tenant = dict((await db.execute(select(Workspace.id, Workspace.tenant_id).where(Workspace.id.in_(found_in)))).all()) if found_in else {}
 
-    tenant_ids = {x.tenant_id for x in (*documents, *runs, *invoices, *workspaces) if x.tenant_id} | {t.tenant_id for t in tickets if t.tenant_id}
+    tenant_ids = ({x.tenant_id for x in (*documents, *runs, *invoices, *workspaces) if x.tenant_id} | {t.tenant_id for t in tickets if t.tenant_id}
+                  | {tid for tid in ws_tenant.values() if tid})
     names = dict((await db.execute(select(Tenant.id, Tenant.name).where(Tenant.id.in_(tenant_ids)))).all()) if tenant_ids else {}
     org = lambda tid: names.get(tid) if tid else None  # noqa: E731
     status = lambda v: (getattr(v, "value", v) or "").lower() or None  # noqa: E731
@@ -497,6 +503,14 @@ async def search(q: str = Query(..., min_length=2, max_length=120), db: AsyncSes
         find.group("documents", "Documents", [find.item(d.id, d.identified_key or d.original_filename, href=f"/documents/{d.id}",
                                                         detail=find.joined(d.original_filename if d.identified_key else None, d.external_id, org(d.tenant_id)),
                                                         status=status(d.status)) for d in documents]),
+        find.group("things", "Things", [find.item(x["key"], x["label"], href=f"/objects/{x['template_id']}/{x['path'][len('objects/'):]}",
+                                                  detail=find.joined(x["type"], f"{x['documents']} documents"), icon=x["icon"],
+                                                  tags=[t for t in (org(ws_tenant.get(x["template_id"])), ws_names.get(x["template_id"])) if t])
+                                      for x in found["things"]]),
+        find.group("objects", "Objects", [find.item(f"{x['template_id']}:{x['type']}", x["type"], href=f"/objects/{x['template_id']}/{x['path'][len('objects/'):]}",
+                                                    detail=f"{x['fields']} attributes", icon=x["icon"],
+                                                    tags=[t for t in (org(x["tenant_id"]), ws_names.get(x["template_id"])) if t])
+                                          for x in found["objects"]]),
         find.group("runs", "Agent runs", [find.item(r.id, f"Run {r.id[:8]}", href=f"/runs/{r.id}",
                                                     detail=find.joined(r.profile, org(r.tenant_id)), status=status(r.status)) for r in runs]),
         find.group("tickets", "Support tickets", [find.item(t.id, f"{t.number} · {t.subject}", href=f"/support/tickets/{t.id}",

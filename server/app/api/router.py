@@ -15,6 +15,7 @@ from app.api.v1.intake import router as intake_router
 from app.api.v1.documents import router as documents_router
 from app.api.v1.extractions import router as extractions_router
 from app.api.v1.knowledge import router as knowledge_router
+from app.api.v1.objects import router as objects_router
 from app.api.v1.knowledge_sources import router as knowledge_sources_router
 from app.api.v1.memories import router as memories_router
 from app.api.v1.organization import router as organization_router
@@ -48,6 +49,7 @@ api_router.include_router(reviews_router)
 api_router.include_router(questions_router)
 api_router.include_router(knowledge_sources_router)
 api_router.include_router(knowledge_router)
+api_router.include_router(objects_router)
 api_router.include_router(conversations_router)
 api_router.include_router(audit_router)
 api_router.include_router(billing_router)
