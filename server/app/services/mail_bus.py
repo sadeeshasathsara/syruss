@@ -27,6 +27,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from app.core.config import settings
+from app.core.kafka_security import kafka_security
 
 try:
     from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
@@ -116,7 +117,7 @@ class MailBus:
         while True:
             consumer = None
             try:
-                consumer = AIOKafkaConsumer(topic, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, group_id=f"core-{topic}-{uuid.uuid4().hex[:8]}",
+                consumer = AIOKafkaConsumer(topic, bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(), group_id=f"core-{topic}-{uuid.uuid4().hex[:8]}",
                                             auto_offset_reset="earliest", enable_auto_commit=False)
                 await consumer.start()
                 while True:
@@ -148,7 +149,7 @@ class MailBus:
             if AIOKafkaProducer is None:
                 raise MailBusError("Kafka isn't available on this server.", 503)
             try:
-                producer = AIOKafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, acks="all", max_request_size=2_097_152)
+                producer = AIOKafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(), acks="all", max_request_size=2_097_152)
                 await producer.start()
             except Exception as e:  # noqa: BLE001
                 raise MailBusError("The mail service can't be reached right now (Kafka didn't answer).", 502) from e

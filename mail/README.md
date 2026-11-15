@@ -38,15 +38,15 @@ Each use of mail is a purpose with the capabilities it needs (`router.py`):
 | `accounts` | send | Keycloak's own emails (verify an address, reset a password, a new staff member's set-up link) |
 | `support` | read, send | support tickets |
 
-A purpose uses the account routed to it. With no route, or while that account needs reconnecting or can't do
-everything the purpose needs, it falls back to the account from the environment (`MAIL_SMTP_*`, `MAIL_FROM`), which is
-also how a fresh install sends its first emails.
+A purpose uses the account routed to it. While none is connected, or the connected one needs reconnecting or can't do everything the
+purpose needs, its mail **waits** at this service (without using up its tries, and shown in the admin app as "No mailbox") and goes out
+once a mailbox is connected. No mail credential or server is read from the environment.
 
 ## Jobs
 
 A **job** is a named use of mail with a mailbox of its own: the built-in ones are notifications, document inbound,
 promotions, help (`support`) and Keycloak's account emails (`accounts`); more can be added from the admin app. Each says whether
-it sends, reads or both, is served by one account (without one, the environment's), and may have settings of its own (sender
+it sends, reads or both, is served by one account (kept with the job; without one its mail waits), and may have settings of its own (sender
 name, reply-to, how often it is read). Each job that reads has a poller of its own, so a slow mailbox never holds up another.
 
 ## Control plane (Kafka)
@@ -87,7 +87,7 @@ The admin app's **Email** page (owners only) sends signed commands through the s
 - **Checks:** test an account.
 - **Delivery log:** see what was sent, and send again mail that was given up.
 
-**Connecting Google** (`google.py`) asks only for the permissions the chosen purposes need, and saves what Google actually granted. When Google stops accepting the sign-in (access removed, password changed, or the 7-day limit of an OAuth app still in testing), the account is marked "Needs reconnecting" and its purposes fall back to the account from the environment.
+**Connecting Google or Microsoft** (`oauth.py`) asks only for the permissions the chosen jobs need, and saves what the provider actually granted. Their OAuth apps (client id and secret, plus Microsoft's tenant) are set in the admin app's **Provider apps** tab and kept sealed here (`apps.py`); Google's can still come from `GOOGLE_MAIL_CLIENT_*`. Microsoft rotates refresh tokens, and each new one is saved at once (`accounts/graph.py`). When a provider stops accepting the sign-in (access removed, password changed, or Google's 7-day limit for an app in testing), the account is marked "Needs reconnecting" and its jobs wait until it is connected again.
 
 ## Reading mailboxes
 
@@ -95,6 +95,67 @@ The admin app's **Email** page (owners only) sends signed commands through the s
 - **Read-only:** the mailbox is opened for reading only.
 - **From where it left off:** a cursor is kept per account and purpose. The first read only notes where the mailbox is.
 - **Handed to the server:** each new message is kept (sealed) and published whole on `mail.inbound` (its job, account and size in the headers). The server takes it in, and says so on `mail.inbound.acks`; only then is it deleted here. One the server never acknowledges is published again every few minutes (and dropped after `INBOUND_KEEP_DAYS`). A message over `MAIL_MAX_MESSAGE_BYTES` isn't kept: a notice with no body tells the server it came.
+
+## First install
+
+Nothing secret is in an environment file, so a fresh install has no mailbox. In `mail.env` set the database, `MAIL_MASTER_KEYS`
+(`python -m mail keygen`) and `MAIL_TRUSTED_SERVER_KEY` (the first of the pair `python -m app.mail_signing_key` makes on the server;
+the other goes in the server's env), then start the service and connect the first mailbox from the server's shell, so the first
+set-up link and sign-in codes can go out:
+
+```
+python -m mail connect --address no-reply@example.com --smtp-host smtp.example.com --smtp-username no-reply@example.com --password-stdin
+python -m mail fingerprint      # compare with the fingerprint the admin app shows beside its forms
+python -m mail jobs             # which mailbox serves each job
+```
+
+Everything after that is done in the admin app (Email): more mailboxes, Google and Microsoft, which job uses which, jobs of your own.
+
+## Kafka security
+
+Kafka has no login by default, so on any broker that is not on a private network turn on **TLS and SASL**, and give each service only
+the access it needs. This service and the server both read the same settings (`kafka_security.py`): `KAFKA_SECURITY_PROTOCOL`
+(`SASL_SSL`), `KAFKA_SASL_MECHANISM` (`SCRAM-SHA-512`), `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` and `KAFKA_SSL_CA_FILE`.
+
+1. Give the broker a certificate (`listeners=SASL_SSL://...`, `sasl.enabled.mechanisms=SCRAM-SHA-512`,
+   `authorizer.class.name=org.apache.kafka.metadata.authorizer.StandardAuthorizer`, `allow.everyone.if.no.acl.found=false`).
+2. Make one user per service, each with its own long random password:
+   `kafka-configs.sh --alter --add-config 'SCRAM-SHA-512=[password=...]' --entity-type users --entity-name mail`
+3. Allow exactly this (`kafka-acls.sh --add --allow-principal User:<name> --operation <op> --topic <t>`; consumer groups with `--group`):
+
+| Topic | `mail` user | `server` user |
+|---|---|---|
+| `mail.outbound` | Read | Write |
+| `mail.events` | Write | Read |
+| `mail.commands` | Read | Write |
+| `mail.replies` | Write | Read |
+| `mail.directory` | Write | Read |
+| `mail.inbound` | Write | Read |
+| `mail.inbound.acks` | Read | Write |
+
+   Groups: `mail` reads with `mail`, `mail-commands` and `mail-acks`; the server with `core-mail-events`, `core-mail-inbound` and
+   (prefix) `core-mail.`. The `mail` user also needs Create, Describe and AlterConfigs on `mail.*` (it creates its topics at start-up;
+   pre-create them and drop those if you prefer). Nobody else may write to `mail.commands`: signed commands are the second lock, not the first.
+4. The other services that use Kafka (the agent, the live bridge) need their own users and ACLs on their own topics.
+
+## Keys
+
+- **Master keys** (`MAIL_MASTER_KEYS`, newest first) seal everything secret in the database. **Rotate:** `python -m mail keygen`, put the
+  new key *in front* of the list, restart. Everything older still opens; new and changed data is sealed with the new key. Once you have
+  reconnected or re-saved what you want re-sealed (or are happy to keep the old key for it), the old key can stay; remove it only after
+  every account has been connected again, since data sealed with a removed key can't be read.
+- **Box key** (what the browser seals secrets to): made on first use and kept sealed in the database. Its fingerprint is in the
+  admin app and in `python -m mail fingerprint`; a changed fingerprint means a different database, so compare after a restore.
+- **Signing keys** (the server signs commands, this service trusts the public half): to rotate, make a new pair
+  (`python -m app.mail_signing_key`), set the public half here and the private half on the server, restart both. Commands signed
+  with the old key are refused from then on.
+
+## Backups
+
+The database (`MAIL_DB`, default `syruss_mail`) holds the accounts, their sealed credentials, jobs, the delivery log and the sealed
+box key. Back it up with the rest of Postgres, **and keep `MAIL_MASTER_KEYS` somewhere else**: the database alone is useless without
+the keys, and the keys alone are useless without the database. To restore, restore the database, set the same keys, start the service and
+run `python -m mail jobs` and the admin app's Test button on each account.
 
 ## Running it
 

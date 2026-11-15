@@ -53,6 +53,7 @@ export function JobsView({ o }: { o: MailOverview }) {
 /** One word for how a job is doing. */
 function statusOf(job: MailJobDef): { label: string; tone: "positive" | "warning" | "negative" | "neutral" } {
   if (job.last_error) return { label: "Problem", tone: "negative" };
+  if (!job.address) return { label: "No mailbox", tone: "warning" };
   if (job.direction !== "send" && !job.reads) return { label: "Not reading", tone: "warning" };
   if (!job.routed) return { label: "Default", tone: "neutral" };
   return { label: "Working", tone: "positive" };

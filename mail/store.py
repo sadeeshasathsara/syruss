@@ -43,16 +43,8 @@ class AccountRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
 
 
-class RouteRow(Base):
-    """Which account a purpose sends (and reads) through. No row: the account from the environment."""
-    __tablename__ = "mail_routes"
-    purpose: Mapped[str] = mapped_column(String(40), primary_key=True)
-    account_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, onupdate=_now)
-
-
 class PurposeRow(Base):
-    """A job: a named use of mail (built in, or added in the admin app). Which account serves it is in mail_routes."""
+    """A job: a named use of mail (built in, or added in the admin app), and the account that serves it (none: nothing is connected for it)."""
     __tablename__ = "mail_purposes"
     key: Mapped[str] = mapped_column(String(40), primary_key=True)
     label: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -60,6 +52,7 @@ class PurposeRow(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    account_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
 
 
@@ -132,7 +125,17 @@ class Store:
         await self._ensure_database()
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await self._fold_routes(conn)
         await self.seed_jobs()
+
+    @staticmethod
+    async def _fold_routes(conn) -> None:
+        """Older installs kept which account serves a job in a table of its own (mail_routes). It is now a column of the job: copy
+        it over once, then drop the table. Safe to run on every start."""
+        await conn.execute(text("ALTER TABLE mail_purposes ADD COLUMN IF NOT EXISTS account_id VARCHAR(64)"))
+        if await conn.scalar(text("SELECT to_regclass('public.mail_routes') IS NOT NULL")):
+            await conn.execute(text("UPDATE mail_purposes p SET account_id = r.account_id FROM mail_routes r WHERE r.purpose = p.key AND p.account_id IS NULL"))
+            await conn.execute(text("DROP TABLE mail_routes"))
 
     async def _ensure_database(self) -> None:
         url = self._engine.url
@@ -154,7 +157,13 @@ class Store:
 
     async def routes(self) -> Dict[str, str]:
         async with self.session() as s:
-            return {r.purpose: r.account_id for r in (await s.execute(select(RouteRow))).scalars()}
+            return {r.key: r.account_id for r in (await s.execute(select(PurposeRow).where(PurposeRow.account_id.is_not(None)))).scalars()}
+
+    async def set_route(self, purpose: str, account_id: Optional[str]) -> None:
+        """The account that serves a job (None: nothing is connected for it)."""
+        async with self.session() as s:
+            await s.execute(update(PurposeRow).where(PurposeRow.key == purpose).values(account_id=account_id))
+            await s.commit()
 
     async def account(self, account_id: str) -> Optional[AccountRow]:
         async with self.session() as s:
@@ -209,7 +218,6 @@ class Store:
 
     async def delete_job(self, key: str) -> None:
         async with self.session() as s:
-            await s.execute(delete(RouteRow).where(RouteRow.purpose == key))
             await s.execute(delete(CursorRow).where(CursorRow.purpose == key))
             await s.execute(delete(PurposeRow).where(PurposeRow.key == key))
             await s.commit()

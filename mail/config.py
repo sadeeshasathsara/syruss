@@ -15,6 +15,12 @@ class MailSettings(BaseSettings):
 
     # Kafka
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
+    # Kafka login (kafka_security.py): off by default. TLS and SASL for any broker that is not on a private network.
+    KAFKA_SECURITY_PROTOCOL: str = "PLAINTEXT"   # PLAINTEXT | SSL | SASL_PLAINTEXT | SASL_SSL
+    KAFKA_SASL_MECHANISM: str = "SCRAM-SHA-512"
+    KAFKA_SASL_USERNAME: str = ""
+    KAFKA_SASL_PASSWORD: str = ""
+    KAFKA_SSL_CA_FILE: str = ""
     MAIL_OUTBOUND_TOPIC: str = "mail.outbound"   # jobs to send, from the server
     MAIL_EVENTS_TOPIC: str = "mail.events"       # what happened to each job, back to the server
     # The control plane (the server's signed commands and this service's answers) and the public state it keeps the
@@ -50,15 +56,10 @@ class MailSettings(BaseSettings):
     MAIL_TRUSTED_SERVER_KEY: str = ""
     COMMAND_MAX_AGE_SECONDS: int = 300
 
-    # The account from the environment: the fallback every purpose uses until an account connected in the admin app
-    # takes over (a fresh install sends sign-in codes and invitations before anyone can connect one).
-    # "smtp" sends through MAIL_SMTP_*; "console" only logs (local work without a mail server); "memory" keeps them (tests).
-    MAIL_BACKEND: str = "smtp"
-    MAIL_SMTP_HOST: str = "localhost"
-    MAIL_SMTP_PORT: int = 1025
-    MAIL_SMTP_USERNAME: str = ""
-    MAIL_SMTP_PASSWORD: str = ""
-    MAIL_SMTP_SECURITY: str = "none"  # none | starttls | ssl
+    # What a job sends through before a mailbox is connected: "none" (the default: mail waits until one is connected in the admin
+    # app or with `python -m mail connect`; no mail credential is ever kept in an environment file), "console" (only logs the
+    # message: local work without a mail server) or "memory" (keeps messages: tests).
+    MAIL_BACKEND: str = "none"
     MAIL_SMTP_TIMEOUT_SECONDS: int = 15
     MAIL_FROM: str = "no-reply@syruss.local"
     MAIL_FROM_NAME: str = "Syruss"
@@ -70,14 +71,6 @@ class MailSettings(BaseSettings):
     SUPPORT_EMAIL_ADDRESS: str = ""
     SUPPORT_FROM_NAME: str = "Syruss Support"
 
-    # The account from the environment can also read a mailbox (IMAP, read-only), for purposes that read (support) until
-    # an account connected in the admin app takes over. Empty host: it doesn't read.
-    MAIL_IMAP_HOST: str = ""
-    MAIL_IMAP_PORT: int = 993
-    MAIL_IMAP_USERNAME: str = ""
-    MAIL_IMAP_PASSWORD: str = ""
-    MAIL_IMAP_FOLDER: str = "INBOX"
-    MAIL_IMAP_SSL: bool = True
     MAIL_POLL_SECONDS: int = 60        # how often mailboxes are read
     MAIL_INBOUND_TOPIC: str = "mail.inbound"
     INBOUND_KEEP_DAYS: int = 7         # mail read but never collected by the server is dropped after this
@@ -122,10 +115,8 @@ def deployment_problems(s: MailSettings) -> list:
         problems.append("POSTGRES_PASSWORD still has its development value")
     if not (s.MAIL_MASTER_KEYS or s.MAIL_SECRETS_KEY):
         problems.append("MAIL_MASTER_KEYS (or MAIL_SECRETS_KEY) is not set")
-    if s.MAIL_BACKEND.lower() != "smtp":
-        problems.append("MAIL_BACKEND must be smtp")
-    if s.MAIL_SMTP_HOST in ("localhost", "127.0.0.1"):
-        problems.append("MAIL_SMTP_HOST must point at a real mail server")
+    if s.MAIL_BACKEND.lower() != "none":
+        problems.append("MAIL_BACKEND must be none (mailboxes are connected in the admin app, not logged or kept in memory)")
     if s.MAIL_FROM.endswith((".local", ".localhost", ".test")):
         problems.append("MAIL_FROM must be an address at a real domain")
     if not s.MAIL_TRUSTED_SERVER_KEY:
@@ -139,10 +130,8 @@ def check_config(s: MailSettings) -> None:
     """Fails startup on an unknown ENV or backend, or a real server still running with development values."""
     if s.ENV.lower() not in ENVIRONMENTS:
         raise RuntimeError(f"ENV must be one of {', '.join(ENVIRONMENTS)} (it is '{s.ENV}').")
-    if s.MAIL_BACKEND.lower() not in ("smtp", "console", "memory"):
-        raise RuntimeError("MAIL_BACKEND must be smtp, console or memory.")
-    if s.MAIL_SMTP_SECURITY.lower() not in ("none", "starttls", "ssl"):
-        raise RuntimeError("MAIL_SMTP_SECURITY must be none, starttls or ssl.")
+    if s.MAIL_BACKEND.lower() not in ("none", "smtp", "console", "memory"):   # "smtp": the old value; it is read as none
+        raise RuntimeError("MAIL_BACKEND must be none, console or memory (smtp is read as none).")
     problems = deployment_problems(s) if s.is_deployed else []
     if problems:
         raise RuntimeError(f"Not safe to run as {s.ENV.lower()}: " + "; ".join(problems))
