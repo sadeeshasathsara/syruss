@@ -104,13 +104,6 @@ export interface SupportGrant {
   ended_by: string | null;
 }
 
-export interface SupportAccess {
-  allowed: boolean;
-  can_manage: boolean;
-  open: SupportGrant[];
-  recent: SupportGrant[];
-}
-
 export type TicketStatus = "new" | "open" | "pending" | "solved" | "closed";
 
 export interface SupportTicket {
@@ -495,11 +488,7 @@ export const api = {
       `/api/v1/support/tickets/${encodeURIComponent(ticketId)}/files/${encodeURIComponent(fileId)}?org=${encodeURIComponent(org)}`,
   },
 
-  supportAccess: {
-    get: () => request<SupportAccess>("/organization/support-access"),
-    set: (allowed: boolean) => request<SupportAccess>("/organization/support-access", { method: "PUT", body: json({ allowed }) }),
-    end: (id: string) => request<SupportAccess>(`/organization/support-access/${encodeURIComponent(id)}/end`, { method: "POST" }),
-  },
+
 
   // What Syruss is telling everyone now: announcements and maintenance (for the banner at the top of every page)
   announcements: () => request<{ maintenance: { on: boolean; message: string } | null; items: { id: string; title: string; body: string; severity: "info" | "warning" | "critical"; starts_at: string; ends_at: string | null }[] }>("/announcements"),

@@ -46,7 +46,7 @@ async def test_owners_manage_the_staff_and_every_change_is_recorded(client, mail
     assert (await client.patch(f"{API}/staff/usr_sys_viewer", headers=stale, json={"role": "support"})).json()["detail"]["code"] == "reauth_required"
     mailbox.clear()
     changed = await client.patch(f"{API}/staff/usr_sys_viewer", headers=ADMIN_APP, json={"role": "support", "reason": "Helps customers now"})
-    assert changed.json()["role"] == "support" and "support.access" in changed.json()["permissions"]
+    assert changed.json()["role"] == "support" and "support.respond" in changed.json()["permissions"]
     assert [m.subject for m in mailbox if m.to == "usr_sys_viewer@example.com"] == ["Your platform staff role is now Support"]
 
     # The deployment's owners and your own place can't be changed here.

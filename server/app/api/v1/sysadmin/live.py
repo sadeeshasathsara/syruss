@@ -2,8 +2,8 @@
 The platform's live view over Server-Sent Events, through the admin app's signed-in proxy (services/live/platform_feed).
 
   scope=ops                       facts from every organization (filter with tenant_id, workspace_id, kinds)
-  scope=run&id=<run>              one run; with content open, everything it thinks and does as it happens
-  scope=document&id=<document>    one document; with content open, every event about it
+  scope=run&id=<run>              one run: everything it thinks and does as it happens
+  scope=document&id=<document>    one document: every event about it
   scope=support                   live support's queue: chats waiting, taken and ended (support.respond)
   scope=chat&id=<conversation>    a live chat you took: its messages and typing (support.respond, and it is yours)
 
@@ -20,7 +20,6 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from app.api.v1.sysadmin.access import Staff, require_staff, staff_role
 from app.api.v1.sysadmin.runs import _labelled
-from app.api.v1.sysadmin.support_access import active_grant
 from app.core.database import AsyncSessionLocal
 from app.core.platform_permissions import PLATFORM_GRANTS
 from app.models.conversation import Conversation
@@ -52,9 +51,6 @@ async def _still_allowed(staff: Staff, tenant_id: Optional[str], content: bool, 
         if chat_id:
             conv = await db.get(Conversation, chat_id)
             return conv is not None and conv.support_state == "live" and support_live.info(conv).get("staff_id") == staff.user_id
-        if content:
-            staff = staff.model_copy(update={"role": role, "permissions": sorted(PLATFORM_GRANTS[role])})
-            return await active_grant(db, staff, tenant_id) is not None
     return True
 
 
@@ -97,18 +93,17 @@ async def live(
                 r = await db.get(Run, id) or (await db.execute(select(Run).where(Run.run_id == id).limit(1))).scalar_one_or_none()
                 if r is None or not r.run_id:
                     raise HTTPException(status_code=404, detail="No such run.")
-                owner, key, only = r.tenant_id, f"run:{r.run_id}", {"run_id": r.run_id}
+                owner, key = r.tenant_id, f"run:{r.run_id}"
                 snapshot = {"kind": "snapshot", "run_id": r.run_id, "status": r.status}
             else:
                 d = await db.get(Document, id)
                 if d is None:
                     raise HTTPException(status_code=404, detail="No such document.")
-                owner, key, only = d.tenant_id, f"document:{d.id}", {"document_id": d.id}
+                owner, key = d.tenant_id, f"document:{d.id}"
                 snapshot = {"kind": "snapshot", "document_id": d.id, "status": d.status.value}
-            content = await active_grant(db, staff, owner) is not None
-            # With content open, everything about it; without, its facts from the platform view.
-            listener = platform_feed.listen(key) if content else platform_feed.listen("ops", only=only)
-            snapshot["content_open"] = content
+            # Everything about it, as it happens (any staff member sees a run's and a document's work)
+            listener = platform_feed.listen(key)
+            snapshot["content_open"] = True
 
     async def events():
         started = asyncio.get_running_loop().time()

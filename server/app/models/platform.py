@@ -91,6 +91,9 @@ class PlatformAuditEntry(Base):
 
 class PlatformAccessGrant(Base):
     """
+    No longer used: staff see documents and runs without one (sysadmin/processes.py, runs.py). Kept for the history of
+    grants opened before.
+
     A staff member's access to one organization's content (documents, records, chats, what the agent thought and did),
     for a stated reason until a set time. Without one, staff see facts only: what ran, where, when, for how long, at
     what cost. Opening and ending one is in the platform audit log and in the organization's own activity.
