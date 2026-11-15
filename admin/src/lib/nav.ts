@@ -73,7 +73,8 @@ export const NAV: NavGroup[] = [
     ] },
     { href: "/email", label: "Email", icon: Mail, permission: "staff.manage", children: [
       { href: "/email", label: "Jobs" },
-      { href: "/email/accounts", label: "Accounts", also: ["/email/google"] },
+      { href: "/email/accounts", label: "Accounts", also: ["/email/google", "/email/microsoft"] },
+      { href: "/email/apps", label: "Provider apps" },
       { href: "/email/log", label: "Delivery log" },
     ] },
     { href: "/staff", label: "Staff", icon: UsersRound, children: [

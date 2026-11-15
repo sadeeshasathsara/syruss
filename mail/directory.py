@@ -16,7 +16,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
 from sqlalchemy import func, select
 
-from mail import google, sealing
+from mail import apps, sealing
 from mail.accounts.base import Capability
 from mail.router import Router
 from mail.store import AccountRow, CursorRow, JobRow, Store
@@ -51,7 +51,7 @@ class Directory:
         out: Dict[str, Dict[str, Any]] = {}
         _, public = await self.store.box()
         out["meta"] = {"public_key": base64.b64encode(public).decode(), "fingerprint": sealing.fingerprint(public),
-                       "providers": {"google": google.configured()}}
+                       "providers": {p: apps.describe(p) for p in apps.PROVIDERS}}
         out["account:" + self.router.fallback.id] = describe_account(None, self.router.fallback, routes, keys)
         for row in await self.store.accounts():
             out["account:" + row.id] = describe_account(row, self.router.fallback, routes, keys)

@@ -1,6 +1,6 @@
 """
 A Google account (Gmail or Google Workspace), used through the Gmail API with the permissions someone approved in the
-admin app (google.py): gmail.send to send, gmail.readonly to read. Nothing else: it can't delete, label or change mail.
+admin app (oauth.py): gmail.send to send, gmail.readonly to read. Nothing else: it can't delete, label or change mail.
 
 Its sign-in is a refresh token (sealed in the store). Access tokens are made from it when needed and kept in memory until
 they expire. When Google refuses the refresh token (access removed in the Google account, password changed, or the
@@ -18,7 +18,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 import httpx
 from mail.accounts.base import Capability, MailAccount, MailError, Outbound, SentReceipt, TestResult
 from mail.accounts.mime import build
-from mail.config import settings
+from mail import apps
 
 logger = logging.getLogger("mail.gmail")
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -27,16 +27,6 @@ SCOPES = {Capability.SEND: "https://www.googleapis.com/auth/gmail.send", Capabil
 MAX_PER_READ = 25
 _tokens: Dict[str, Tuple[str, float]] = {}   # account id -> (access token, expires at)
 _locks: Dict[str, asyncio.Lock] = {}
-
-
-def granted_by(scope: str) -> Capability:
-    """What the scopes Google granted allow."""
-    have = set((scope or "").split())
-    out = Capability.NONE
-    for capability, needed in SCOPES.items():
-        if needed in have:
-            out |= capability
-    return out
 
 
 class AccessLost(MailError):
@@ -63,9 +53,12 @@ class GmailAccount(MailAccount):
             cached = _tokens.get(self.id)
             if cached and not fresh and cached[1] > time.time() + 60:
                 return cached[0]
+            app = apps.get("google")
+            if app is None:
+                raise MailError("Google isn't set up: add its app under Email › Provider apps.")
             async with self._client() as client:
                 res = await client.post(TOKEN_URL, data={"grant_type": "refresh_token", "refresh_token": self._refresh_token,
-                                                         "client_id": settings.GOOGLE_MAIL_CLIENT_ID, "client_secret": settings.GOOGLE_MAIL_CLIENT_SECRET})
+                                                         "client_id": app["client_id"], "client_secret": app["client_secret"]})
             if res.status_code == 400 and (res.json() if res.content else {}).get("error") == "invalid_grant":
                 _tokens.pop(self.id, None)
                 if self._on_lost:

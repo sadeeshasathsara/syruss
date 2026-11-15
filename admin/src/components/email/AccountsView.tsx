@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { field } from "@/components/ops/Bits";
 import { Panel } from "@/components/ui/Blocks";
@@ -11,7 +12,8 @@ import { api } from "@/lib/api";
 import { ago, cn } from "@/lib/format";
 import { loadPage } from "@/lib/navigate";
 import { canSeal, sealForMail } from "@/lib/mailSeal";
-import type { MailAccount, MailImapInput, MailOverview, MailPurpose } from "@/lib/types";
+import type { MailAccount, MailImapInput, MailOverview, MailProvider, MailPurpose } from "@/lib/types";
+import { PROVIDER_LABEL } from "./OAuthReturn";
 
 const KIND: Record<MailAccount["kind"], string> = { gmail: "Google", graph: "Microsoft", smtp_imap: "Mail server", console: "Log only", memory: "Memory" };
 
@@ -20,7 +22,7 @@ function useRefresh() {
   return () => queryClient.invalidateQueries({ queryKey: ["mail"] });
 }
 
-/** The connected mailboxes, and ways to connect one: Google, or any mail server. */
+/** The connected mailboxes, and ways to connect one: Google, Microsoft, or any mail server. */
 export function AccountsView({ o }: { o: MailOverview }) {
   return (
     <>
@@ -36,7 +38,7 @@ function Accounts({ o }: { o: MailOverview }) {
   const [results, setResults] = useState<Record<string, { ok: boolean; detail: string }>>({});
   const test = useMutation({ mutationFn: (id: string) => api.mail.test(id), onSuccess: (r, id) => setResults((all) => ({ ...all, [id]: r })) });
   const remove = useMutation({ mutationFn: (id: string) => api.mail.remove(id), onSuccess: refresh });
-  const reconnect = useMutation({ mutationFn: (a: MailAccount) => api.mail.googleStart(a.purposes.length ? a.purposes : ["notifications"]),
+  const reconnect = useMutation({ mutationFn: (a: MailAccount) => api.mail.oauthStart(a.kind === "graph" ? "microsoft" : "google", a.purposes.length ? a.purposes : ["notifications"]),
     onSuccess: (r) => loadPage(r.url) });
   return (
     <Panel title="Mailboxes">
@@ -57,8 +59,8 @@ function Accounts({ o }: { o: MailOverview }) {
             {results[a.id] && <p className={cn("text-meta", results[a.id].ok ? "text-[var(--pill-positive-ink)]" : "text-negative")}>{results[a.id].detail}</p>}
             <div className="flex flex-wrap gap-2">
               <Button size="sm" disabled={test.isPending} onClick={() => test.mutate(a.id)}>Test</Button>
-              {a.kind === "gmail" && a.status === "needs_reconnect" && (
-                <Button size="sm" variant="primary" disabled={reconnect.isPending} onClick={() => reconnect.mutate(a)}>Reconnect with Google</Button>
+              {(a.kind === "gmail" || a.kind === "graph") && a.status === "needs_reconnect" && (
+                <Button size="sm" variant="primary" disabled={reconnect.isPending} onClick={() => reconnect.mutate(a)}>Reconnect with {a.kind === "graph" ? "Microsoft" : "Google"}</Button>
               )}
               {!a.from_environment && <Button size="sm" variant="danger" disabled={remove.isPending} onClick={() => remove.mutate(a.id)}>Remove</Button>}
             </div>
@@ -87,22 +89,29 @@ function JobPicker({ o, value, onChange }: { o: MailOverview; value: MailPurpose
 function Connect({ o }: { o: MailOverview }) {
   const [jobs, setJobs] = useState<MailPurpose[]>(["notifications"]);
   const [imap, setImap] = useState(false);
-  const start = useMutation({ mutationFn: () => api.mail.googleStart(jobs), onSuccess: (r) => loadPage(r.url) });
+  const start = useMutation({ mutationFn: (provider: MailProvider) => api.mail.oauthStart(provider, jobs), onSuccess: (r) => loadPage(r.url) });
   return (
     <Panel title="Connect a mailbox">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
-          <p className="text-body text-ink">Google (Gmail or Google Workspace)</p>
+          <p className="text-body text-ink">Google or Microsoft (Gmail, Google Workspace, Outlook.com, Microsoft 365)</p>
           <p className="text-meta text-muted">
-            You sign in to Google and approve only what the chosen jobs need: sending, and reading where a job reads. Syruss can&apos;t delete or change
-            anything in the mailbox. Mail goes out from the address you sign in with.
+            You sign in and approve only what the chosen jobs need: sending, and reading where a job reads. Syruss can&apos;t delete or change
+            anything in the mailbox. Mail goes out from the address you sign in with. No app password is involved.
           </p>
           <JobPicker o={o} value={jobs} onChange={setJobs} />
-          {o.google ? (
-            <div><Button variant="primary" disabled={!jobs.length || start.isPending} onClick={() => start.mutate()}>{start.isPending ? "Opening Google…" : "Set up Google mail"}</Button></div>
-          ) : (
-            <p className="text-meta text-[var(--pill-warning-ink)]">Google isn&apos;t set up on this server: add GOOGLE_MAIL_CLIENT_ID and GOOGLE_MAIL_CLIENT_SECRET to mail.env, with {o.redirect_uri} as the OAuth client&apos;s redirect URI.</p>
-          )}
+          <div className="flex flex-wrap gap-2">
+            {(["google", "microsoft"] as MailProvider[]).map((p) => (
+              <Button key={p} variant="primary" disabled={!jobs.length || !o.providers[p].configured || start.isPending} onClick={() => start.mutate(p)}>
+                {start.isPending && start.variables === p ? `Opening ${PROVIDER_LABEL[p]}…` : `Connect with ${PROVIDER_LABEL[p]}`}
+              </Button>
+            ))}
+          </div>
+          {(["google", "microsoft"] as MailProvider[]).filter((p) => !o.providers[p].configured).map((p) => (
+            <p key={p} className="text-meta text-[var(--pill-warning-ink)]">
+              {PROVIDER_LABEL[p]} isn&apos;t set up yet: add its app under <Link href="/email/apps" className="underline">Provider apps</Link>.
+            </p>
+          ))}
           <Problem error={start.error} />
         </div>
         <div className="border-t border-rule pt-4">

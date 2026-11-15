@@ -12,6 +12,7 @@ import { dateTime } from "@/lib/format";
 import { useLive } from "@/lib/live";
 import type { MailJob } from "@/lib/types";
 import { AccountsView } from "./AccountsView";
+import { AppsView } from "./AppsView";
 import { JobsView } from "./JobsView";
 
 const STATUS: Record<MailJob["status"], { label: string; tone: "positive" | "warning" | "negative" | "neutral" | "info" }> = {
@@ -19,11 +20,12 @@ const STATUS: Record<MailJob["status"], { label: string; tone: "positive" | "war
   sent: { label: "Sent", tone: "positive" }, dead: { label: "Not sent", tone: "negative" },
 };
 
-export type EmailView = "jobs" | "accounts" | "log";
+export type EmailView = "jobs" | "accounts" | "apps" | "log";
 
 const SUBTITLE: Record<EmailView, string> = {
   jobs: "What Syruss uses mail for. Each job has a mailbox of its own: choose which one does what, and add jobs of your own.",
-  accounts: "The mailboxes Syruss sends and reads mail through. Connect Google, or any mail server. Passwords are sealed in this browser.",
+  accounts: "The mailboxes Syruss sends and reads mail through. Connect Google or Microsoft, or any mail server. Passwords are sealed in this browser.",
+  apps: "The Google and Microsoft apps Syruss signs people in through, so connecting a mailbox is a button, not an app password. Secrets are sealed in this browser.",
   log: "What the mail service sent, to whom and how it went. The text itself isn't kept.",
 };
 
@@ -43,7 +45,8 @@ export function EmailPage({ view }: { view: EmailView }) {
       <PageHeader title="Email" subtitle={SUBTITLE[view]}
         actions={<Pill tone={live.state === "live" ? "positive" : "neutral"}>{live.state === "live" ? "Live" : live.state === "closed" ? "Not live" : "Connecting…"}</Pill>} />
       {view === "log" ? <Deliveries /> : overview.isError ? <ErrorNote message={overview.error.message} onRetry={() => overview.refetch()} />
-        : !overview.data ? <Bar className="h-64 w-full" /> : view === "jobs" ? <JobsView o={overview.data} /> : <AccountsView o={overview.data} />}
+        : !overview.data ? <Bar className="h-64 w-full" /> : view === "jobs" ? <JobsView o={overview.data} />
+          : view === "apps" ? <AppsView o={overview.data} /> : <AccountsView o={overview.data} />}
     </div>
   );
 }
