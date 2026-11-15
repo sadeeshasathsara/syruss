@@ -771,3 +771,71 @@ export interface SystemLesson {
   id: string; content: string; status: "active" | "proposed" | "retired"; importance: number; source: string;
   why?: string | null; times_proposed?: number; created_at: string;
 }
+
+// ---- support -------------------------------------------------------------------------------------
+
+export type TicketStatus = "new" | "open" | "pending" | "solved" | "closed";
+export type TicketPriority = "low" | "normal" | "high" | "urgent";
+export type TicketCategory = "billing" | "account" | "technical" | "other";
+
+export interface Ticket {
+  id: string;
+  number: string;
+  subject: string;
+  category: TicketCategory;
+  priority: TicketPriority;
+  status: TicketStatus;
+  channel: "agent" | "app" | "email";
+  requester_name: string;
+  requester_email: string;
+  tenant_id: string | null;
+  organization?: string | null;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  unverified: boolean;
+  related: { conversation_id?: string; document_id?: string; invoice_id?: string; follow_up_of?: string };
+  first_response_due: string | null;
+  resolve_due: string | null;
+  first_responded_at: string | null;
+  breached_at: string | null;
+  solved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  last_customer_at: string | null;
+  last_staff_at: string | null;
+}
+
+export interface TicketFile { id: string; filename: string; content_type: string; size: number }
+
+export interface TicketMessage {
+  id: string;
+  author_kind: "customer" | "staff" | "agent" | "system";
+  author_name: string;
+  body: string;
+  internal: boolean;
+  via: "app" | "email" | "agent";
+  created_at: string;
+  files: TicketFile[];
+}
+
+export interface TicketDetail extends Ticket {
+  messages: TicketMessage[];
+  context: {
+    organization: { id: string; name: string; slug: string; status: string; plan: string | null } | null;
+    person: { id: string; name: string; email: string; status: string; last_seen_at: string | null } | null;
+    bills: { id: string; number: string; status: string; total_cents: number; currency: string; due_cents: number; due_at: string | null }[];
+    other_tickets: { id: string; number: string; subject: string; status: TicketStatus; created_at: string }[];
+  };
+}
+
+export interface SupportSummary { new: number; unassigned: number; mine: number; breached: number; active: number }
+
+export interface SavedReply { id: string; title: string; body: string; shortcut: string | null; created_by_name: string; updated_at: string }
+
+export interface SupportSettings {
+  first_response_hours: Record<TicketPriority, number>;
+  resolve_hours: Record<TicketPriority, number>;
+  auto_solve_days: number;
+  auto_close_days: number;
+  mailbox: { address: string; reading: boolean };
+}

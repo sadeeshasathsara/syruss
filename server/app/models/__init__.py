@@ -49,6 +49,7 @@ from app.models.platform import (
     OrganizationNote, PlatformAccessGrant, PlatformAnnouncement, PlatformAuditEntry, PlatformSetting, PlatformStaff,
     PlatformStaffInvitation, PlatformApproval,
 )
+from app.models.support import SupportFile, SupportMessage, SupportSavedReply, SupportTicket
 from app.models.billing import (
     BankAccount, BillingPayment, BillingProfile, BillingRefund, BillingSequence, BillingSettings, CardCheckout, CatalogItem, CreditEntry,
     CreditNote, Invoice,

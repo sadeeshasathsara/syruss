@@ -6,7 +6,7 @@ import io
 import os
 import random
 
-os.environ["POSTGRES_DB"] = "doc_intelligence_test"
+os.environ["POSTGRES_DB"] = os.environ.get("TEST_POSTGRES_DB", "doc_intelligence_test")  # a run of its own: TEST_POSTGRES_DB
 os.environ["MINIO_BUCKET_NAME"] = "documents-test"
 os.environ["PLATFORM_ADMIN_USER_IDS"] = "usr_platform_owner"  # a staff account of its own: staff never use customer pages
 os.environ["MAIL_BACKEND"] = "memory"
