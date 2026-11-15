@@ -1,6 +1,6 @@
 """
 Documents sent by e-mail. A channel of kind "email" has an address of its own, made from the mailbox the mail service reads for the
-"documents" job (set in the admin app, Email › Jobs): for a mailbox docs@example.com the channel's address is docs+<token>@example.com.
+"document inbound" function's job (set in the admin app, Email › Jobs): for a mailbox docs@example.com the channel's address is docs+<token>@example.com.
 People write to that address; the mail service reads the mailbox and hands each message over (services/notifications/mail_relay.py),
 and every file attached to a message sent there becomes a document of that channel, exactly as if it had been sent through the API.
 This server runs no mail receiver of its own and knows no mail setting: the one mailbox, and the plus-addresses that tell channels
@@ -29,7 +29,7 @@ from app.core.database import AsyncSessionLocal
 from app.models.intake import IntakeChannel
 from app.services.intake import service as intake_service
 from app.services.intake.rules import IntakeRejected
-from app.services.mail_bus import bus
+from app.services import mail_uses
 
 logger = logging.getLogger("core.intake.email")
 ADDRESSED_TO = ("To", "Cc", "Delivered-To", "X-Original-To", "Envelope-To", "X-Envelope-To")
@@ -38,7 +38,7 @@ ADDRESSED_TO = ("To", "Cc", "Delivered-To", "X-Original-To", "Envelope-To", "X-E
 def mailbox() -> Optional[str]:
     """The address mail for documents arrives at (lowercase), from the mail service's directory: None until a mailbox that can read is
     chosen for the documents job."""
-    job = next((j for j in bus.entries("job:") if j.get("key") == "documents"), None)
+    job = mail_uses.job_entry(mail_uses.DOCUMENTS_INBOUND)
     if not job or not job.get("reads"):
         return None
     address = ((job.get("account") or {}).get("address") or "").strip().lower()

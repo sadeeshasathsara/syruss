@@ -45,7 +45,7 @@ class MailWorker:
         except ValidationError as e:
             logger.error("Skipped a malformed mail job: %s", e.errors()[:3])
             return
-        if await self.delivery.store.job(job.purpose) is None:
+        if await self.delivery.store.job(await self.delivery.store.resolve(job.purpose)) is None:
             logger.error("Skipped mail job %s: unknown purpose '%s'", job.id, job.purpose)
             await self.publish({"id": job.id, "purpose": job.purpose, "status": "dead", "attempts": 0,
                                 "error": f"Unknown purpose '{job.purpose}'", "meta": job.meta})

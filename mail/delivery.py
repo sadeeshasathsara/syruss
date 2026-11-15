@@ -48,7 +48,12 @@ class Delivery:
         self.store, self.router = store, router
 
     async def accept(self, job: Outbound) -> bool:
-        """Records a new job (sealed). False when this id was seen before: it isn't sent again."""
+        """Records a new job (sealed). False when this id was seen before: it isn't sent again. A message that names a function is
+        recorded against the job that function uses (the function stays in its meta)."""
+        use = job.purpose
+        job = job.model_copy(update={"purpose": await self.store.resolve(use)})
+        if job.purpose != use:
+            job = job.model_copy(update={"meta": {**(job.meta or {}), "use": use}})
         async with self.store.session() as s:
             result = await s.execute(insert(JobRow).values(
                 id=job.id, purpose=job.purpose, to=job.to[:320], subject=job.subject[:500], status="queued", attempts=0,

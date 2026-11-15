@@ -165,3 +165,13 @@ python -m mail                   # from the repository root
 ```
 
 Run the tests from inside `mail/` with `pytest`. They use their own database, `syruss_mail_test`.
+
+## Functions and jobs
+
+A **job** is a mailbox with settings, made in the admin app. A **function** is something Syruss does with mail: sending to an email
+destination, support tickets, invitations, documents arriving by email. Each function is declared once in the server
+(`services/mail_uses.py`) and registered here at start-up (`use.register`); the admin app (Email › Jobs › Where mail is used) chooses
+which job each one uses (`use.assign`), and until one is chosen it uses its default job. A message names its function as its `purpose`;
+`Store.resolve` turns that into the job, and the job's mailbox sends it. Mail read from a job is handed to the function that job is
+chosen for. To give a new feature a mailbox to choose, declare a function in the server and name it when sending (the steps are at the
+top of `mail_uses.py`).

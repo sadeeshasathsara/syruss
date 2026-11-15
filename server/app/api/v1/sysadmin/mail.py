@@ -183,6 +183,20 @@ async def delete_job(key: str, staff: Staff = Depends(CHANGE), db: AsyncSession 
     await db.commit()
 
 
+class UseIn(BaseModel):
+    job: Optional[str] = Field(None, max_length=40)   # None: the function's default job
+
+
+@router.put("/uses/{key}")
+async def assign_use(key: str, body: UseIn, staff: Staff = Depends(CHANGE), db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
+    """Chooses the job an application function uses (the mail service refuses a job that can't do what the function does)."""
+    await _command("use.assign", staff, {"key": key, "job": body.job})
+    record(db, staff, "mail.use_assigned", "mail_use", key, details={"job": body.job})
+    await db.commit()
+    await _settled()
+    return bus.overview()
+
+
 class OAuthStartIn(BaseModel):
     purposes: List[str] = Field(..., min_length=1, max_length=20)
 

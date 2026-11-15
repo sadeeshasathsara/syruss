@@ -39,7 +39,7 @@ async def test_mail_is_queued_sealed_published_once_and_dropped(service):
         attachments=[("notes.csv", b"a,b\n1,2\n", "text/csv")], meta={"invitation": "inv_1"}))
     async with AsyncSessionLocal() as db:
         row = (await db.execute(select(MailOutbox))).scalar_one()
-    assert row.status == "queued" and row.purpose == "notifications" and "482913" not in (row.payload or "")
+    assert row.status == "queued" and row.purpose == "app.notifications" and "482913" not in (row.payload or "")
 
     relay, producer = MailRelay(), FakeProducer()
     relay._producer = producer

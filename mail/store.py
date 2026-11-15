@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from mail import sealing
 from mail.config import settings
-from mail.purposes import BUILTIN, Job
+from mail.purposes import BUILTIN, BUILTIN_USES, Job, Use
 from mail.sealing import seal, unseal  # noqa: F401  (the rest of the service imports them from here)
 
 
@@ -53,6 +53,18 @@ class PurposeRow(Base):
     system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     account_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+class UseRow(Base):
+    """A function of the application that needs mail, and the job it uses (purposes.Use)."""
+    __tablename__ = "mail_uses"
+    key: Mapped[str] = mapped_column(String(40), primary_key=True)
+    label: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+    default_job: Mapped[str] = mapped_column(String(40), nullable=False)
+    job_key: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)   # chosen in the admin app; none: the default
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
 
 
@@ -127,6 +139,7 @@ class Store:
             await conn.run_sync(Base.metadata.create_all)
             await self._fold_routes(conn)
         await self.seed_jobs()
+        await self.register_uses(BUILTIN_USES)
 
     @staticmethod
     async def _fold_routes(conn) -> None:
@@ -216,9 +229,48 @@ class Store:
                 row.label, row.description, row.settings = job.label, job.description, job.settings
             await s.commit()
 
+    # ---- functions (uses) -------------------------------------------------------------------------------------
+
+    @staticmethod
+    def _use(row: UseRow) -> Use:
+        return Use(key=row.key, label=row.label, description=row.description or "", direction=row.direction, default_job=row.default_job,
+                   job=row.job_key or "")
+
+    async def uses(self) -> List[Use]:
+        async with self.session() as s:
+            return [self._use(r) for r in (await s.execute(select(UseRow).order_by(UseRow.created_at, UseRow.key))).scalars()]
+
+    async def use(self, key: str) -> Optional[Use]:
+        async with self.session() as s:
+            row = await s.get(UseRow, key)
+            return self._use(row) if row is not None else None
+
+    async def register_uses(self, uses: List[Use]) -> None:
+        """Adds a function, or refreshes what it says about itself. The job an owner chose for it is never touched."""
+        async with self.session() as s:
+            for u in uses:
+                row = await s.get(UseRow, u.key)
+                if row is None:
+                    s.add(UseRow(key=u.key, label=u.label, description=u.description, direction=u.direction, default_job=u.default_job))
+                else:
+                    row.label, row.description, row.direction, row.default_job = u.label, u.description, u.direction, u.default_job
+            await s.commit()
+
+    async def set_use_job(self, key: str, job_key: Optional[str]) -> None:
+        async with self.session() as s:
+            await s.execute(update(UseRow).where(UseRow.key == key).values(job_key=job_key or None))
+            await s.commit()
+
+    async def resolve(self, name: str) -> str:
+        """The job a message goes through. `name` is a function's key (looked up), or a job's key (used as it is)."""
+        async with self.session() as s:
+            row = await s.get(UseRow, name)
+            return (row.job_key or row.default_job) if row is not None else name
+
     async def delete_job(self, key: str) -> None:
         async with self.session() as s:
             await s.execute(delete(CursorRow).where(CursorRow.purpose == key))
+            await s.execute(update(UseRow).where(UseRow.job_key == key).values(job_key=None))   # its functions go back to their default
             await s.execute(delete(PurposeRow).where(PurposeRow.key == key))
             await s.commit()
 

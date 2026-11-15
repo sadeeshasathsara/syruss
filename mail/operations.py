@@ -12,7 +12,7 @@ from sqlalchemy import delete, select, update
 from mail import apps, oauth
 from mail.accounts import ENV_ACCOUNT_ID, account_from_row
 from mail.accounts.base import MailNotPermitted
-from mail.purposes import Job, JobError, clean_settings, validate_new
+from mail.purposes import Job, JobError, Use, clean_settings, validate_new, validate_use
 from mail.router import Router
 from mail.store import AccountRow, CursorRow, JobRow, PurposeRow, Store, seal, unseal
 
@@ -142,6 +142,35 @@ class Operations:
         if job.system:
             raise OperationError(f"{job.label} is built in and can't be removed.")
         await self.store.delete_job(key)
+
+    # ---- functions (uses) ------------------------------------------------------------------------------------------
+
+    async def register_uses(self, items: List[Dict[str, Any]]) -> int:
+        """The application tells this service what functions it has (idempotent: sent at every start)."""
+        uses = []
+        try:
+            for i in items[:100]:
+                u = Use(key=str(i.get("key", "")), label=str(i.get("label", ""))[:120], description=str(i.get("description", ""))[:300],
+                        direction=str(i.get("direction", "")), default_job=str(i.get("default_job", "")))
+                validate_use(u.key, u.label, u.direction, u.default_job)
+                uses.append(u)
+        except JobError as e:
+            raise OperationError(str(e)) from e
+        await self.store.register_uses(uses)
+        return len(uses)
+
+    async def assign_use(self, key: str, job_key: Optional[str]) -> None:
+        """Chooses the job a function uses (None: its default again). The job must be able to do what the function does."""
+        use = await self.store.use(key)
+        if use is None:
+            raise OperationError("No such function.")
+        if job_key:
+            job = await self.store.job(job_key)
+            if job is None:
+                raise OperationError("No such job.")
+            if use.needs & ~job.needs:
+                raise OperationError(f"{use.label} needs a job that can {' and '.join(use.needs.names())}; {job.label} can't.")
+        await self.store.set_use_job(key, job_key or None)
 
     # ---- the delivery log ----------------------------------------------------------------------------------
 
