@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.identity import OrgMember, User
 from app.models.support import SupportMessage, SupportTicket
+from app.services import mail_identity
 from app.services.support import mail, tickets
 
 logger = logging.getLogger("services.support.mailbox")
@@ -135,7 +136,8 @@ async def handle(db: AsyncSession, raw: bytes) -> Optional[SupportTicket]:
     msg = message_from_bytes(raw, policy=email_policy.default)
     name, sender = parseaddr(msg.get("From") or "")
     sender = sender.strip().lower()
-    ours = {a.lower() for a in (mail.support_address(), settings.MAIL_FROM) if a}
+    known = await mail_identity.ensure(required=True)  # raises when the mail service never answered: the mail waits and is tried again
+    ours = {a.lower() for a in (known.support_address, known.from_address) if a}
     if not sender or "@" not in sender or sender in ours or is_automatic(msg):
         return None
     if any(addr.lower() in ours for _, addr in getaddresses(msg.get_all("Reply-To", []))):

@@ -12,6 +12,7 @@ import secrets
 from typing import List, Optional
 from sqlalchemy import select, update
 from app.core.config import settings
+from app.services import mail_identity
 from app.core.database import AsyncSessionLocal
 from app.models.support import SupportMessage, SupportTicket
 from app.models.tenant import Tenant
@@ -24,7 +25,8 @@ OUR_ID = re.compile(r"<(t-\d{4,})\.[0-9a-f]{8,}@", re.I)
 
 
 def support_address() -> str:
-    return settings.SUPPORT_EMAIL_ADDRESS or settings.MAIL_FROM
+    """The support mailbox's address, as the mail service last told us (mail_identity.ensure asks it)."""
+    return mail_identity.current().support_address
 
 
 def _domain() -> str:
@@ -58,6 +60,7 @@ async def _thread(ticket_id: str) -> List[str]:
 async def send(ticket: SupportTicket, template: str, *, message: Optional[SupportMessage] = None, reply: bool = False) -> bool:
     """One ticket email to the requester (`template`: support_ticket_opened, support_reply or support_ticket_solved)."""
     try:
+        await mail_identity.ensure(required=True)  # the address in the email and at the end of its ids: never a guess
         refs = await _thread(ticket.id)
         # Our own id: kept on a staff answer (so later mail threads under it); otherwise a new one (never the customer's)
         own_id = message.email_message_id if reply and message is not None and message.email_message_id else new_message_id(ticket)
@@ -73,7 +76,7 @@ async def send(ticket: SupportTicket, template: str, *, message: Optional[Suppor
                 await db.commit()
         await transport.send(transport.EmailMessage(
             to=ticket.requester_email, subject=subject_of(ticket, reply), text=parts["text"], html=parts["html"],
-            purpose="support", sender_name=settings.SUPPORT_FROM_NAME, reply_to=support_address(), message_id=own_id,
+            purpose="support", reply_to=support_address(), message_id=own_id,
             in_reply_to=refs[-1] if refs else None, references=refs or None, automatic=template != "support_reply",
             meta={"ticket": ticket.number, "template": template}))
         return True

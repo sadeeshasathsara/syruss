@@ -61,8 +61,8 @@ def job_of(message: EmailMessage, job_id: str) -> Dict[str, Any]:
     """The message as the mail service takes it (mail/accounts/base.Outbound)."""
     return {
         "id": job_id, "purpose": message.purpose, "to": message.to, "subject": message.subject, "text": message.text,
-        "html": message.html, "sender_name": message.sender_name or settings.MAIL_FROM_NAME,
-        "reply_to": message.reply_to or settings.MAIL_REPLY_TO or None, "message_id": message.message_id,
+        "html": message.html, "sender_name": message.sender_name,
+        "reply_to": message.reply_to, "message_id": message.message_id,
         "in_reply_to": message.in_reply_to, "references": list(message.references or []), "automatic": message.automatic,
         "attachments": [{"filename": name, "content_type": kind, "data_b64": base64.b64encode(data).decode()}
                         for name, data, kind in message.attachments or []],

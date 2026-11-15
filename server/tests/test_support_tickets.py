@@ -9,6 +9,7 @@ from sqlalchemy import select, update
 from app.core.agent_token import mint_agent_token
 from app.core.config import settings
 from app.models.support import SupportMessage, SupportTicket
+from app.services import mail_identity
 from app.services.support import mailbox as support_mailbox, sla
 from tests.conftest import TENANT, AsyncSessionLocal, create_template, make_staff, person, png_bytes, register, ws
 from tests.test_workspace_authorization import chat_token
@@ -21,8 +22,10 @@ SUPPORT = "help@syruss.test"
 
 
 @pytest.fixture(autouse=True)
-def support_address(monkeypatch):
-    monkeypatch.setattr(settings, "SUPPORT_EMAIL_ADDRESS", SUPPORT)
+def support_address():
+    mail_identity.use("no-reply@syruss.test", SUPPORT)  # what the mail service would say
+    yield
+    mail_identity.forget()
 
 
 def raw_email(sender: str, subject: str, body: str, **headers) -> bytes:
