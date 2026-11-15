@@ -46,8 +46,42 @@ export function JobsView({ o, adding, onClose }: { o: MailOverview; adding: bool
           {keys.map((key) => <Job key={`${key}:${JSON.stringify(o.purposes[key].settings)}`} id={key} job={o.purposes[key]} o={o} />)}
         </ul>
       </Panel>
+      <Uses o={o} />
       <NewJob taken={keys} open={adding} onClose={onClose} />
     </>
+  );
+}
+
+/** What Syruss does with mail, and which job each part uses: one dropdown each (only jobs that can do it are offered). */
+function Uses({ o }: { o: MailOverview }) {
+  const refresh = useRefresh();
+  const assign = useMutation({ mutationFn: ({ key, job }: { key: string; job: string | null }) => api.mail.assignUse(key, job), onSuccess: refresh });
+  if (!o.uses?.length) return null;
+  return (
+    <Panel title="Where mail is used">
+      <div className={cn(COLUMNS, "border-b border-rule pb-2 text-meta text-muted max-md:hidden")}>
+        <span>Part of Syruss</span><span>Job</span><span /><span />
+      </div>
+      <ul className="flex flex-col divide-y divide-rule">
+        {o.uses.map((u) => {
+          const fits = Object.entries(o.purposes).filter(([, j]) => u.needs.every((n) => j.needs.includes(n)));
+          return (
+            <li key={u.key} className={cn(COLUMNS, "py-3 max-md:grid-cols-1 max-md:gap-y-2")}>
+              <div className="min-w-0">
+                <p className="truncate text-body font-medium text-ink">{u.label}</p>
+                <p className="truncate text-meta text-muted" title={u.description}>{u.description}</p>
+              </div>
+              <Select aria-label={`Job for ${u.label}`} className="w-full min-w-0" disabled={assign.isPending}
+                value={u.assigned ? u.job : ""} onValueChange={(v) => assign.mutate({ key: u.key, job: v || null })}>
+                <option value="">Default: {o.purposes[u.default_job]?.label ?? u.default_job}</option>
+                {fits.map(([key, j]) => <option key={key} value={key}>{j.label}</option>)}
+              </Select>
+            </li>
+          );
+        })}
+      </ul>
+      <Problem error={assign.error} />
+    </Panel>
   );
 }
 

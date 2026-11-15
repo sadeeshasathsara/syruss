@@ -14,8 +14,8 @@ import type { MailOverview, MailProvider } from "@/lib/types";
 import { PROVIDER_LABEL } from "./OAuthReturn";
 
 const GUIDE: Record<MailProvider, string> = {
-  google: "In Google Cloud (APIs & Services › Credentials) create an OAuth client of type “Web application”, enable the Gmail API, and register the redirect URI below.",
-  microsoft: "In Microsoft Entra (App registrations) register an app, add the Web redirect URI below, add the delegated Microsoft Graph permissions Mail.Send and Mail.Read, and create a client secret. For personal Outlook.com accounts as well as work ones, choose “Accounts in any organizational directory and personal Microsoft accounts”.",
+  google: "Create a Web application client in Google Cloud (Credentials), turn on the Gmail API, and add the address below as its redirect.",
+  microsoft: "Register an app in Microsoft Entra, add the address below as a Web redirect, allow Mail.Send and Mail.Read, and create a client secret.",
 };
 
 /** The Google and Microsoft apps mailboxes are connected through: each one's client id, secret (sealed here) and redirect address. */
@@ -59,17 +59,17 @@ function ProviderApp({ provider, o }: { provider: MailProvider; o: MailOverview 
       <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
         <p className="text-meta text-muted">{GUIDE[provider]}</p>
         <div className="flex flex-col gap-1 text-meta text-muted">
-          Redirect URI to register
+          Redirect address
           <code className="w-fit select-all rounded bg-well px-2 py-1 text-body text-ink">{info.redirect_uri}</code>
         </div>
         <div className="flex flex-wrap gap-3">
           <label className="flex flex-col gap-1 text-meta text-muted">Client id
             <input value={clientId} autoComplete="off" className={cn(field, "w-96 max-w-full")}
-              placeholder={info.configured && !info.from_environment ? "Leave empty to keep the one set" : ""} onChange={(e) => setClientId(e.target.value)} />
+              placeholder={info.configured ? "••••••••••••••••" : ""} onChange={(e) => setClientId(e.target.value)} />
           </label>
           <label className="flex flex-col gap-1 text-meta text-muted">Client secret
             <input type="password" value={secret} autoComplete="off" className={cn(field, "w-72")}
-              placeholder={info.configured && !info.from_environment ? "Leave empty to keep the one set" : ""} onChange={(e) => setSecret(e.target.value)} />
+              placeholder={info.configured ? "••••••••••••••••" : ""} onChange={(e) => setSecret(e.target.value)} />
           </label>
           {provider === "microsoft" && (
             <label className="flex flex-col gap-1 text-meta text-muted">Tenant (optional)
@@ -77,12 +77,7 @@ function ProviderApp({ provider, o }: { provider: MailProvider; o: MailOverview 
             </label>
           )}
         </div>
-        {info.from_environment && <p className="text-meta text-muted">This app comes from the mail service&apos;s environment (mail.env). Saving here replaces it.</p>}
-        <p className="text-meta text-muted">
-          {sealing === null ? "" : sealing && publicKey
-            ? <>The secret is sealed in this browser to the mail service&apos;s key (fingerprint <span className="num font-medium text-ink">{o.key.fingerprint}</span>) before it is sent, and is never shown again.</>
-            : "This browser can't seal the secret itself, so the server seals it to the mail service's key. Use a current Chrome, Firefox or Safari to seal it here."}
-        </p>
+        {info.configured && <p className="text-meta text-muted">Already set and hidden. Type a new value to replace it{info.from_environment ? " (it was set up on the server)" : ""}.</p>}
         <div className="flex flex-wrap items-center gap-2">
           <Button type="submit" size="sm" variant="primary" disabled={(!info.configured && (!clientId.trim() || !secret)) || (info.configured && !clientId.trim() && !secret && tenant.trim() === (info.tenant ?? "")) || save.isPending}>{save.isPending ? "Saving…" : "Save app"}</Button>
           {info.configured && !info.from_environment && (confirming ? (

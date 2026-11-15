@@ -11,6 +11,7 @@ import re
 from typing import Any, Dict, List, Optional
 from app.core.downloads import csv_row
 from app.services.destinations.base import Adapter, Field, SendContext, SendResult, TestResult, register
+from app.services.mail_uses import DESTINATION_EMAIL
 from app.services.notifications.transport import EmailError, EmailMessage, send
 
 ADDRESS = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]{2,}$")
@@ -60,7 +61,7 @@ def message_for(envelope: Dict[str, Any], config: Dict[str, Any], revision: int)
     if mode in ("csv", "both"):
         attachments.append((f"{re.sub(r'[^A-Za-z0-9._-]+', '_', doc.get('filename') or 'record')}.csv", csv_of(record["data"]), "text/csv"))
     return EmailMessage(to=", ".join(recipients(config)), subject=subject_for(config.get("subject") or "", doc, revision), text="\n".join(lines) + "\n\nThe full record is attached.",
-                        html=body, attachments=attachments)
+                        html=body, attachments=attachments, purpose=DESTINATION_EMAIL.key)
 
 
 class EmailAdapter(Adapter):
@@ -85,7 +86,7 @@ class EmailAdapter(Adapter):
     async def test(self, config: Dict[str, Any], secrets: Dict[str, Any], destination_id: Optional[str] = None) -> TestResult:
         try:
             await send(EmailMessage(to=", ".join(recipients(config)), subject="A test from Syruss", text="This is a test. Approved records will arrive like this, with the record attached.",
-                                    html="<p>This is a test. Approved records will arrive like this, with the record attached.</p>"))
+                                    html="<p>This is a test. Approved records will arrive like this, with the record attached.</p>", purpose=DESTINATION_EMAIL.key))
         except EmailError as exc:
             return TestResult(False, str(exc))
         return TestResult(True, f"A test message was sent to {', '.join(recipients(config))}.")

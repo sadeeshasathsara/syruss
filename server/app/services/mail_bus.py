@@ -257,7 +257,8 @@ class MailBus:
         providers = {p: (v if isinstance(v, dict) else {"configured": bool(v)}) for p, v in (self.meta.get("providers") or {}).items()}
         for p in ("google", "microsoft"):
             providers.setdefault(p, {"configured": False})
-        return {"purposes": jobs, "google": bool(providers["google"].get("configured")), "providers": providers, "accounts": accounts,
+        uses = sorted(self.entries("use:"), key=lambda u: u.get("key", ""))
+        return {"purposes": jobs, "uses": uses, "google": bool(providers["google"].get("configured")), "providers": providers, "accounts": accounts,
                 "key": {"fingerprint": self.meta.get("fingerprint"), "public_key": self.meta.get("public_key")}}
 
 

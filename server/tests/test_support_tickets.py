@@ -48,7 +48,7 @@ async def test_a_customer_opens_a_ticket_and_staff_answer_it_by_email_and_in_the
     t = await open_one(client)
     assert t["number"].startswith("T-") and t["status"] == "new" and t["first_response_due"]
     confirm = [m for m in mailbox if m.to == "dev@syruss.test"][-1]
-    assert confirm.subject == f"[#{t['number']}] Card payment failed" and confirm.purpose == "support" and confirm.reply_to == SUPPORT
+    assert confirm.subject == f"[#{t['number']}] Card payment failed" and confirm.purpose == "support.mail" and confirm.reply_to == SUPPORT
     assert confirm.message_id.startswith(f"<{t['number'].lower()}.") and "declined twice" in confirm.text
 
     inbox = (await client.get(f"{SYS}/tickets", headers=OWNER)).json()["items"]

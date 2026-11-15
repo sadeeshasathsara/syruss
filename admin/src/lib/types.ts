@@ -950,7 +950,22 @@ export interface MailAppInput {
   sealed?: string;
 }
 
+/** Something Syruss does with mail (an email destination, support, invitations...) and the job it uses. */
+export interface MailUseDef {
+  key: string;
+  label: string;
+  description: string;
+  direction: MailDirection;
+  needs: ("send" | "read")[];
+  default_job: MailPurpose;
+  /** The job it uses now */
+  job: MailPurpose;
+  /** Whether an owner chose it (else it uses its default) */
+  assigned: boolean;
+}
+
 export interface MailOverview {
+  uses: MailUseDef[];
   google: boolean;
   providers: Record<MailProvider, MailProviderInfo>;
   redirect_uri: string;

@@ -21,6 +21,8 @@ anything else this module publishes ever holds a secret: passwords arrive sealed
     account.remove                    remove an account and what it served          {account_id}
     job.route                         which account serves a job (null: the environment's)   {purpose, account_id}
     job.create / job.update / job.delete                                            {key, label, direction, ...}
+    use.register                      the application's functions that use mail   {uses: [{key, label, description, direction, default_job}]}
+    use.assign                        which job a function uses (null: its default)   {key, job}
     jobs.log                          the delivery log                              {status?, limit?}
     job.retry                         send a given-up message again                 {id}
     oauth.<provider>.start / .finish  connect Google or Microsoft                   {jobs, redirect_uri} / {code (sealed), state, redirect_uri}
@@ -43,7 +45,7 @@ Changed = Callable[[], Awaitable[None]]
 
 # Changes that make the directory stale (the others only read)
 CHANGES = {"account.add_imap", "account.remove", "account.test", "job.route", "job.create", "job.update", "job.delete",
-           "oauth.google.finish", "oauth.microsoft.finish", "provider_app.set", "provider_app.clear", "directory.refresh"}
+           "oauth.google.finish", "oauth.microsoft.finish", "provider_app.set", "provider_app.clear", "use.register", "use.assign", "directory.refresh"}
 
 
 def canonical(envelope: Dict[str, Any]) -> bytes:
@@ -66,6 +68,8 @@ class Commands:
             "job.delete": self._job_delete,
             "jobs.log": self._log,
             "job.retry": self._retry,
+            "use.register": self._use_register,
+            "use.assign": self._use_assign,
             "provider_app.set": self._app_set,
             "provider_app.clear": self._app_clear,
         }
@@ -196,6 +200,14 @@ class Commands:
             code = str(secret.get("code") or payload.get("code") or "")
             return await self.ops.oauth_finish(provider, code, str(payload.get("state", "")), str(payload.get("redirect_uri", "")), by)
         return finish
+
+    async def _use_register(self, payload, by):
+        items = payload.get("uses")
+        return {"registered": await self.ops.register_uses(items if isinstance(items, list) else [])}
+
+    async def _use_assign(self, payload, by):
+        await self.ops.assign_use(str(payload.get("key", "")), payload.get("job") or None)
+        return {}
 
     async def _app_set(self, payload, by):
         secret = await self._sealed(payload)
