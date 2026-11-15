@@ -19,9 +19,11 @@ nothing is built on it. The folder holds everything the server needs besides its
      client secrets. Use long random values (`openssl rand -base64 32`), never the development ones.
    - `server.env`, `agent.env`, `mail.env`, `www.env`, `site.env`, `admin.env`: start from each service's `.env.example`.
      `mail.env` holds the only mail credentials (`MAIL_SMTP_*` and `MAIL_IMAP_*`, the fallback account),
-     `MAIL_SECRETS_KEY`, the relay password Keycloak signs in with (`MAIL_RELAY_PASSWORD`), the Google OAuth client
-     (`GOOGLE_MAIL_CLIENT_*`, redirect URI `https://admin.<domain>/email/google`) and `MAIL_SERVICE_TOKEN`, which
-     `server.env` must have too. Connect mailboxes afterwards in the admin app's Email page. The
+     `MAIL_MASTER_KEYS` (`python -m mail keygen`; keep it apart from the database), the relay password Keycloak signs in with
+     (`MAIL_RELAY_PASSWORD`), the Google OAuth client (`GOOGLE_MAIL_CLIENT_*`, redirect URI `https://admin.<domain>/email/google`)
+     and `MAIL_TRUSTED_SERVER_KEY`. The server and the mail service talk only over Kafka: make the pair of signing keys once with
+     `python -m app.mail_signing_key` (the first line goes in `server.env`, the second in `mail.env`). Connect mailboxes afterwards in
+     the admin app's Email page (or `python -m mail connect` first, on the server, to get the first emails out). The
      compose file sets `ENV=production`, and then the server and the agent refuse to start while a development value is
      left, and say which: the database, storage and token passwords; `SECRETS_ENCRYPTION_KEY`; the public addresses
      (`OIDC_ISSUER`, `PUBLIC_SITE_URL`, `PUBLIC_APP_URL`, `PUBLIC_ADMIN_URL`, `PUBLIC_API_URL`) and `CORS_ORIGINS`, which

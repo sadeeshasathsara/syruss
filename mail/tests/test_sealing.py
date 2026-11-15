@@ -78,3 +78,21 @@ def test_a_signature_holds_only_for_the_same_bytes_and_the_same_key():
     _, someone_else = sealing.new_signing_keypair()
     assert not sealing.verify(base64.b64encode(someone_else).decode(), b"command", sig)
     assert not sealing.verify("not base64 at all", b"command", sig) and not sealing.verify("", b"command", sig)
+
+
+# The same vector is asserted in server/tests/test_mail_bus.py: the two services cannot drift apart without a test failing.
+def test_the_signature_and_the_sealed_box_match_the_server_byte_for_byte():
+    import base64
+    from mail.commands import canonical
+    envelope = {"id": "cmd-1", "type": "job.create", "ts": 1700000000.5, "by": "usr_1",
+                "payload": {"key": "partners", "label": "Partners ü", "direction": "send"}}
+    private = bytes([7]) * 32
+    assert base64.b64encode(sealing.sign(private, canonical(envelope))).decode() ==         "2fujoiWBA7efQjfbpa5pMU2PBqdC9Mu3kQ5CRZ/M0QfzIFcH+mLZr+3ZHE0ctfx/Ntzcvv4FTSs6SWkBzTLyCg=="
+    recipient_private = bytes(range(1, 33))
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import x25519
+    recipient_public = x25519.X25519PrivateKey.from_private_bytes(recipient_private).public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    box = sealing.box_seal(recipient_public, b'{"smtp_password":"pw"}', bytes(range(101, 133)), bytes(range(12)))
+    assert base64.b64encode(box).decode() == ("VxR2nRFr92Q2rnS8eT0sMK0ZA8WaxSc4BcfiaYtBDDYAAQIDBAUGBwgJCgt2fEkp2hRqJA6vwdZcT5KTlfWoxb0U01Nwyu9efe1qW7wDCtLLVQ==")
+    assert sealing.box_open(recipient_private, recipient_public, box) == b'{"smtp_password":"pw"}'

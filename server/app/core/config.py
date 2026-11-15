@@ -66,13 +66,17 @@ class Settings(BaseSettings):
     MAIL_OUTBOUND_TOPIC: str = "mail.outbound"
     MAIL_EVENTS_TOPIC: str = "mail.events"
     MAIL_INBOUND_TOPIC: str = "mail.inbound"
-    # The mail service's internal API (accounts, routes, connecting Google, mail read from mailboxes), and the key to it:
-    # the same MAIL_SERVICE_TOKEN as in mail.env.
-    MAIL_SERVICE_URL: str = "http://localhost:8100"
-    MAIL_SERVICE_TOKEN: str = ""
-    # The sender's address and name, the reply address and the support mailbox are the mail service's settings (MAIL_FROM,
-    # MAIL_FROM_NAME, MAIL_REPLY_TO, SUPPORT_EMAIL_ADDRESS, SUPPORT_FROM_NAME in mail.env). The server asks it for the two
-    # addresses it needs (services/mail_identity.py).
+    # The server talks to the mail service only over Kafka (services/mail_bus.py): signed commands, answers, the mail service's
+    # directory of public state, and an acknowledgement for each email it hands over.
+    MAIL_COMMANDS_TOPIC: str = "mail.commands"
+    MAIL_REPLIES_TOPIC: str = "mail.replies"
+    MAIL_DIRECTORY_TOPIC: str = "mail.directory"
+    MAIL_INBOUND_ACKS_TOPIC: str = "mail.inbound.acks"
+    # What commands are signed with (base64, 32 bytes): `python -m app.mail_signing_key` makes it, with the public half for mail.env.
+    MAIL_COMMAND_SIGNING_KEY: str = ""
+    # The sender's address and name, the reply address, the support mailbox, every mail server and credential are the mail service's
+    # (mail.env, and the admin app's Email page). The addresses the server needs it reads from the mail service's directory
+    # (services/mail_identity.py).
     # An invitation email can be sent again this often, no sooner
     MAIL_RESEND_SECONDS: int = 60
 
