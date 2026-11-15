@@ -27,7 +27,8 @@ from mail import google
 from mail.accounts import ENV_ACCOUNT_ID, account_from_row
 from mail.accounts.base import Capability, MailNotPermitted
 from mail.config import settings
-from mail.router import PURPOSES, Router
+from mail.router import Router
+from mail.sealing import open_bytes
 from mail.store import AccountRow, CursorRow, InboundRow, JobRow, RouteRow, Store, seal, unseal
 
 
@@ -46,7 +47,7 @@ def build_api(store: Store, router: Router) -> FastAPI:
         if row is None:
             a = router.fallback
             return {**a.describe(), "status": "active", "from_environment": True, "last_error": None,
-                    "purposes": [p for p in PURPOSES if p not in routes]}
+                    "purposes": [j.key for j in await store.jobs() if j.key not in routes]}
         return {"id": row.id, "kind": row.kind, "address": row.address, "name": row.name, "granted": row.granted, "status": row.status,
                 "last_error": row.last_error, "checked_at": row.checked_at, "created_at": row.created_at, "from_environment": False,
                 "config": {k: v for k, v in (row.config or {}).items() if "password" not in k},
@@ -65,10 +66,11 @@ def build_api(store: Store, router: Router) -> FastAPI:
     @app.get("/status", dependencies=guard)
     async def status() -> Dict[str, Any]:
         out = {}
-        for purpose, needs in PURPOSES.items():
-            account, routed = await router.account_for(purpose)
-            out[purpose] = {"account_id": account.id, "address": account.address, "routed": routed, "needs": needs.names(),
-                            "reads": Capability.READ in needs and Capability.READ in account.granted}
+        for job in await store.jobs():
+            account, routed = await router.account_for(job.key)
+            out[job.key] = {"account_id": account.id, "address": account.address, "routed": routed, "needs": job.needs.names(),
+                            "reads": Capability.READ in job.needs and Capability.READ in account.granted,
+                            "label": job.label, "direction": job.direction, "system": job.system}
         return {"purposes": out, "google": google.configured()}
 
     @app.get("/accounts", dependencies=guard)
@@ -117,7 +119,8 @@ def build_api(store: Store, router: Router) -> FastAPI:
     @app.post("/accounts/{account_id}/test", dependencies=guard)
     async def test(account_id: str, purpose: Optional[str] = Query(None)) -> Dict[str, Any]:
         row, account = await account_or_404(account_id)
-        needs = PURPOSES.get(purpose or "", account.granted) if purpose else account.granted
+        job = await store.job(purpose) if purpose else None
+        needs = job.needs if job is not None else account.granted
         try:
             result = await account.open(needs).test()
         except MailNotPermitted as e:
@@ -149,7 +152,8 @@ def build_api(store: Store, router: Router) -> FastAPI:
 
     @app.put("/routes/{purpose}", dependencies=guard)
     async def set_route(purpose: str, body: RouteIn) -> Dict[str, Any]:
-        if purpose not in PURPOSES:
+        job = await store.job(purpose)
+        if job is None:
             raise HTTPException(status_code=404, detail="No such purpose.")
         async with store.session() as s:
             if body.account_id in (None, ENV_ACCOUNT_ID):
@@ -157,9 +161,9 @@ def build_api(store: Store, router: Router) -> FastAPI:
             else:
                 row, account = await account_or_404(body.account_id)
                 try:
-                    Router.check(account, purpose)
+                    Router.check(account, job.needs)
                 except MailNotPermitted as e:
-                    raise HTTPException(status_code=422, detail=f"{e} The {purpose} purpose needs {', '.join(PURPOSES[purpose].names())}.")
+                    raise HTTPException(status_code=422, detail=f"{e} The {purpose} purpose needs {', '.join(job.needs.names())}.")
                 await s.merge(RouteRow(purpose=purpose, account_id=row.id))
             await s.commit()
         return await status()
@@ -172,7 +176,7 @@ def build_api(store: Store, router: Router) -> FastAPI:
     @app.post("/google/start", dependencies=guard)
     async def google_start(body: StartIn) -> Dict[str, str]:
         try:
-            return {"url": google.start(body.purposes, body.redirect_uri, body.by)}
+            return {"url": google.start(body.purposes, body.redirect_uri, body.by, {j.key: j.needs for j in await store.jobs()})}
         except google.ConnectError as e:
             raise HTTPException(status_code=422, detail=str(e))
 
@@ -229,7 +233,7 @@ def build_api(store: Store, router: Router) -> FastAPI:
             row = await s.get(InboundRow, item_id)
         if row is None:
             raise HTTPException(status_code=404, detail="Not waiting here.")
-        return Response(content=row.raw, media_type="message/rfc822", headers={"X-Purpose": row.purpose})
+        return Response(content=open_bytes(row.raw), media_type="message/rfc822", headers={"X-Purpose": row.purpose})
 
     @app.delete("/inbound/{item_id}", dependencies=guard, status_code=204)
     async def inbound_done(item_id: str) -> None:

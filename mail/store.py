@@ -5,14 +5,17 @@ account each purpose uses, every job's delivery record, and where each mailbox w
 A job's message is kept only until it is sent or given up: the delivery log keeps who, what about and how it went,
 never the text (a sign-in code must not outlive its email).
 """
-import json
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import JSON, DateTime, Integer, LargeBinary, String, Text, select, text, update
+import base64
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
+from sqlalchemy import JSON, Boolean, DateTime, Integer, LargeBinary, String, Text, delete, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from mail import sealing
 from mail.config import settings
+from mail.purposes import BUILTIN, Job
+from mail.sealing import seal, unseal  # noqa: F401  (the rest of the service imports them from here)
 
 
 def _now() -> datetime:
@@ -48,6 +51,37 @@ class RouteRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, onupdate=_now)
 
 
+class PurposeRow(Base):
+    """A job: a named use of mail (built in, or added in the admin app). Which account serves it is in mail_routes."""
+    __tablename__ = "mail_purposes"
+    key: Mapped[str] = mapped_column(String(40), primary_key=True)
+    label: Mapped[str] = mapped_column(String(120), nullable=False)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)       # send | read | both
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+class SettingRow(Base):
+    """What this service keeps for itself, sealed: its box keypair (what the admin app seals secrets to)."""
+    __tablename__ = "mail_settings"
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, onupdate=_now)
+
+
+class CommandRow(Base):
+    """Every command the server sent: the log of who asked for what, and how a repeated one is refused (the id is kept)."""
+    __tablename__ = "mail_commands"
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    type: Mapped[str] = mapped_column(String(60), nullable=False)
+    by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, index=True)
+
+
 class JobRow(Base):
     """One message to send, by the publisher's id (so a message published twice is sent once)."""
     __tablename__ = "mail_jobs"
@@ -77,37 +111,14 @@ class CursorRow(Base):
 
 
 class InboundRow(Base):
-    """Mail read from a mailbox, kept until the server collects it (announced on mail.inbound, fetched through the API)."""
+    """Mail read from a mailbox, kept until the server collects it. `raw` is sealed (sealing.seal_bytes); rows kept before
+    that was done are read as they are."""
     __tablename__ = "mail_inbound"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     purpose: Mapped[str] = mapped_column(String(40), nullable=False)
     account_id: Mapped[str] = mapped_column(String(64), nullable=False)
     raw: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, index=True)
-
-
-# ---- sealing ---------------------------------------------------------------------------------------
-
-def _fernet() -> Fernet:
-    if settings.MAIL_SECRETS_KEY:
-        return Fernet(settings.MAIL_SECRETS_KEY.encode())
-    # Development only (check_config refuses a real server without a key)
-    import base64
-    import hashlib
-    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(b"syruss-mail-development-key").digest()))
-
-
-def seal(values: Dict[str, Any]) -> str:
-    return _fernet().encrypt(json.dumps(values).encode()).decode()
-
-
-def unseal(token: Optional[str]) -> Dict[str, Any]:
-    if not token:
-        return {}
-    try:
-        return json.loads(_fernet().decrypt(token.encode()))
-    except InvalidToken as e:
-        raise ValueError("A sealed mail secret couldn't be opened (MAIL_SECRETS_KEY changed?).") from e
 
 
 # ---- the database ----------------------------------------------------------------------------------
@@ -121,6 +132,7 @@ class Store:
         await self._ensure_database()
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        await self.seed_jobs()
 
     async def _ensure_database(self) -> None:
         url = self._engine.url
@@ -152,4 +164,86 @@ class Store:
         """The provider stopped accepting this account's sign-in: it needs connecting again."""
         async with self.session() as s:
             await s.execute(update(AccountRow).where(AccountRow.id == account_id).values(status="needs_reconnect", last_error=why))
+            await s.commit()
+
+    # ---- jobs ------------------------------------------------------------------------------------------
+
+    async def seed_jobs(self) -> None:
+        """The built-in jobs, once (a later start never undoes a change an owner made to one)."""
+        async with self.session() as s:
+            for j in BUILTIN:
+                await s.execute(pg_insert(PurposeRow).values(key=j.key, label=j.label, direction=j.direction, description=j.description,
+                                                              system=True, settings={}, created_at=_now()).on_conflict_do_nothing())
+            await s.commit()
+
+    @staticmethod
+    def _job(row: PurposeRow) -> Job:
+        return Job(key=row.key, label=row.label, direction=row.direction, description=row.description or "", system=row.system,
+                   settings=dict(row.settings or {}))
+
+    async def jobs(self) -> List[Job]:
+        async with self.session() as s:
+            rows = (await s.execute(select(PurposeRow).order_by(PurposeRow.system.desc(), PurposeRow.created_at, PurposeRow.key))).scalars()
+            return [self._job(r) for r in rows]
+
+    async def job(self, key: str) -> Optional[Job]:
+        async with self.session() as s:
+            row = await s.get(PurposeRow, key)
+            return self._job(row) if row is not None else None
+
+    async def save_job(self, job: Job) -> None:
+        async with self.session() as s:
+            row = await s.get(PurposeRow, job.key)
+            if row is None:
+                s.add(PurposeRow(key=job.key, label=job.label, direction=job.direction, description=job.description, system=job.system,
+                                 settings=job.settings))
+            else:
+                row.label, row.description, row.settings = job.label, job.description, job.settings
+            await s.commit()
+
+    async def delete_job(self, key: str) -> None:
+        async with self.session() as s:
+            await s.execute(delete(RouteRow).where(RouteRow.purpose == key))
+            await s.execute(delete(CursorRow).where(CursorRow.purpose == key))
+            await s.execute(delete(PurposeRow).where(PurposeRow.key == key))
+            await s.commit()
+
+    # ---- the box keypair and the command log -----------------------------------------------------------
+
+    async def box(self) -> Tuple[bytes, bytes]:
+        """(private, public): made on first use, kept sealed. People seal secrets to the public half."""
+        async with self.session() as s:
+            row = await s.get(SettingRow, "box")
+            if row is None:
+                private, public = sealing.new_box_keypair()
+                row = SettingRow(key="box", value=seal({"private": base64.b64encode(private).decode(), "public": base64.b64encode(public).decode()}))
+                s.add(row)
+                try:
+                    await s.commit()
+                except Exception:  # another process made it first
+                    await s.rollback()
+                    row = await s.get(SettingRow, "box")
+            kept = unseal(row.value)
+        return base64.b64decode(kept["private"]), base64.b64decode(kept["public"])
+
+    async def open_box(self, blob: bytes) -> bytes:
+        private, public = await self.box()
+        return sealing.box_open(private, public, blob)
+
+    async def record_command(self, command_id: str, type_: str, by: Optional[str]) -> bool:
+        """False when this command id was seen before (a replay)."""
+        async with self.session() as s:
+            result = await s.execute(pg_insert(CommandRow).values(id=command_id[:100], type=type_[:60], by=(by or "")[:255], ok=False, at=_now())
+                                     .on_conflict_do_nothing(index_elements=["id"]).returning(CommandRow.id))
+            await s.commit()
+            return result.first() is not None
+
+    async def finish_command(self, command_id: str, ok: bool, error: Optional[str] = None) -> None:
+        async with self.session() as s:
+            await s.execute(update(CommandRow).where(CommandRow.id == command_id[:100]).values(ok=ok, error=error[:500] if error else None))
+            await s.commit()
+
+    async def prune_commands(self, keep_days: int = 30) -> None:
+        async with self.session() as s:
+            await s.execute(delete(CommandRow).where(CommandRow.at < _now() - timedelta(days=keep_days)))
             await s.commit()

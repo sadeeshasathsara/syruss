@@ -24,7 +24,7 @@ from sqlalchemy import select
 from mail.accounts.base import Capability
 from mail.accounts.gmail import SCOPES, TOKEN_URL, granted_by
 from mail.config import settings
-from mail.router import PURPOSES
+from mail.purposes import BUILTIN_NEEDS
 from mail.store import AccountRow, Store, seal, unseal
 
 AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -41,20 +41,22 @@ def configured() -> bool:
     return bool(settings.GOOGLE_MAIL_CLIENT_ID and settings.GOOGLE_MAIL_CLIENT_SECRET)
 
 
-def needs_of(purposes: List[str]) -> Capability:
-    unknown = [p for p in purposes if p not in PURPOSES]
+def needs_of(purposes: List[str], known: Optional[Dict[str, Capability]] = None) -> Capability:
+    """What the jobs it is connected for need together. `known`: the jobs there are and what each needs (default: the built-in ones)."""
+    known = known if known is not None else BUILTIN_NEEDS
+    unknown = [p for p in purposes if p not in known]
     if unknown or not purposes:
-        raise ConnectError(f"Choose what it is for: {', '.join(PURPOSES)}.")
+        raise ConnectError(f"Choose what it is for: {', '.join(known)}.")
     out = Capability.NONE
     for p in purposes:
-        out |= PURPOSES[p]
+        out |= known[p]
     return out
 
 
-def start(purposes: List[str], redirect_uri: str, by: str) -> str:
+def start(purposes: List[str], redirect_uri: str, by: str, known: Optional[Dict[str, Capability]] = None) -> str:
     if not configured():
         raise ConnectError("Google isn't set up on this server (GOOGLE_MAIL_CLIENT_ID and GOOGLE_MAIL_CLIENT_SECRET in mail.env).")
-    needs = needs_of(purposes)
+    needs = needs_of(purposes, known)
     verifier = secrets.token_urlsafe(48)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     state = seal({"v": verifier, "p": purposes, "by": by, "exp": time.time() + STATE_MINUTES * 60, "n": secrets.token_hex(8)})
@@ -91,7 +93,7 @@ async def finish(store: Store, *, code: str, state: str, redirect_uri: str, by: 
         raise ConnectError("Google didn't say which address this is.")
     address = who.json()["email"].lower()
     granted = granted_by(tokens.get("scope", ""))
-    missing = needs_of(st["p"]) & ~granted
+    missing = needs_of(st["p"], {j.key: j.needs for j in await store.jobs()}) & ~granted
     if missing:
         raise ConnectError(f"Google wasn't given permission to {' and '.join(missing.names())}. Connect again and leave those ticked.")
     async with store.session() as s:

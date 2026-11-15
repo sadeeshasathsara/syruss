@@ -16,7 +16,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert
 from mail.accounts.base import MailError, MailNotPermitted, Outbound
 from mail.config import settings
-from mail.router import PURPOSES, Router
+from mail.router import Router
 from mail.store import JobRow, Store, seal, unseal
 
 logger = logging.getLogger("mail.delivery")
@@ -27,12 +27,14 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def with_defaults(job: Outbound) -> Outbound:
-    """The sender's name and the reply address the job didn't set itself: from this service's settings, so no publisher
-    needs to know them (support mail is in the support name and answered at the support address)."""
+def with_defaults(job: Outbound, job_settings: Optional[Dict[str, Any]] = None) -> Outbound:
+    """The sender's name and the reply address the message didn't set itself: the job's own settings, else this service's
+    (support mail is in the support name and answered at the support address), so no publisher needs to know them."""
     support = job.purpose == "support"
-    sender_name = job.sender_name or (settings.SUPPORT_FROM_NAME if support else settings.MAIL_FROM_NAME)
-    reply_to = job.reply_to or ((settings.SUPPORT_EMAIL_ADDRESS or settings.MAIL_FROM) if support else settings.MAIL_REPLY_TO) or None
+    mine = job_settings or {}
+    sender_name = job.sender_name or mine.get("sender_name") or (settings.SUPPORT_FROM_NAME if support else settings.MAIL_FROM_NAME)
+    reply_to = (job.reply_to or mine.get("reply_to")
+                or ((settings.SUPPORT_EMAIL_ADDRESS or settings.MAIL_FROM) if support else settings.MAIL_REPLY_TO) or None)
     return job.model_copy(update={"sender_name": sender_name, "reply_to": reply_to})
 
 
@@ -71,12 +73,13 @@ class Delivery:
         job = await self._claim(job_id)
         if job is None:
             return None
-        job = with_defaults(job)
+        defined = await self.store.job(job.purpose)
+        job = with_defaults(job, defined.settings if defined is not None else None)
         account_id, provider_id, error, permanent = None, None, None, False
         try:
             account, _ = await self.router.account_for(job.purpose)
             account_id = account.id
-            receipt = await account.open(PURPOSES[job.purpose]).send(job)
+            receipt = await account.open(await self.router.needs(job.purpose)).send(job)
             provider_id = receipt.provider_id
         except MailError as e:
             error, permanent = str(e), e.permanent

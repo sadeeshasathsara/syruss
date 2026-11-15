@@ -1,5 +1,9 @@
 import asyncio
-from mail.worker import main
+import sys
 
-if __name__ == "__main__":
+if len(sys.argv) > 1:
+    from mail.cli import main as cli
+    sys.exit(cli())
+else:
+    from mail.worker import main
     asyncio.run(main())

@@ -38,6 +38,27 @@ A purpose uses the account routed to it. With no route, or while that account ne
 everything the purpose needs, it falls back to the account from the environment (`MAIL_SMTP_*`, `MAIL_FROM`), which is
 also how a fresh install sends its first emails.
 
+## Jobs
+
+A **job** is a named use of mail with a mailbox of its own: the built-in ones are notifications, document inbound,
+promotions, help (`support`) and Keycloak's account emails (`accounts`); more can be added from the admin app. Each says whether
+it sends, reads or both, is served by one account (without one, the environment's), and may have settings of its own (sender
+name, reply-to, how often it is read). Each job that reads has a poller of its own, so a slow mailbox never holds up another.
+
+## Control plane (Kafka)
+
+The server changes anything here with **signed commands** on `mail.commands` and gets the answer on `mail.replies`
+(`commands.py` lists them and the envelope). Kafka has no login, so a command is carried out only when it is signed by the key in
+`MAIL_TRUSTED_SERVER_KEY`, recent, and never seen before. What this service lets others know is the **directory** on the compacted
+topic `mail.directory` (`directory.py`): the jobs, the accounts' addresses and status, and the public key, never a secret.
+`python -m mail keygen | fingerprint | jobs | connect` is the command line (the first mailbox is connected with `connect`).
+
+## Secrets
+
+Everything secret in the database is sealed with the master keys (`MAIL_MASTER_KEYS`, rotatable), including mail read from mailboxes.
+Passwords arrive sealed to this service's public key (a box: X25519, HKDF-SHA256, AES-256-GCM, `sealing.py`), so neither Kafka nor the
+server ever holds one. The key's fingerprint is logged at start-up and published in the directory so an owner can check it.
+
 ## Who mail is from
 
 This service owns the sender and the support identity; no other service has settings for them. `MAIL_FROM_NAME` and
