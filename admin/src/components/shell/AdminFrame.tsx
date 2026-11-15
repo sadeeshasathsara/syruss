@@ -13,7 +13,7 @@ import { AdminSearch } from "@/components/shell/Search";
 import { Button, IconButton } from "@/components/ui/Button";
 import { ApiError, api } from "@/lib/api";
 import type { StaffMe } from "@/lib/types";
-import { loadPage } from "@/lib/navigate";
+import { resumeAndGo } from "@/lib/resume";
 
 const StaffContext = createContext<StaffMe | null>(null);
 
@@ -73,7 +73,7 @@ const REFUSALS: Record<string, { title: string; body: string }> = {
 };
 
 function signInAgain() {
-  loadPage(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+  void resumeAndGo(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
 }
 
 function Gate({ children }: { children: (me: StaffMe) => React.ReactNode }) {
