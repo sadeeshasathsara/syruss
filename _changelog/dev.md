@@ -14,12 +14,35 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.20.0-dev.1` | 2026-11-15 | [What changed](#admin-0200-dev1) |
+| **admin** | `0.21.0-dev.1` | 2026-11-15 | [What changed](#admin-0210-dev1) |
 | **agent** | `0.13.0-dev.1` | 2026-11-15 | [What changed](#agent-0130-dev1) |
-| **mail** | `0.7.1-dev.1` | 2026-11-15 | [What changed](#mail-071-dev1) |
-| **server** | `0.29.1-dev.1` | 2026-11-15 | [What changed](#server-0291-dev1) |
+| **mail** | `0.8.0-dev.1` | 2026-11-15 | [What changed](#mail-080-dev1) |
+| **server** | `0.30.0-dev.1` | 2026-11-15 | [What changed](#server-0300-dev1) |
 | **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
 | **www** | `0.18.0-dev.1` | 2026-11-15 | [What changed](#www-0180-dev1) |
+
+## [2026-11-15] - Release via dev
+
+### admin (0.21.0-dev.1)
+- **Each part of Syruss that uses mail can be given its own job.** The Email › Jobs page has a new "Where mail is used" list: invitations and notices, outbound email destinations, the help desk and document inbound, each with a dropdown to choose which job it goes through (only jobs that can do what it does are offered; until you choose, it uses its default). So a job you add can now be put to work: for example a job of your own for email destinations, with its own mailbox.
+- **Outbound email destinations now name their own function** instead of always going out as a notification.
+- **Document inbound and the help desk follow the job you choose:** channel addresses are made from the chosen document job's mailbox, and mail read from the chosen help job becomes tickets.
+- **Developer wording is out of the Email pages** (sealing, fingerprints, where the setup lives); a saved Google or Microsoft app shows as hidden dots and can only be replaced.
+- New parts of the server declare their function in one place (`services/mail_uses.py`, with the steps in its header) and appear in the admin app on their own.
+
+### mail (0.8.0-dev.1)
+- **Each part of Syruss that uses mail can be given its own job.** The Email › Jobs page has a new "Where mail is used" list: invitations and notices, outbound email destinations, the help desk and document inbound, each with a dropdown to choose which job it goes through (only jobs that can do what it does are offered; until you choose, it uses its default). So a job you add can now be put to work: for example a job of your own for email destinations, with its own mailbox.
+- **Outbound email destinations now name their own function** instead of always going out as a notification.
+- **Document inbound and the help desk follow the job you choose:** channel addresses are made from the chosen document job's mailbox, and mail read from the chosen help job becomes tickets.
+- **Developer wording is out of the Email pages** (sealing, fingerprints, where the setup lives); a saved Google or Microsoft app shows as hidden dots and can only be replaced.
+- New parts of the server declare their function in one place (`services/mail_uses.py`, with the steps in its header) and appear in the admin app on their own.
+
+### server (0.30.0-dev.1)
+- **Each part of Syruss that uses mail can be given its own job.** The Email › Jobs page has a new "Where mail is used" list: invitations and notices, outbound email destinations, the help desk and document inbound, each with a dropdown to choose which job it goes through (only jobs that can do what it does are offered; until you choose, it uses its default). So a job you add can now be put to work: for example a job of your own for email destinations, with its own mailbox.
+- **Outbound email destinations now name their own function** instead of always going out as a notification.
+- **Document inbound and the help desk follow the job you choose:** channel addresses are made from the chosen document job's mailbox, and mail read from the chosen help job becomes tickets.
+- **Developer wording is out of the Email pages** (sealing, fingerprints, where the setup lives); a saved Google or Microsoft app shows as hidden dots and can only be replaced.
+- New parts of the server declare their function in one place (`services/mail_uses.py`, with the steps in its header) and appear in the admin app on their own.
 
 ## [2026-11-15] - Release via dev
 
