@@ -14,6 +14,7 @@ import { api } from "@/lib/api";
 import { KIND_OF_INVOICE, day, invoiceStatus, money, price } from "@/lib/billing";
 import { cn } from "@/lib/format";
 import type { CatalogItem, Invoice } from "@/lib/types";
+import { Select } from "@/components/ui/Select";
 
 const FILTERS = [
   { key: "all", label: "All" }, { key: "open", label: "Waiting" }, { key: "overdue", label: "Overdue" }, { key: "paid", label: "Paid" },
@@ -112,19 +113,19 @@ export function InvoiceEditor({ tenantId, onDone }: { tenantId?: string; onDone:
       }}>
       {!tenantId && (
         <Label text="Organization">
-          <select value={tenant} onChange={(e) => setTenant(e.target.value)} className={field}>
+          <Select value={tenant} onValueChange={(v) => setTenant(v)}>
             <option value="">Choose…</option>
             {(orgs.data ?? []).map((o) => <option key={o.id} value={o.id}>{o.name} ({o.slug})</option>)}
-          </select>
+          </Select>
         </Label>
       )}
       <div className="flex flex-col gap-2">
         {lines.map((l, n) => (
           <div key={n} className="grid grid-cols-1 gap-2 rounded-control border border-border p-2 @2xl:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_7rem_5rem_auto]">
-            <select value={l.item_id} onChange={(e) => set(n, { item_id: e.target.value })} className={field} aria-label="Catalog item">
+            <Select value={l.item_id} onValueChange={(v) => set(n, { item_id: v })} aria-label="Catalog item">
               <option value="">A line written here</option>
               {onSale.map((i) => <option key={i.id} value={i.id}>{i.name} ({price(i)})</option>)}
-            </select>
+            </Select>
             <input value={l.description} onChange={(e) => set(n, { description: e.target.value })} disabled={!!l.item_id} placeholder="What it is"
               aria-label="Description" className={field} />
             {l.item_id ? <span className="self-center text-meta text-muted">Catalog price</span> : <MoneyInput cents={l.cents} onChange={(c) => set(n, { cents: c })} />}

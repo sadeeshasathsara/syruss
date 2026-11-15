@@ -15,6 +15,7 @@ import { Problem } from "@/components/ui/Problem";
 import { api } from "@/lib/api";
 import { ago, cn, dateTime } from "@/lib/format";
 import type { TicketDetail, TicketMessage } from "@/lib/types";
+import { Select } from "@/components/ui/Select";
 
 export default function TicketPage() {
   const { id } = useParams<{ id: string }>();
@@ -108,11 +109,11 @@ function Composer({ t }: { t: TicketDetail }) {
       <div className="flex flex-wrap items-center gap-2 text-meta">
         <button type="button" onClick={() => setInternal(false)} className={cn("rounded-chip px-2 py-0.5", !internal ? "bg-active font-medium text-ink" : "text-muted")}>Answer the customer</button>
         <button type="button" onClick={() => setInternal(true)} className={cn("rounded-chip px-2 py-0.5", internal ? "bg-active font-medium text-ink" : "text-muted")}>Internal note</button>
-        <select aria-label="Insert a saved reply" value="" onChange={(e) => { const r = saved.data?.find((x) => x.id === e.target.value); if (r) insert(r.body); }}
-          className={cn(field, "ml-auto h-7")}>
+        <Select aria-label="Insert a saved reply" value="" onValueChange={(v) => { const r = saved.data?.find((x) => x.id === v); if (r) insert(r.body); }}
+          className="ml-auto h-7">
           <option value="">Saved reply…</option>
           {(saved.data ?? []).map((r) => <option key={r.id} value={r.id}>{r.title}{r.shortcut ? `  /${r.shortcut}` : ""}</option>)}
-        </select>
+        </Select>
       </div>
       <div className="relative">
         <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={6} maxLength={20000}
@@ -177,18 +178,18 @@ function Controls({ t }: { t: TicketDetail }) {
         ] as [string, string, string, string[][]][]).map(([label, key, value, options]) => (
           <label key={key} className="flex items-center justify-between gap-2 text-meta text-muted">
             {label}
-            <select value={value} disabled={!can || change.isPending} onChange={(e) => change.mutate({ [key]: e.target.value })} className={cn(field, "w-44")}>
+            <Select value={value} disabled={!can || change.isPending} onValueChange={(v) => change.mutate({ [key]: v })} className="w-44">
               {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
+            </Select>
           </label>
         ))}
         <label className="flex items-center justify-between gap-2 text-meta text-muted">
           Assigned to
-          <select value={t.assignee_id ?? "none"} disabled={!can || change.isPending} onChange={(e) => change.mutate({ assignee_id: e.target.value })} className={cn(field, "w-44")}>
+          <Select value={t.assignee_id ?? "none"} disabled={!can || change.isPending} onValueChange={(v) => change.mutate({ assignee_id: v })} className="w-44">
             <option value="none">Nobody</option>
             {t.assignee_id && !(people.data ?? []).some((p) => p.id === t.assignee_id) && <option value={t.assignee_id}>{t.assignee_name}</option>}
             {(people.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.id === me.user_id ? `${p.name} (me)` : p.name}</option>)}
-          </select>
+          </Select>
         </label>
         {can && t.status !== "closed" && (
           <form className="flex items-center gap-2 border-t border-rule pt-2.5" onSubmit={(e) => { e.preventDefault(); if (into.trim()) merge.mutate(); }}>

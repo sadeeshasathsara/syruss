@@ -11,6 +11,7 @@ import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
 import { ago, cn } from "@/lib/format";
 import type { Ticket } from "@/lib/types";
+import { Select } from "@/components/ui/Select";
 
 const CHANNEL = { email: Mail, app: MessageSquare, agent: Bot };
 
@@ -50,19 +51,19 @@ export default function SupportPage() {
           <Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted" aria-hidden />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search number, subject or email" aria-label="Search" className={cn(field, "w-full pl-8")} />
         </label>
-        <select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} className={field}>
+        <Select aria-label="Status" value={status} onValueChange={(v) => setStatus(v)}>
           {[["active", "Needs work"], ["new", "New"], ["open", "Open"], ["pending", "Waiting for customer"], ["solved", "Solved"], ["closed", "Closed"], ["all", "All"]]
             .map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <select aria-label="Assignee" value={assignee} onChange={(e) => setAssignee(e.target.value)} className={field}>
+        </Select>
+        <Select aria-label="Assignee" value={assignee} onValueChange={(v) => setAssignee(v)}>
           <option value="">Anyone</option><option value="me">Me</option><option value="none">Unassigned</option>
-        </select>
-        <select aria-label="Priority" value={priority} onChange={(e) => setPriority(e.target.value)} className={field}>
+        </Select>
+        <Select aria-label="Priority" value={priority} onValueChange={(v) => setPriority(v)}>
           <option value="">Any priority</option>{["urgent", "high", "normal", "low"].map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
-        </select>
-        <select aria-label="Category" value={category} onChange={(e) => setCategory(e.target.value)} className={field}>
+        </Select>
+        <Select aria-label="Category" value={category} onValueChange={(v) => setCategory(v)}>
           <option value="">Any category</option>{Object.entries(CATEGORY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        </Select>
         <label className="flex h-8 items-center gap-1.5 text-body text-muted">
           <input type="checkbox" checked={late} onChange={(e) => setLate(e.target.checked)} className="size-4" /> Late only
         </label>

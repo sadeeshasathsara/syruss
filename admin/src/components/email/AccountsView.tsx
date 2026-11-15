@@ -14,6 +14,7 @@ import { loadPage } from "@/lib/navigate";
 import { canSeal, sealForMail } from "@/lib/mailSeal";
 import type { MailAccount, MailImapInput, MailOverview, MailProvider, MailPurpose } from "@/lib/types";
 import { PROVIDER_LABEL } from "./OAuthReturn";
+import { Select } from "@/components/ui/Select";
 
 const KIND: Record<MailAccount["kind"], string> = { gmail: "Google", graph: "Microsoft", smtp_imap: "Mail server", console: "Log only", memory: "Memory" };
 
@@ -158,9 +159,9 @@ function ImapForm({ o, onDone }: { o: MailOverview; onDone: () => void }) {
       <div className="flex flex-wrap gap-3">
         {text("smtp_host", "Server")}{text("smtp_port", "Port", "number", "w-24")}
         <label className="flex flex-col gap-1 text-meta text-muted">Security
-          <select value={v.smtp_security} className={field} onChange={(e) => setV({ ...v, smtp_security: e.target.value as MailImapInput["smtp_security"] })}>
+          <Select value={v.smtp_security} onValueChange={(s) => setV({ ...v, smtp_security: s as MailImapInput["smtp_security"] })}>
             <option value="starttls">STARTTLS</option><option value="ssl">SSL</option><option value="none">None</option>
-          </select>
+          </Select>
         </label>
         {text("smtp_username", "Username")}{text("smtp_password", "Password", "password")}
       </div>

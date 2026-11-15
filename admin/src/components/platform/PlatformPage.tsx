@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import { cn, dateTime } from "@/lib/format";
 import type { Announcement, PlatformControls, Severity, SwitchName } from "@/lib/types";
 import { Problem } from "@/components/ui/Problem";
+import { Select } from "@/components/ui/Select";
 
 const SWITCHES: { key: SwitchName; label: string; on: string; off: string }[] = [
   { key: "signups", label: "New sign-ups", on: "People can create accounts and organizations.", off: "Paused: new accounts and organizations are refused. Invitations still work." },
@@ -209,15 +210,15 @@ function NewAnnouncement({ onDone }: { onDone: () => void }) {
       <textarea value={body} onChange={(e) => setBody(e.target.value)} maxLength={2000} rows={2} placeholder="More detail (optional)" aria-label="Detail"
         className="rounded-control border border-control bg-sheet px-2.5 py-2 text-body text-ink outline-none focus-visible:border-accent @3xl:col-span-2" />
       <label className="flex flex-col gap-1 text-meta text-muted">How serious
-        <select value={severity} onChange={(e) => setSeverity(e.target.value as Severity)} className={field}>
+        <Select value={severity} onValueChange={(v) => setSeverity(v as Severity)}>
           <option value="info">Information</option><option value="warning">Warning</option><option value="critical">Critical</option>
-        </select>
+        </Select>
       </label>
       <label className="flex flex-col gap-1 text-meta text-muted">To
-        <select value={org} onChange={(e) => setOrg(e.target.value)} className={field}>
+        <Select value={org} onValueChange={(v) => setOrg(v)}>
           <option value="">Everyone</option>
           {(orgs.data ?? []).filter((o) => o.status === "active").map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select>
+        </Select>
       </label>
       <label className="flex flex-col gap-1 text-meta text-muted">From (empty: now)
         <input type="datetime-local" value={starts} onChange={(e) => setStarts(e.target.value)} className={field} />
