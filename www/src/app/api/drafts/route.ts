@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authConfig } from "@/lib/auth/config";
-import { readSession, seal, unseal } from "@/lib/auth/session";
+import { readSession, sealFor, unsealFor } from "@/lib/auth/session";
 
 /**
  * Keeps what someone was in the middle of while they sign in again (a form they had filled in), without trusting the browser with it.
  *
- *   save     the browser sends the draft; it comes back sealed with this app's own secret (AES-256-GCM) as an opaque blob, tied to the
+ *   save     the browser sends the draft; it comes back sealed with a key of its own derived from this app's secret (AES-256-GCM) as an opaque blob, tied to the
  *            person who was signed in, the page, and the next 15 minutes. The browser can keep that blob but can't read or change it.
  *   restore  the browser sends the blob back once they are signed in again; it is opened only for the same person, on the same page,
  *            before it expires.
@@ -42,19 +42,21 @@ export async function POST(request: NextRequest) {
   }
   const path = typeof body.path === "string" && body.path.startsWith("/") && body.path.length <= 300 ? body.path.split("?")[0] : null;
   if (!path) return reply({ error: "path" }, 400);
+  // Only someone signed in (or whose session just ended, its cookie still here) may use this: it must not be a way for anyone to have
+  // this app seal what they like.
   const session = await readSession();
+  if (!session?.sub) return reply({ error: "signed out" }, 401);
 
   if (body.op === "save") {
     if (!body.data || typeof body.data !== "object" || Array.isArray(body.data)) return reply({ error: "data" }, 400);
     const data = scrub(body.data);
     if (JSON.stringify(data).length > MAX_CHARS) return reply({ error: "too large" }, 413);
-    return reply({ blob: await seal({ k: "draft", p: path, s: session?.sub ?? "", d: data as Record<string, unknown> }, TTL_SECONDS) });
+    return reply({ blob: await sealFor("draft", { k: "draft", p: path, s: session.sub, d: data as Record<string, unknown> }, TTL_SECONDS) });
   }
   if (body.op === "restore") {
-    if (!session) return reply({ error: "signed out" }, 401);
-    const opened = typeof body.blob === "string" ? await unseal<{ k?: string; p?: string; s?: string; d?: unknown }>(body.blob) : null;
+    const opened = typeof body.blob === "string" ? await unsealFor<{ k?: string; p?: string; s?: string; d?: unknown }>("draft", body.blob) : null;
     if (!opened || opened.k !== "draft" || opened.p !== path) return reply({ data: null });
-    if (opened.s && opened.s !== session.sub) return reply({ data: null }); // someone else signed in: it was not theirs
+    if (opened.s !== session.sub) return reply({ data: null }); // someone else signed in: it was not theirs
     return reply({ data: opened.d ?? null });
   }
   return reply({ error: "op" }, 400);
