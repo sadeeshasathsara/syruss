@@ -164,8 +164,10 @@ async def test_a_provider_app_is_kept_sealed_and_never_shown_again(store, fallba
     async with store.session() as s:
         raw = (await s.execute(select(SettingRow).where(SettingRow.key == "app:microsoft"))).scalar_one().value
     assert "super-secret-value" not in raw and "client-123" not in raw
-    assert apps.describe("microsoft") == {"configured": True, "client_id": "client-123", "from_environment": False, "tenant": "contoso.com"}
-    assert "super-secret-value" not in json.dumps(apps.describe("microsoft"))
+    assert apps.describe("microsoft") == {"configured": True, "from_environment": False, "tenant": "contoso.com"}   # never the client id or secret
+    assert "super-secret-value" not in json.dumps(apps.describe("microsoft")) and "client-123" not in json.dumps(apps.describe("microsoft"))
+    await ops.app_set("microsoft", "", "", "contoso.com")        # a blank client id and secret keep both
+    assert apps.get("microsoft")["client_id"] == "client-123" and apps.get("microsoft")["client_secret"] == "super-secret-value"
     await ops.app_set("microsoft", "client-456", "", "")          # a blank secret keeps the one set
     assert apps.get("microsoft")["client_secret"] == "super-secret-value" and apps.get("microsoft")["client_id"] == "client-456"
     apps._cache.clear()
@@ -186,7 +188,7 @@ async def test_google_still_works_from_the_environment(monkeypatch):
     assert not apps.configured("google")
     monkeypatch.setattr(settings, "GOOGLE_MAIL_CLIENT_ID", "env-id")
     monkeypatch.setattr(settings, "GOOGLE_MAIL_CLIENT_SECRET", "env-secret")
-    assert apps.describe("google") == {"configured": True, "client_id": "env-id", "from_environment": True}
+    assert apps.describe("google") == {"configured": True, "from_environment": True}
 
 
 async def test_the_server_sets_an_app_through_a_signed_command_with_the_secret_sealed(store, fallback, monkeypatch):

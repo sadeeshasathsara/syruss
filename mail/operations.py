@@ -194,9 +194,11 @@ class Operations:
         if provider not in apps.PROVIDERS:
             raise OperationError("Only Google and Microsoft apps can be set.")
         client_id, tenant = client_id.strip(), tenant.strip()
-        if not client_id:
-            raise OperationError("Give the app's client id.")
         existing = apps.get(provider)
+        if not client_id:   # a blank client id keeps the one already set (the id is never shown, so it can't be re-typed to keep it)
+            if existing is None:
+                raise OperationError("Give the app's client id.")
+            client_id = existing["client_id"]
         if not client_secret:   # a blank secret keeps the one already there (only the id or tenant changed)
             if existing is None or existing.get("from_environment"):
                 raise OperationError("Give the app's client secret.")

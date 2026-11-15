@@ -934,7 +934,7 @@ export type MailProvider = "google" | "microsoft";
 /** A provider's OAuth app as the mail service describes it: whether it is set, its client id and tenant (public), never its secret. */
 export interface MailProviderInfo {
   configured: boolean;
-  client_id?: string;
+  /** Microsoft's tenant (public). The client id and secret are never sent to the browser. */
   tenant?: string;
   /** Set in the mail service's environment rather than here (Google only) */
   from_environment?: boolean;
@@ -943,6 +943,7 @@ export interface MailProviderInfo {
 }
 
 export interface MailAppInput {
+  /** Empty keeps the one already set (it is never sent back) */
   client_id: string;
   tenant?: string;
   /** Sealed in the browser to the mail service's key ({ client_secret }); empty keeps the secret already set */
