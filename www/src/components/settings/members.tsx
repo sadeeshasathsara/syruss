@@ -18,6 +18,7 @@ import { initials } from "@/components/shell/UserMenu";
 import { useWorkspace } from "@/lib/workspace";
 import { InviteForm, PendingInvitations } from "./invitations";
 import { NoAccess, Section, SettingsHeader, useWorkspaceSettings } from "./kit";
+import { usePreservedState } from "@/lib/resume";
 
 export function Avatar({ name, className = "size-8" }: { name: string; className?: string }) {
   return (
@@ -44,7 +45,7 @@ export function PeopleSettings() {
   const { access, can } = useWorkspaceSettings();
   const members = useQuery({ queryKey: ["members", workspace.id], queryFn: () => api.settings.members(workspace.id) });
   const roles = useRoles();
-  const [removing, setRemoving] = useState<Member | null>(null);
+  const [removing, setRemoving] = usePreservedState<Member | null>("members.removing", null);
   const refresh = () => ["members", "billing", "roles"].forEach((k) => queryClient.invalidateQueries({ queryKey: [k, workspace.id] }));
   const change = useMutation({ mutationFn: ({ id, role }: { id: string; role: Role }) => api.settings.changeRole(workspace.id, id, role), onSuccess: refresh });
   const remove = useMutation({
@@ -210,7 +211,7 @@ function RoleEditor({ catalogue, role, mine, workspaceId, onDone }: {
   catalogue: RoleCatalogue; role: Draft; mine: Permission[]; workspaceId: string; onDone: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [draft, setDraft] = useState<Draft>(role);
+  const [draft, setDraft] = usePreservedState<Draft>("roles.draft", role);
   const [from, setFrom] = useState<Draft>(role);
   if (role !== from) {  // another role picked (or the saved one reloaded): start from it
     setFrom(role);
@@ -319,7 +320,7 @@ export function RoleSettings() {
   const { workspace } = useWorkspace();
   const { access } = useWorkspaceSettings();
   const roles = useRoles();
-  const [open, setOpen] = useState<Draft | null>(null);
+  const [open, setOpen] = usePreservedState<Draft | null>("roles.open", null);
   const catalogue = roles.data;
 
   return (

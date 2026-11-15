@@ -14,6 +14,7 @@ import { cn, dateTime } from "@/lib/format";
 import type { Announcement, PlatformControls, Severity, SwitchName } from "@/lib/types";
 import { Problem } from "@/components/ui/Problem";
 import { Select } from "@/components/ui/Select";
+import { usePreservedState } from "@/lib/resume";
 
 const SWITCHES: { key: SwitchName; label: string; on: string; off: string }[] = [
   { key: "signups", label: "New sign-ups", on: "People can create accounts and organizations.", off: "Paused: new accounts and organizations are refused. Invitations still work." },
@@ -137,7 +138,7 @@ function Lessons({ manage }: { manage: boolean }) {
 }
 
 function Maintenance({ c, manage, onDone }: { c: PlatformControls; manage: boolean; onDone: () => void }) {
-  const [message, setMessage] = useState(c.maintenance.message || "Syruss is being upgraded. You can look around; changes are paused for a few minutes.");
+  const [message, setMessage] = usePreservedState("platform.maintenance.message", c.maintenance.message || "Syruss is being upgraded. You can look around; changes are paused for a few minutes.");
   return (
     <Panel title="Maintenance" aside={<Pill tone={c.maintenance.on ? "warning" : "positive"}>{c.maintenance.on ? "On: read-only" : "Off"}</Pill>}>
       <p className="text-body text-muted">
@@ -188,13 +189,13 @@ function Announcements({ list, manage, onDone }: { list: Announcement[]; manage:
 }
 
 function NewAnnouncement({ onDone }: { onDone: () => void }) {
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [severity, setSeverity] = useState<Severity>("info");
-  const [org, setOrg] = useState("");
-  const [starts, setStarts] = useState("");
-  const [ends, setEnds] = useState("");
-  const [reason, setReason] = useState("");
+  const [title, setTitle] = usePreservedState("platform.notice.title", "");
+  const [body, setBody] = usePreservedState("platform.notice.body", "");
+  const [severity, setSeverity] = usePreservedState<Severity>("platform.notice.severity", "info");
+  const [org, setOrg] = usePreservedState("platform.notice.org", "");
+  const [starts, setStarts] = usePreservedState("platform.notice.starts", "");
+  const [ends, setEnds] = usePreservedState("platform.notice.ends", "");
+  const [reason, setReason] = usePreservedState("platform.notice.reason", "");
   const orgs = useQuery({ queryKey: ["accounts", "organizations", ""], queryFn: () => api.accounts.organizations() });
   const create = useMutation({
     mutationFn: () => api.console.announce({

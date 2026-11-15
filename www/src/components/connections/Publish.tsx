@@ -24,6 +24,7 @@ import type { DestinationInfo, DestinationKind, DestinationPolicy, MappingSpec }
 import { useWorkspace } from "@/lib/workspace";
 import { ConnectForm, missing, withDefaults } from "./ConnectForm";
 import { MappingEditor } from "./MappingEditor";
+import { usePreservedState } from "@/lib/resume";
 
 const CATEGORY_TITLE: Record<DestinationKind["category"], string> = {
   custom: "Your own systems", accounting: "Accounting and ERP", storage: "Files", mail: "Mail",
@@ -108,14 +109,17 @@ export function NewDestinationPage() {
   const params = useSearchParams();
   const { allowed, catalogue } = useDestinations();
   const sources = useQuery({ queryKey: ["destinations", workspace.id, "sources"], queryFn: () => api.destinations.sources(workspace.id), enabled: allowed });
-  const [step, setStep] = useState(0);
-  const [kind, setKind] = useState<DestinationKind | null>(null);
-  const [name, setName] = useState("");
-  const [config, setConfig] = useState<Record<string, unknown>>({});
+  const [kindKey, setKindKey] = usePreservedState<string | null>("dest.kind", null);
+  const kind = catalogue.data?.find((c) => c.kind === kindKey) ?? null;
+  const setKind = (k: DestinationKind | null) => setKindKey(k ? k.kind : null);
+  const [savedStep, setStep] = usePreservedState("dest.step", 0);
+  const step = kind ? savedStep : 0;   // a saved step only means something once the kind is known
+  const [name, setName] = usePreservedState("dest.name", "");
+  const [config, setConfig] = usePreservedState<Record<string, unknown>>("dest.config", {});
   const [secrets, setSecrets] = useState<Record<string, string>>({});
-  const [mapping, setMapping] = useState<MappingSpec>({ mode: "record" });
-  const [policy, setPolicy] = useState<DestinationPolicy>({ send_updates: true, include_test: false, max_attempts: 8 });
-  const [docId, setDocId] = useState("none");
+  const [mapping, setMapping] = usePreservedState<MappingSpec>("dest.mapping", { mode: "record" });
+  const [policy, setPolicy] = usePreservedState<DestinationPolicy>("dest.policy", { send_updates: true, include_test: false, max_attempts: 8 });
+  const [docId, setDocId] = usePreservedState("dest.doc", "none");
   const [created, setCreated] = useState<{ id: string; secret?: string } | null>(null);
 
   const choose = (k: DestinationKind) => {

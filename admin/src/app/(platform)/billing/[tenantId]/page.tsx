@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { InvoiceEditor, InvoiceTable } from "@/components/billing/Invoices";
 import { Label, StaffForm } from "@/components/billing/StaffForm";
 import { Fact, ReasonAction, field } from "@/components/ops/Bits";
@@ -16,6 +16,7 @@ import { METHOD_LABEL, amount, money, price } from "@/lib/billing";
 import { cn, dateTime } from "@/lib/format";
 import type { CatalogItem, LimitInfo, OrgBilling } from "@/lib/types";
 import { Select } from "@/components/ui/Select";
+import { usePreservedState } from "@/lib/resume";
 
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—");
 
@@ -165,7 +166,7 @@ const CHANGES: { key: Change; label: string }[] = [
 
 function Changes({ d, limits, catalog }: { d: OrgBilling; limits: LimitInfo[]; catalog: CatalogItem[] }) {
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState<Change | null>(null);
+  const [open, setOpen] = usePreservedState<Change | null>("tenant.change.open", null);
   const id = d.organization.id;
   const onSale = useMemo(() => catalog.filter((i) => i.status === "published"), [catalog]);
   const plans = onSale.filter((i) => i.kind === "plan");
@@ -216,8 +217,8 @@ function Changes({ d, limits, catalog }: { d: OrgBilling; limits: LimitInfo[]; c
 }
 
 function PlanForm({ id, plans, current, onDone }: { id: string; plans: CatalogItem[]; current: string; onDone: () => void }) {
-  const [plan, setPlan] = useState(plans.find((p) => p.id !== current)?.id ?? "");
-  const [later, setLater] = useState(false);
+  const [plan, setPlan] = usePreservedState("tenant.plan.plan", plans.find((p) => p.id !== current)?.id ?? "");
+  const [later, setLater] = usePreservedState("tenant.plan.later", false);
   return (
     <StaffForm title="Change the plan" submit="Change it" busy="Changing…" ready={!!plan} onDone={onDone}
       onRun={(reason) => api.billing.change(id, "plan", { plan_id: plan, at_period_end: later, reason })}>
@@ -232,9 +233,9 @@ function PlanForm({ id, plans, current, onDone }: { id: string; plans: CatalogIt
 }
 
 function AddonForm({ id, addons, have, onDone }: { id: string; addons: CatalogItem[]; have: OrgBilling["limits"]["addons"]; onDone: () => void }) {
-  const [addon, setAddon] = useState(addons[0]?.id ?? have[0]?.addon.id ?? "");
+  const [addon, setAddon] = usePreservedState("tenant.addon.addon", addons[0]?.id ?? have[0]?.addon.id ?? "");
   const current = have.find((a) => a.addon.id === addon)?.quantity ?? 0;
-  const [quantity, setQuantity] = useState(current || 1);
+  const [quantity, setQuantity] = usePreservedState("tenant.addon.quantity", current || 1);
   const choices = [...addons, ...have.map((a) => a.addon).filter((a) => !addons.some((x) => x.id === a.id))];
   if (!choices.length) return <p className="text-body text-muted">No add-on is on sale. Create one under Plans and packs.</p>;
   return (
@@ -253,8 +254,8 @@ function AddonForm({ id, addons, have, onDone }: { id: string; addons: CatalogIt
 }
 
 function CreditsForm({ id, onDone }: { id: string; onDone: () => void }) {
-  const [pages, setPages] = useState(100);
-  const [kind, setKind] = useState<"grant" | "refund" | "adjustment">("grant");
+  const [pages, setPages] = usePreservedState("tenant.credit.pages", 100);
+  const [kind, setKind] = usePreservedState<"grant" | "refund" | "adjustment">("tenant.credit.kind", "grant");
   return (
     <StaffForm title="Give or correct prepaid credits" submit={pages >= 0 ? `Add ${pages.toLocaleString()} pages` : `Take back ${(-pages).toLocaleString()} pages`}
       busy="Saving…" ready={pages !== 0} onDone={onDone} onRun={(reason) => api.billing.change(id, "credits", { pages, kind, reason })}>
@@ -272,10 +273,10 @@ function CreditsForm({ id, onDone }: { id: string; onDone: () => void }) {
 }
 
 function OverrideForm({ d, limits, onDone }: { d: OrgBilling; limits: LimitInfo[]; onDone: () => void }) {
-  const [key, setKey] = useState(limits[0]?.key ?? "");
-  const [value, setValue] = useState<string>("");
-  const [workspace, setWorkspace] = useState("");
-  const [until, setUntil] = useState("");
+  const [key, setKey] = usePreservedState("tenant.limit.key", limits[0]?.key ?? "");
+  const [value, setValue] = usePreservedState<string>("tenant.limit.value", "");
+  const [workspace, setWorkspace] = usePreservedState("tenant.limit.workspace", "");
+  const [until, setUntil] = usePreservedState("tenant.limit.until", "");
   const limit = limits.find((l) => l.key === key);
   return (
     <StaffForm title="Set a limit by hand" submit="Set it" busy="Saving…" ready={!!key} onDone={onDone}
@@ -303,8 +304,8 @@ function OverrideForm({ d, limits, onDone }: { d: OrgBilling; limits: LimitInfo[
 }
 
 function TrialForm({ id, plans, onDone }: { id: string; plans: CatalogItem[]; onDone: () => void }) {
-  const [plan, setPlan] = useState(plans[0]?.id ?? "");
-  const [days, setDays] = useState(14);
+  const [plan, setPlan] = usePreservedState("tenant.trial.plan", plans[0]?.id ?? "");
+  const [days, setDays] = usePreservedState("tenant.trial.days", 14);
   return (
     <StaffForm title="Start a trial" submit={`Start ${days} days`} busy="Starting…" ready={!!plan} onDone={onDone}
       onRun={(reason) => api.billing.change(id, "trial", { plan_id: plan, days, reason })}>
