@@ -140,6 +140,7 @@ services:
     env_file: env/server.env
     environment:
       ENV: production
+      MAIL_SERVICE_URL: http://mail:8100
       # One server process: it applies database migrations as it starts (AUTO_MIGRATE). Run more and set it to false.
     depends_on:
       postgres:
@@ -182,6 +183,7 @@ services:
     environment:
       ENV: production
       MAIL_RELAY_HOST: 0.0.0.0  # Keycloak's way in: only the mail-relay network reaches it
+      MAIL_API_HOST: 0.0.0.0    # the server's way in, on the internal data network
     depends_on:
       postgres:
         condition: service_healthy

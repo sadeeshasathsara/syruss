@@ -303,8 +303,13 @@ class TargetsIn(BaseModel):
 
 @router.get("/settings", dependencies=[VIEW])
 async def targets(db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
-    from app.core.config import settings
-    return {**await tickets.policy(db), "mailbox": {"address": mail.support_address(), "reading": bool(settings.SUPPORT_IMAP_HOST)},
+    from app.services import mail_service
+    try:
+        support = (await mail_service.status())["purposes"]["support"]
+        mailbox = {"address": support["address"], "reading": bool(support["reads"]), "connected": bool(support["routed"])}
+    except (mail_service.MailServiceError, KeyError, TypeError):
+        mailbox = {"address": mail.support_address(), "reading": None, "connected": None}
+    return {**await tickets.policy(db), "mailbox": mailbox,
             "categories": list(CATEGORIES), "priorities": list(PRIORITIES), "statuses": list(STATUSES)}
 
 

@@ -65,25 +65,21 @@ class Settings(BaseSettings):
     MAIL_BACKEND: str = "service"
     MAIL_OUTBOUND_TOPIC: str = "mail.outbound"
     MAIL_EVENTS_TOPIC: str = "mail.events"
+    MAIL_INBOUND_TOPIC: str = "mail.inbound"
+    # The mail service's internal API (accounts, routes, connecting Google, mail read from mailboxes), and the key to it:
+    # the same MAIL_SERVICE_TOKEN as in mail.env.
+    MAIL_SERVICE_URL: str = "http://localhost:8100"
+    MAIL_SERVICE_TOKEN: str = ""
     # The address app mail comes from (set the same in the mail service's MAIL_FROM, or on the account connected for
     # notifications): it names the domain of message ids and keeps the support mailbox from reading our own mail.
     MAIL_FROM: str = "no-reply@syruss.local"
     MAIL_FROM_NAME: str = "Syruss"
     MAIL_REPLY_TO: str = ""
 
-    # Support tickets by email. Customers write to SUPPORT_EMAIL_ADDRESS; Syruss reads that mailbox over IMAP every
-    # SUPPORT_POLL_SECONDS (nothing is read while SUPPORT_IMAP_HOST is empty). Answers go out through the mail service's
-    # "support" purpose: the account connected for support in the admin app sends them from its own address, which should
-    # be SUPPORT_EMAIL_ADDRESS. Gmail / Google Workspace: imap.gmail.com, port 993, an app password.
+    # Support tickets by email. Customers write to SUPPORT_EMAIL_ADDRESS. The mail service reads that mailbox and sends
+    # the answers from it: connect it in the admin app (Email) for the "support" purpose.
     SUPPORT_EMAIL_ADDRESS: str = ""
     SUPPORT_FROM_NAME: str = "Syruss Support"
-    SUPPORT_IMAP_HOST: str = ""
-    SUPPORT_IMAP_PORT: int = 993
-    SUPPORT_IMAP_USERNAME: str = ""
-    SUPPORT_IMAP_PASSWORD: str = ""
-    SUPPORT_IMAP_FOLDER: str = "INBOX"
-    SUPPORT_IMAP_SSL: bool = True
-    SUPPORT_POLL_SECONDS: int = 60
     # An invitation email can be sent again this often, no sooner
     MAIL_RESEND_SECONDS: int = 60
 
