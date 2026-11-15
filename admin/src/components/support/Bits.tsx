@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Panel, Tabs } from "@/components/ui/Blocks";
+import { Panel } from "@/components/ui/Blocks";
 import { Pill, type Tone } from "@/components/ui/Pill";
 import { ago } from "@/lib/format";
 import type { CustomerContext, TicketPriority, TicketStatus } from "@/lib/types";
@@ -30,19 +29,6 @@ export function StatusPill({ status }: { status: TicketStatus }) {
 
 export function PriorityPill({ priority }: { priority: TicketPriority }) {
   return priority === "normal" ? null : <Pill tone={PRIORITY[priority].tone}>{PRIORITY[priority].label}</Pill>;
-}
-
-/** The Support section's views. */
-export function SupportTabs({ counts }: { counts?: { active?: number; waiting?: number } }) {
-  const path = usePathname();
-  return (
-    <Tabs items={[
-      { href: "/support", label: "Tickets", count: counts?.active, active: path === "/support" || path.startsWith("/support/tickets") },
-      { href: "/support/live", label: "Live chats", count: counts?.waiting, active: path.startsWith("/support/live") },
-      { href: "/support/saved-replies", label: "Saved replies", active: path.startsWith("/support/saved-replies") },
-      { href: "/support/settings", label: "Settings", active: path.startsWith("/support/settings") },
-    ]} />
-  );
 }
 
 /** A due time as people read it: "due in 3h", "4h late". */
