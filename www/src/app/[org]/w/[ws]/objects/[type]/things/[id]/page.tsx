@@ -3,9 +3,9 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
 import { ObjectIcon } from "@/components/objects/ObjectIcon";
-import { DocumentList, ProfileHeader, Stats, value, WeekBars } from "@/components/objects/Profile";
+import { ProfileHeader, Stats, value, WeekBars } from "@/components/objects/Profile";
+import { RecordsTable } from "@/components/objects/Records";
 import { Bar, ErrorNote, Panel } from "@/components/ui/Blocks";
 import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
@@ -18,10 +18,9 @@ export default function ThingProfilePage() {
   const type = decodeURIComponent(rawType);
   const id = decodeURIComponent(rawId);
   const { workspace, href } = useWorkspace();
-  const [page, setPage] = useState(0);
   const profile = useQuery({
-    queryKey: ["thing", workspace.id, type, id, page],
-    queryFn: () => api.objects.thing(workspace.id, type, id, page),
+    queryKey: ["thing", workspace.id, type, id],
+    queryFn: () => api.objects.thing(workspace.id, type, id),
     placeholderData: keepPreviousData,
   });
   const objectHref = href(`objects/${encodeURIComponent(type)}`);
@@ -71,9 +70,6 @@ export default function ThingProfilePage() {
           <Panel title="Mentions per week">
             <WeekBars weeks={p.weeks} what="documents mentioning it" />
           </Panel>
-          <Panel title="Documents" aside={<span className="num">{p.documents.total}</span>}>
-            <DocumentList page={p.documents} href={(d) => href(`documents/${d}`)} onPage={setPage} />
-          </Panel>
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
@@ -118,6 +114,8 @@ export default function ThingProfilePage() {
           )}
         </div>
       </div>
+
+      <RecordsTable type={p.object.type} thing={p.thing.id} title="Its records" />
     </div>
   );
 }
