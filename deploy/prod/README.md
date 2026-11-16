@@ -21,7 +21,7 @@ nothing is built on it. The folder holds everything the server needs besides its
      `mail.env` holds no mail password or server: mailboxes are connected with `python -m mail connect` and then in the admin app. It does hold
      `MAIL_MASTER_KEYS` (`python -m mail keygen`; keep it apart from the database), the relay password Keycloak signs in with
      (`MAIL_RELAY_PASSWORD`), the Google OAuth client (set in the admin app's Provider apps tab; redirect URIs `https://admin.<domain>/email/google` and `/email/microsoft`)
-     and `MAIL_TRUSTED_SERVER_KEY`. The server and the mail service talk only over Kafka: make the pair of signing keys once with
+     and `MAIL_TRUSTED_SERVER_KEY`; the server gets the mail service's directory key as `MAIL_SERVICE_PUBLIC_KEY` (`python -m mail signer`, once the mail service has started). The server and the mail service talk only over Kafka: make the pair of signing keys once with
      `python -m app.mail_signing_key` (the first line goes in `server.env`, the second in `mail.env`). Connect mailboxes afterwards in
      the admin app's Email page (or `python -m mail connect` first, on the server, to get the first emails out). The
      compose file sets `ENV=production`, and then the server and the agent refuse to start while a development value is

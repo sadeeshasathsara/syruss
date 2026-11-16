@@ -74,3 +74,13 @@ async def test_a_problem_shows_only_while_it_is_still_true(store, fallback):
         s.add(JobRow(id="later-ok", purpose="support", to="a@b.c", subject="y", status="sent", attempts=1, account_id="env", created_at=now))
         await s.commit()
     assert (await directory.snapshot())["job:support"]["last_error"] is None   # a later message went out
+
+
+async def test_the_directory_vouches_for_the_key_people_seal_secrets_to(store, fallback):
+    """The server is given the signing key, so a key someone else puts on the directory topic is not believed."""
+    from mail import sealing
+    meta = (await Directory(store, Router(store, fallback), lambda *a: None).snapshot())["meta"]
+    message = sealing.directory_message(meta["public_key"], meta["fingerprint"])
+    assert sealing.verify(meta["signer"], message, __import__("base64").b64decode(meta["signature"]))
+    swapped = sealing.directory_message("c3dhcHBlZC1rZXk=", meta["fingerprint"])
+    assert not sealing.verify(meta["signer"], swapped, __import__("base64").b64decode(meta["signature"]))   # another key, same signature: refused

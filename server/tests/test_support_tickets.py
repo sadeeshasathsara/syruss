@@ -66,7 +66,7 @@ async def test_a_customer_opens_a_ticket_and_staff_answer_it_by_email_and_in_the
 
     # The customer's reply by email lands on the ticket (quoted history left out) and reopens it.
     reply = raw_email("dev@syruss.test", f"Re: [#{t['number']}] Card payment failed",
-                      "It worked, thanks!\n\nOn Mon, Syruss Support wrote:\n> Hi! Please try again")
+                      "It worked, thanks!\n\nOn Mon, Syruss Support wrote:\n> Hi! Please try again", In_Reply_To=confirm.message_id)
     async with AsyncSessionLocal() as db:
         assert (await mailbox_handle(db, reply)).id == t["id"]
     seen = (await client.get(f"{API}/support/tickets/{t['id']}")).json()
@@ -167,3 +167,15 @@ async def test_answering_takes_the_support_role_and_late_tickets_are_flagged(cli
     saved = await client.post(f"{SYS}/saved-replies", headers=helper, json={"title": "Retry payment", "body": "Hi {{first_name}}, please try again.", "shortcut": "retry"})
     assert saved.status_code == 201
     assert (await client.post(f"{SYS}/saved-replies", headers=helper, json={"title": "Dup", "body": "x" * 5, "shortcut": "retry"})).status_code == 409
+
+
+async def test_a_number_in_the_subject_alone_does_not_write_into_a_ticket_when_nothing_vouches_for_the_sender(client, mailbox):
+    """A ticket's number is guessable. From a server that checks nothing (no Authentication-Results), the From address is only a claim:
+    the message has to answer one of ours to continue a ticket; a subject tag by itself opens a separate ticket."""
+    t = await open_one(client)
+    async with AsyncSessionLocal() as db:
+        spoof = await support_mailbox.handle(db, raw_email("dev@syruss.test", f"Re: [#{t['number']}] Card payment failed", "Refund me to this account"))
+        assert spoof.id != t["id"]                                                      # not added to the real ticket
+        vouched = await support_mailbox.handle(db, raw_email("dev@syruss.test", f"Re: [#{t['number']}] Card payment failed", "Thanks, it works now",
+                                                             Authentication_Results="mx.example; spf=pass; dkim=pass; dmarc=pass header.from=syruss.test"))
+        assert vouched.id == t["id"]                                                    # a server that checked it vouches: the tag is enough

@@ -100,8 +100,10 @@ def _clean_subject(subject: str) -> str:
     return re.sub(r"^\s*((re|fwd?|aw|sv)\s*:\s*)+", "", subject, flags=re.I).strip() or "Support request"
 
 
-async def _ticket_for(db: AsyncSession, msg: EmailMessage) -> Optional[SupportTicket]:
-    found = mail.TAG.search(msg.get("Subject") or "")
+async def _ticket_for(db: AsyncSession, msg: EmailMessage, thread_only: bool = False) -> Optional[SupportTicket]:
+    """The ticket a message belongs to: by the number in its subject, or by the message it answers. `thread_only`: only by the message it
+    answers (a ticket's number is guessable, a message id of ours isn't)."""
+    found = None if thread_only else mail.TAG.search(msg.get("Subject") or "")
     if found:
         t = await tickets.find_by_number(db, found.group(1))
         if t:
@@ -161,7 +163,9 @@ async def handle(db: AsyncSession, raw: bytes) -> Optional[SupportTicket]:
     display = (name or sender.split("@")[0]).strip()
     trusted = authenticated(msg)
 
-    ticket = await _ticket_for(db, msg)
+    # No record from the receiving mail server (one that checks nothing): the From address is only a claim, so a number in the subject isn't
+    # enough to write into someone's ticket; the message has to answer one of ours.
+    ticket = await _ticket_for(db, msg, thread_only=not msg.get_all("Authentication-Results"))
     if ticket is not None and ticket.merged_into:
         ticket = await db.get(SupportTicket, ticket.merged_into) or ticket
     if ticket is not None and trusted and await _may_write(db, ticket, sender):

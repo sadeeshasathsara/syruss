@@ -176,7 +176,7 @@ async def create_channel(body: ChannelIn, access: Access = Depends(require("inte
     if body.kind == "email":
         if intake_email.mailbox() is None:
             raise HTTPException(status_code=409, detail="E-mail intake is not switched on for this server. Ask whoever runs it to choose a mailbox for the Document inbound job (Email, in the admin app).")
-        config["email_token"] = f"{slug[:16].strip('-') or 'inbox'}-{secrets.token_hex(4)}"
+        config["email_token"] = f"{slug[:16].strip('-') or 'inbox'}-{secrets.token_hex(8)}"
     elif body.kind == "sftp":
         if not settings.INTAKE_SFTP_PORT:
             raise HTTPException(status_code=409, detail="SFTP intake is not switched on for this server. Ask whoever runs it to set INTAKE_SFTP_PORT.")

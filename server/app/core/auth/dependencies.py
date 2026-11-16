@@ -68,6 +68,8 @@ def deployment_problems() -> list:
         problems.append("CORS_ORIGINS must list only the apps' public https addresses")
     if settings.MAIL_BACKEND.lower() == "service" and len(settings.MAIL_COMMAND_SIGNING_KEY) < 40:
         problems.append("MAIL_COMMAND_SIGNING_KEY is not set (python -m app.mail_signing_key makes one, and the public half for mail.env)")
+    if settings.MAIL_BACKEND.lower() == "service" and not settings.MAIL_SERVICE_PUBLIC_KEY:
+        problems.append("MAIL_SERVICE_PUBLIC_KEY is not set (python -m mail signer prints it, on the mail server)")
     return problems
 
 
