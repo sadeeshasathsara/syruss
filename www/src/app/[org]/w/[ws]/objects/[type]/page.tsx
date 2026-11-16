@@ -5,7 +5,8 @@ import { Search } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { DocumentList, Figures, ProfileHeader, Stats, ThingList, TYPE_LABEL, WeekBars } from "@/components/objects/Profile";
+import { Figures, ProfileHeader, Stats, ThingList, TYPE_LABEL, WeekBars } from "@/components/objects/Profile";
+import { RecordsTable } from "@/components/objects/Records";
 import { Bar, ErrorNote, Panel } from "@/components/ui/Blocks";
 import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
@@ -17,11 +18,10 @@ export default function ObjectProfilePage() {
   const { type: raw } = useParams<{ type: string }>();
   const type = decodeURIComponent(raw);
   const { workspace, href } = useWorkspace();
-  const [page, setPage] = useState(0);
   const [q, setQ] = useState("");
   const profile = useQuery({
-    queryKey: ["object", workspace.id, type, page],
-    queryFn: () => api.objects.get(workspace.id, type, page),
+    queryKey: ["object", workspace.id, type],
+    queryFn: () => api.objects.get(workspace.id, type),
     placeholderData: keepPreviousData,
   });
   const found = useQuery({
@@ -65,14 +65,26 @@ export default function ObjectProfilePage() {
 
       <div className="grid grid-cols-1 gap-4 @5xl:grid-cols-[3fr_2fr]">
         <div className="flex min-w-0 flex-col gap-4">
+          {o.identity && p.things && (
+            <Panel title={`${o.type} met so far`} aside={<span className="num">{p.stats.things}</span>}>
+              <label className="mb-2 flex h-8 items-center gap-2 rounded-control border border-control bg-card px-2.5 focus-within:border-ink">
+                <Search className="size-4 flex-none text-muted" aria-hidden />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Find one by name or identifier"
+                  aria-label={`Find a ${o.type}`}
+                  className="min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-faint"
+                />
+              </label>
+              {shown ? <ThingList things={shown} icon={o.icon} href={(t) => href(t.path)} /> : <Bar className="h-24 w-full" />}
+            </Panel>
+          )}
           <Panel title="Documents per week">
             <WeekBars weeks={p.weeks} what="documents with it" />
           </Panel>
           <Panel title="Its attributes in figures" aside={p.stats.records_capped ? `From the newest ${p.stats.records_read} records` : `${p.stats.rows} rows`}>
             <Figures figures={p.figures} />
-          </Panel>
-          <Panel title="Documents" aside={<span className="num">{p.documents.total}</span>}>
-            <DocumentList page={p.documents} href={(id) => href(`documents/${id}`)} onPage={setPage} rowsLabel={(n) => `${n} rows`} />
           </Panel>
         </div>
 
@@ -101,21 +113,6 @@ export default function ObjectProfilePage() {
             </dl>
           </Panel>
 
-          {o.identity && p.things && (
-            <Panel title={`${o.type} met so far`} aside={<span className="num">{p.stats.things}</span>}>
-              <label className="mb-2 flex h-8 items-center gap-2 rounded-control border border-control bg-card px-2.5 focus-within:border-ink">
-                <Search className="size-4 flex-none text-muted" aria-hidden />
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Find one by name or identifier"
-                  aria-label={`Find a ${o.type}`}
-                  className="min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-faint"
-                />
-              </label>
-              {shown ? <ThingList things={shown} icon={o.icon} href={(t) => href(t.path)} /> : <Bar className="h-24 w-full" />}
-            </Panel>
-          )}
 
           {(p.referenced_by.length > 0 || Object.keys(p.links).length > 0) && (
             <Panel title="Connected objects">
@@ -149,6 +146,8 @@ export default function ObjectProfilePage() {
           )}
         </div>
       </div>
+
+      {o.identity && <RecordsTable type={o.type} title={`${o.type} records`} />}
     </div>
   );
 }

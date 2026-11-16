@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
 from fastapi import HTTPException
-from sqlalchemy import distinct, func, select
+from sqlalchemy import String, cast, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document
@@ -34,6 +34,10 @@ from app.services.rules.engine import normalize_schema
 
 WEEKS = 12
 PAGE = 20
+RECORD_PAGE = 25        # rows of the records table
+FACET_SAMPLE = 2000     # the newest rows its filter choices are worked out from
+FACET_MAX = 12          # a field with more different values than this isn't offered as a filter
+SINCE_DAYS = (7, 30, 90, 365)
 NUMBER_TYPES = ("number", "integer")
 
 
@@ -246,6 +250,65 @@ async def thing_profile(db: AsyncSession, template: DocumentTemplate, obj_type: 
                       "created_by": entity.created_by} if entity else None,
         "documents": await _documents(db, *where, page=page),
     }
+
+
+async def records(db: AsyncSession, template: DocumentTemplate, obj_type: str, *, thing: Optional[str] = None, q: str = "",
+                  filters: Optional[Dict[str, str]] = None, since_days: Optional[int] = None, sort: str = "seen", direction: str = "desc",
+                  page: int = 0) -> Dict[str, Any]:
+    """
+    The rows of an object with an identity as the documents read them: one for each (document, thing) with the thing's attributes in
+    that document. For the whole object, or for one `thing`. Searched (its name, id, attributes and document), narrowed by a date and by
+    values of its attributes, and sorted. `facets` (first page only) offers the attributes that have a few different values as filters.
+    """
+    spec = _object(template, obj_type)
+    if not spec["identity"]:
+        raise HTTPException(status_code=404, detail={"code": "no_identity", "message": f'"{obj_type}" has no identity, so it has no records of things.'})
+    key = thing_key(obj_type, thing) if thing else None
+    if thing and not key:
+        raise HTTPException(status_code=404, detail={"code": "no_such_thing", "message": "There's no such thing in this workspace."})
+    fields = list(spec["fields"])
+    scope = [RecordObject.template_id == template.id, RecordObject.object_type == obj_type, RecordObject.rows > 0]
+    if key:
+        scope.append(RecordObject.thing_key == key)
+    where = list(scope)
+    if since_days in SINCE_DAYS:
+        where.append(RecordObject.seen_at >= datetime.now(timezone.utc) - timedelta(days=since_days))
+    for name, value in (filters or {}).items():
+        if name in spec["fields"]:
+            where.append(RecordObject.values[name].as_string() == value)
+    text = q.strip().lower()[:120]
+    if text:
+        like = f"%{text.replace(chr(92), chr(92) * 2).replace('%', chr(92) + '%').replace('_', chr(92) + '_')}%"
+        where.append(or_(*(func.lower(c).like(like, escape="\\") for c in (
+            RecordObject.label, RecordObject.thing_key, cast(RecordObject.values, String), Document.original_filename,
+            func.coalesce(Document.identified_key, "")))))
+    base = select(RecordObject.id).join(Document, Document.id == RecordObject.document_id).where(*where)
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
+
+    if sort.startswith("f:") and sort[2:] in spec["fields"]:
+        order = RecordObject.values[sort[2:]].as_string()
+    else:
+        order = {"label": func.lower(RecordObject.label), "doc": func.lower(Document.original_filename)}.get(sort, RecordObject.seen_at)
+    rows = (await db.execute(select(RecordObject, Document).join(Document, Document.id == RecordObject.document_id).where(*where)
+                             .order_by(order.asc() if direction == "asc" else order.desc(), RecordObject.id)
+                             .offset(page * RECORD_PAGE).limit(RECORD_PAGE))).all()
+    items = [{"id": r.id, "document_id": d.id, "document_name": d.identified_key or d.original_filename, "file_name": d.original_filename,
+              "status": d.status.value if hasattr(d.status, "value") else str(d.status), "seen_at": r.seen_at,
+              "thing": {"key": r.thing_key, "id": thing_id(r.thing_key), "label": r.label or thing_id(r.thing_key), "path": thing_path(obj_type, r.thing_key)}
+              if r.thing_key else None, "values": r.values or {}} for r, d in rows]
+
+    facets: List[Dict[str, Any]] = []
+    if page == 0:
+        sample = (await db.execute(select(RecordObject.values).where(*scope).order_by(RecordObject.seen_at.desc()).limit(FACET_SAMPLE))).scalars().all()
+        for name in fields:
+            if (spec["fields"][name].get("type") or "string") in NUMBER_TYPES + ("date", "time") or name in (spec["identity"].get("id_field"), spec["identity"].get("label_field")):
+                continue   # numbers, dates and the thing's own name and id are searched, not picked from a list
+            counts = Counter(str(v)[:80] for v in ((s or {}).get(name) for s in sample) if v not in (None, "") and not isinstance(v, (dict, list)))
+            if 2 <= len(counts) <= FACET_MAX:
+                facets.append({"field": name, "values": [{"value": v, "count": n} for v, n in counts.most_common()]})
+    return {"columns": [{"name": n, "type": spec["fields"][n].get("type") or "string",
+                         "identity": n in (spec["identity"].get("id_field"), spec["identity"].get("label_field"))} for n in fields],
+            "items": items, "total": int(total), "page": page, "page_size": RECORD_PAGE, "facets": facets}
 
 
 # ---- search (both search boxes) -------------------------------------------------------------------------------------

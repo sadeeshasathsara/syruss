@@ -1,5 +1,5 @@
 import type { SearchAnswer } from "@/components/shell/CommandPalette";
-import type {
+import type { ObjectRecords, RecordQuery,
   Access, AgentQuestion, AgentRun, AgentRunDetail, MemoryItem, MemoryKind, ApiKeyInfo, ApiSourceInput, AppNotification, AuditEntry, Billing, ChatMessage, Conversation,
   DocumentItem, Entity, MyOrganization, ObjectProfile, ObjectSummary, Paged, ThingProfile, ThingSummary, Screen, ScreenCatalogue, ScreenDefinition, ScreenFilter, ScreenRun, ScreenStarter, ScreenSummary, Extraction, Invitation, InvitationPreview, KnowledgeSource, Me, Member, NotificationPref,
   InviteIssued, LogPage, OrgActivityPage, OrgOverview, OrgPeriod, Organization, Overview, SecurityEventPage, TrustedDevice, Proposal, RecordSet, ReviewTask, Role, RoleCatalogue, Template, TemplateSchema, TemplateVersion, OrgMemberInfo, OrgInvitationInfo, OrgRole, Permission,
@@ -322,6 +322,14 @@ export const api = {
       request<ObjectProfile>(`/objects/${encodeURIComponent(type)}?page=${page}`, { workspaceId }),
     things: (workspaceId: string, type: string, q = "", page = 0) =>
       request<Paged<ThingSummary>>(`/objects/${encodeURIComponent(type)}/things?page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`, { workspaceId }),
+    records: (workspaceId: string, type: string, o: RecordQuery = {}) => {
+      const params = new URLSearchParams({ page: String(o.page ?? 0), sort: o.sort ?? "seen", direction: o.direction ?? "desc" });
+      if (o.q?.trim()) params.set("q", o.q.trim());
+      if (o.sinceDays) params.set("since_days", String(o.sinceDays));
+      for (const [field, value] of Object.entries(o.filters ?? {})) if (value) params.append("f", `${field}:${value}`);
+      const base = `/objects/${encodeURIComponent(type)}${o.thing ? `/things/${encodeURIComponent(o.thing)}` : ""}/records`;
+      return request<ObjectRecords>(`${base}?${params}`, { workspaceId });
+    },
     thing: (workspaceId: string, type: string, id: string, page = 0) =>
       request<ThingProfile>(`/objects/${encodeURIComponent(type)}/things/${encodeURIComponent(id)}?page=${page}`, { workspaceId }),
   },
