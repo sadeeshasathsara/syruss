@@ -22,7 +22,7 @@ workflow and `CHANGELOG.md`; the `_changelog/` files and the current `package.ym
 
 ## 1. Decide what 1.0 is
 
-- [ ] Which services go to 1.0.0 (all five, or leave `site` and `admin` on 0.x).
+- [x] Which services go to 1.0.0: all six (server, www, agent, admin, site and the mail service).
 - [x] The flows that must work end to end before it ships: the list below. QA on `test` and the check on production both
       follow it; a flow passes when every step does what it says, with nothing unexpected in the server log.
 
@@ -66,10 +66,10 @@ workflow and `CHANGELOG.md`; the `_changelog/` files and the current `package.ym
 
 ## 3. Bump to 1.0.0 on `dev`
 
-- [ ] One pull request into `dev` with one changeset that gives each chosen service `major`:
+- [x] One pull request into `dev` with one changeset that gives each chosen service `major` (`.changeset/first-stable-release.md`):
 
   ```bash
-  syruss changeset write -b server=major -b www=major -b agent=major -b admin=major -b site=major -m "First stable release"
+  syruss changeset write -b server=major -b www=major -b agent=major -b admin=major -b site=major -b mail=major -m "First stable release"
   ```
 
   `scripts/changeset.py` takes the highest version tag and adds one to the major, so every 0.x service becomes
