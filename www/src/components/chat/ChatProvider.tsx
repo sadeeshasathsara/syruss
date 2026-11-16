@@ -3,12 +3,12 @@
 import { AssistantRuntimeProvider, useExternalStoreRuntime, type AppendMessage, type ThreadMessageLike } from "@assistant-ui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useShell } from "@/components/shell/ShellContext";
 import { api, ApiError } from "@/lib/api";
 import { storeValue, useStoredValue } from "@/lib/browser";
 import { useLive } from "@/lib/live";
-import type { Conversation } from "@/lib/types";
+import type { Conversation, LiveSupport } from "@/lib/types";
 import { buildRuns, buildTimeline, toThreadMessages } from "./timeline";
 
 interface ChatContextValue {
@@ -33,7 +33,19 @@ interface ChatContextValue {
   stopping: boolean;
   /** The newest piece of work in this chat: it shows open; older work folds away. */
   latestRunId?: string;
+  /** Live support from the Syruss team in this chat, if any (while waiting or live, Syruss's assistant is quiet). */
+  support?: LiveSupport | null;
+  /** The team member is typing (their first name), for a few seconds after each signal. */
+  staffTyping: string | null;
+  /** You are typing (sent to the team member at most every few seconds, only while they are in the chat). */
+  typing: () => void;
+  endSupport: () => Promise<void>;
+  rateSupport: (rating: "up" | "down", note?: string) => Promise<void>;
 }
+
+const TYPING_EVERY_MS = 3000;
+const TYPING_SHOWN_MS = 6000;
+const SUPPORT_EVENTS = new Set(["agent_message", "support_message", "support_state"]);
 
 const ChatContext = createContext<ChatContextValue | null>(null);
 
@@ -106,7 +118,7 @@ export function ChatProvider({ workspaceId, children }: { workspaceId: string; c
   const items = useMemo(() => {
     const mine = new Set(buildRuns(events).filter((r) => activeId && r.origin?.conversation_id === activeId).map((r) => r.id));
     const chatEvents = events.filter((e) =>
-      e.run_id ? mine.has(e.run_id) : e.event_type === "agent_message" && !!activeId && e.conversation_id === activeId,
+      e.run_id ? mine.has(e.run_id) : SUPPORT_EVENTS.has(e.event_type) && !!activeId && e.conversation_id === activeId,
     );
     return buildTimeline({
       thread: conversation.data?.messages ?? [],
@@ -120,11 +132,62 @@ export function ChatProvider({ workspaceId, children }: { workspaceId: string; c
 
   const messages = useMemo(() => toThreadMessages(items), [items]);
   const busy = items.some((i) => i.kind === "run" && !i.run.finished) || items.some((i) => i.kind === "user" && i.pending);
-  // Your last message has no answer yet (a reply, or a note that you stopped it), or its reply is running.
+  // Your last message has no answer yet (a reply, a team member's message or note, or a note that you stopped it), or
+  // its reply is running. Messages written to the team during live support don't wait for Syruss.
   const lastUser = items.findLastIndex((i) => i.kind === "user");
-  const answered = items.slice(lastUser + 1).some((i) => i.kind === "agent" || (i.kind === "note" && i.text.endsWith("stopped Syruss.")));
-  const replying =
-    items.some((i) => i.kind === "run" && i.run.trigger === "human.message" && !i.run.finished) || (lastUser >= 0 && !answered);
+  const supportEnded = conversation.data?.live_support?.ended_at;
+  const answered = items.slice(lastUser + 1).some((i) => i.kind === "agent" || i.kind === "staff" || (i.kind === "note" && i.text.endsWith("stopped Syruss.")))
+    || (lastUser >= 0 && !!supportEnded && new Date(items[lastUser].at) < new Date(supportEnded));
+  // Live support: its state comes with the chat, and changes arrive live (then the chat is read again).
+  const support = conversation.data?.live_support;
+  const withTeam = support?.state === "waiting" || support?.state === "live";
+  const lastChange = useMemo(
+    () => events.findLast((e) => e.event_type === "support_state" && e.conversation_id === activeId)?.timestamp,
+    [events, activeId],
+  );
+  useEffect(() => {
+    if (lastChange && activeId) queryClient.invalidateQueries({ queryKey: ["conversation", workspaceId, activeId] });
+  }, [lastChange, activeId, workspaceId, queryClient]);
+  const lastTyping = useMemo(
+    () => events.findLast((e) => e.event_type === "support_typing" && e.conversation_id === activeId),
+    [events, activeId],
+  );
+  const lastStaffWords = useMemo(
+    () => events.findLast((e) => e.event_type === "support_message" && e.conversation_id === activeId)?.timestamp,
+    [events, activeId],
+  );
+  // Shown for a few seconds after each signal, and gone as soon as their message arrives. The clock moves on when it
+  // should disappear, so nothing is set while rendering.
+  const typedAt = lastTyping ? new Date(lastTyping.timestamp ?? 0).getTime() : 0;
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (!typedAt) return;
+    const timer = setTimeout(() => setClock(Date.now()), Math.max(0, typedAt + TYPING_SHOWN_MS - Date.now()));
+    return () => clearTimeout(timer);
+  }, [typedAt]);
+  const superseded = !!lastStaffWords && !!lastTyping?.timestamp && lastStaffWords > lastTyping.timestamp;
+  const staffTyping = lastTyping && typedAt + TYPING_SHOWN_MS > clock && !superseded
+    ? (typeof lastTyping.name === "string" ? lastTyping.name : "The team") : null;
+  const typingSent = useRef(0);
+  const typing = useCallback(() => {
+    if (!activeId || support?.state !== "live" || Date.now() - typingSent.current < TYPING_EVERY_MS) return;
+    typingSent.current = Date.now();
+    api.chat.supportTyping(workspaceId, activeId).catch(() => undefined);
+  }, [activeId, support?.state, workspaceId]);
+  const endSupport = useCallback(async () => {
+    if (!activeId) return;
+    await api.chat.supportEnd(workspaceId, activeId);
+    await queryClient.invalidateQueries({ queryKey: ["conversation", workspaceId, activeId] });
+  }, [activeId, workspaceId, queryClient]);
+  const rateSupport = useCallback(async (rating: "up" | "down", note?: string) => {
+    if (!activeId) return;
+    await api.chat.supportRate(workspaceId, activeId, rating, note);
+    await queryClient.invalidateQueries({ queryKey: ["conversation", workspaceId, activeId] });
+  }, [activeId, workspaceId, queryClient]);
+
+  // While someone from the team has the chat, Syruss isn't answering: no "Stop".
+  const replying = !withTeam &&
+    (items.some((i) => i.kind === "run" && i.run.trigger === "human.message" && !i.run.finished) || (lastUser >= 0 && !answered));
   const [stopping, setStopping] = useState(false);
   const stop = useCallback(async () => {
     if (!activeId) return;
@@ -199,6 +262,7 @@ export function ChatProvider({ workspaceId, children }: { workspaceId: string; c
         activeId, active: conversation.data, selectSession, openConversation, newSession: () => selectSession(undefined),
         renameSession, deleteSession,
         send, sendInNewChat, busy, latestRunId, replying, stop, stopping,
+        support, staffTyping, typing, endSupport, rateSupport,
       }}
     >
       <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>

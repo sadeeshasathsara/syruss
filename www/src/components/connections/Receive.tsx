@@ -10,7 +10,7 @@ import { Bar, Empty, ErrorNote } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { CodeBlock } from "@/components/ui/CodeBlock";
 import { CopyButton } from "@/components/ui/CopyButton";
-import { Field, Input } from "@/components/ui/Field";
+import { Field, Input, Textarea } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
 import { Select } from "@/components/ui/Select";
 import { Dialog } from "@/components/ui/Sheet";
@@ -23,6 +23,7 @@ import type { IntakeChannelInfo, IntakeEventInfo, IntakeKeyInfo } from "@/lib/ty
 import { useWorkspace } from "@/lib/workspace";
 import { ALL_TYPES, channelHealth, KEY_STATE, KIND_LABEL, TYPE_LABEL } from "./health";
 import { NewKeyDialog } from "./NewKey";
+import { usePreservedState } from "@/lib/resume";
 
 function useChannels() {
   const { workspace } = useWorkspace();
@@ -40,8 +41,8 @@ function NewChannelDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const { workspace, href } = useWorkspace();
   const queryClient = useQueryClient();
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<"api" | "email" | "sftp">("api");
+  const [name, setName] = usePreservedState("channel.new.name", "");
+  const [kind, setKind] = usePreservedState<"api" | "email" | "sftp">("channel.new.kind", "api");
   const info = useQuery({ queryKey: ["channels", workspace.id, "developer-info"], queryFn: () => api.channels.developerInfo(workspace.id), enabled: open });
   const create = useMutation({
     mutationFn: () => api.channels.create(workspace.id, { name: name.trim(), kind }),
@@ -57,7 +58,7 @@ function NewChannelDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   });
   const kinds: { value: "api" | "email" | "sftp"; title: string; help: string; ready: boolean }[] = [
     { value: "api", title: "API", help: "Another system sends files to a web address with a key.", ready: true },
-    { value: "email", title: "Email", help: "People or systems email documents to an address of its own.", ready: info.data?.email.enabled ?? false },
+    { value: "email", title: "Email", help: "People email documents from their inbox, or systems mail them, to an address of its own.", ready: info.data?.email.enabled ?? false },
     { value: "sftp", title: "SFTP", help: "Scanners and older systems drop files on a server.", ready: info.data?.sftp.enabled ?? false },
   ];
   return (
@@ -91,7 +92,7 @@ function NewChannelDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
 export function ReceivePage() {
   const { href } = useWorkspace();
   const { allowed, channels } = useChannels();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = usePreservedState("channel.creating", false);
   const title = "Receive";
   const description = "How documents get into this workspace from your other systems. Each channel knows which workspace its documents belong to.";
 
@@ -245,13 +246,17 @@ function Rules({ channel, workspaceMax }: { channel: IntakeChannelInfo; workspac
   const { workspace } = useWorkspace();
   const queryClient = useQueryClient();
   const initial = channel.config.allowed_types ?? ALL_TYPES;
-  const [types, setTypes] = useState<string[]>(initial);
-  const [maxMb, setMaxMb] = useState(channel.config.max_mb ? String(channel.config.max_mb) : "");
-  const [process, setProcess] = useState<"workspace" | "yes" | "no">(channel.config.process == null ? "workspace" : channel.config.process ? "yes" : "no");
+  const [types, setTypes] = usePreservedState<string[]>("channel.rules.types", initial);
+  const [maxMb, setMaxMb] = usePreservedState("channel.rules.maxmb", channel.config.max_mb ? String(channel.config.max_mb) : "");
+  const [process, setProcess] = usePreservedState<"workspace" | "yes" | "no">("channel.rules.process", channel.config.process == null ? "workspace" : channel.config.process ? "yes" : "no");
+  const email = channel.kind === "email";
+  const [senders, setSenders] = usePreservedState("channel.rules.senders", (channel.config.sender_allowlist ?? []).join("\n"));
+  const [vouched, setVouched] = usePreservedState("channel.rules.vouched", !!channel.config.require_authentication);
   const save = useMutation({
     mutationFn: () => api.channels.update(workspace.id, channel.id, { config: {
       allowed_types: types.length === ALL_TYPES.length ? null : types, max_mb: maxMb ? Number(maxMb) : null,
       process: process === "workspace" ? null : process === "yes",
+      ...(email ? { sender_allowlist: senders.split(/[\n,]/).map((x) => x.trim()).filter(Boolean), require_authentication: vouched } : {}),
     } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["channels", workspace.id] }),
   });
@@ -280,6 +285,18 @@ function Rules({ channel, workspaceMax }: { channel: IntakeChannelInfo; workspac
           ]} />}
         </Field>
       </div>
+      {email && (
+        <div className="flex flex-col gap-3">
+          <Field label="Who can email documents here" help="One address or @domain per line, such as billing@supplier.com or @supplier.com. Empty: anyone who has the address.">
+            {(id) => <Textarea id={id} value={senders} onChange={(e) => setSenders(e.target.value)} placeholder="Anyone" rows={3} />}
+          </Field>
+          <label className="flex items-start gap-2 text-body text-ink">
+            <input type="checkbox" className="mt-1 size-4 accent-[var(--ink)]" checked={vouched} onChange={(e) => setVouched(e.target.checked)} />
+            <span>Only accept mail that passes the sender’s SPF or DKIM check
+              <span className="block text-meta text-muted">Stops others writing as one of your listed senders. Gmail and Outlook record this on every message.</span></span>
+          </label>
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <Button type="submit" variant="primary" disabled={!types.length || save.isPending}>{save.isPending ? "Saving…" : "Save rules"}</Button>
         {save.isSuccess && !save.isPending && <span className="text-body text-muted">Saved</span>}
@@ -311,7 +328,7 @@ function Activity({ channel }: { channel: IntakeChannelInfo }) {
       </div>
       {page.isLoading ? <Bar className="h-14 w-full" /> : events.length === 0 ? (
         <Empty title={filter === "rejected" ? "Nothing has been refused" : "Nothing has been sent yet"}>
-          {filter === "rejected" ? "Documents that don’t pass a check show here with the reason, so you can tell the sender what to fix." : "When a system sends a document, or tries to, it shows here with who sent it."}
+          {filter === "rejected" ? "Documents that don’t pass a check show here with the reason, so you can tell the sender what to fix." : "When a document arrives, or someone tries to send one, it shows here with who sent it."}
         </Empty>
       ) : (
         <ul className="flex flex-col rounded-card border border-border bg-card">
@@ -371,7 +388,7 @@ export function ChannelPage({ slug }: { slug: string }) {
   const { allowed, channels } = useChannels();
   const info = useQuery({ queryKey: ["channels", workspace.id, "developer-info"], queryFn: () => api.channels.developerInfo(workspace.id), enabled: allowed });
   const channel = channels.data?.find((c) => c.slug === slug);
-  const [newKey, setNewKey] = useState(false);
+  const [newKey, setNewKey] = usePreservedState("channel.key.open", false);
   const [removing, setRemoving] = useState(false);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["channels", workspace.id] });
   const toggle = useMutation({ mutationFn: (active: boolean) => api.channels.update(workspace.id, channel!.id, { status: active ? "active" : "paused" }), onSuccess: refresh });
@@ -426,7 +443,29 @@ export function ChannelPage({ slug }: { slug: string }) {
 
       {channel.kind === "sftp" && <SftpSection channel={channel} />}
 
-      <Section title="Send a document" description="Other systems send files to this address with a key. The key, not the request, decides which workspace and channel a file belongs to.">
+      {channel.kind === "email" && (
+        <Section title="Email a document" description="Anyone can send documents here with an ordinary email: a person from their inbox, or a system that mails its reports. No key or sign-in is needed, so the rules below say who may.">
+          <div className="flex flex-col gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <code className="min-w-0 flex-1 truncate rounded-control bg-raised px-3 py-2 font-mono text-meta text-ink">{channel.address ?? "Email isn’t switched on for this server"}</code>
+              {channel.address && <CopyButton value={channel.address} />}
+            </div>
+            <ul className="list-disc pl-5 text-body text-muted">
+              <li>Attach the files (PDF, JPG, PNG, TIFF or WebP) to an email addressed here, or forward one that has them.</li>
+              <li>Each attached file becomes a document. Pictures in the message body or signature are ignored.</li>
+            </ul>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="secondary" disabled={test.isPending || channel.status !== "active"} onClick={() => test.mutate()}>
+                {test.isPending ? "Sending…" : "Send a test document"}
+              </Button>
+            </div>
+            {test.isSuccess && <p className="text-body text-positive">Sent. It went through this channel like a real one, is marked as a test and is never published. See it in the activity below.</p>}
+            {test.error && <p className="text-body text-negative">{test.error.message}</p>}
+          </div>
+        </Section>
+      )}
+
+      {channel.kind === "api" && <Section title="Send a document" description="Other systems send files to this address with a key. The key, not the request, decides which workspace and channel a file belongs to.">
         <div className="flex flex-col gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded-control bg-raised px-3 py-2 font-mono text-meta text-ink">POST {channel.endpoint}</code>
@@ -442,9 +481,9 @@ export function ChannelPage({ slug }: { slug: string }) {
           {test.isSuccess && <p className="text-body text-positive">Sent. It went through this channel like a real one, is marked as a test and is never published. See it in the activity below.</p>}
           {test.error && <p className="text-body text-negative">{test.error.message}</p>}
         </div>
-      </Section>
+      </Section>}
 
-      <Section title="Keys" description="One key for each system that sends. Revoke one and the others keep working.">
+      {channel.kind === "api" && <Section title="Keys" description="One key for each system that sends. Revoke one and the others keep working.">
         <div className="flex flex-col gap-3">
           {openKeys.length === 0 && <Empty title="No key yet" action={<Button variant="primary" onClick={() => setNewKey(true)}><Plus /> Create a key</Button>}>Nothing can be sent until this channel has a key.</Empty>}
           {openKeys.length > 0 && (
@@ -458,7 +497,7 @@ export function ChannelPage({ slug }: { slug: string }) {
             </details>
           )}
         </div>
-      </Section>
+      </Section>}
 
       <Section title="Rules" description="What this channel lets in, on top of the workspace’s own limits.">
         <Rules key={channel.id + JSON.stringify(channel.config)} channel={channel} workspaceMax={info.data?.max_file_mb} />
@@ -476,13 +515,13 @@ export function ChannelPage({ slug }: { slug: string }) {
           </form>
           <div>
             <Button variant="danger" onClick={() => setRemoving(true)}>Remove this channel</Button>
-            <p className="mt-1.5 text-meta text-muted">Its keys stop working. Documents that came through it stay in the workspace.</p>
+            <p className="mt-1.5 text-meta text-muted">{channel.kind === "api" ? "Its keys stop working." : "It stops receiving documents."} Documents that came through it stay in the workspace.</p>
           </div>
         </div>
       </Section>
 
-      <NewKeyDialog channel={channel} open={newKey} onOpenChange={setNewKey} />
-      <Dialog open={removing} onOpenChange={setRemoving} title={`Remove “${channel.name}”?`} description="Its keys stop working at once. Documents that came through it stay.">
+      {channel.kind === "api" && <NewKeyDialog channel={channel} open={newKey} onOpenChange={setNewKey} />}
+      <Dialog open={removing} onOpenChange={setRemoving} title={`Remove “${channel.name}”?`} description={channel.kind === "api" ? "Its keys stop working at once. Documents that came through it stay." : "It stops receiving documents at once. Documents that came through it stay."}>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setRemoving(false)}>Keep it</Button>
           <Button variant="danger" disabled={remove.isPending} onClick={() => remove.mutate()}>Remove</Button>

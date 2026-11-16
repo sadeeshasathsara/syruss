@@ -12,6 +12,50 @@ export interface StaffMe {
   from_config: boolean;
   roles: Record<StaffRole, string>;
   permission_names: Record<string, string>;
+  /** The admin app signs out after idle_minutes without use; the sign-in itself ends at ends_at. */
+  session: { idle_minutes: number; ends_at: string };
+}
+
+export type ApprovalStatus = "pending" | "expired" | "done" | "rejected" | "cancelled" | "failed";
+
+export interface Approval {
+  id: string;
+  action: string;
+  category: string | null;
+  summary: string;
+  reason: string | null;
+  target_type: string;
+  target_id: string;
+  tenant_id: string | null;
+  requested_by: string;
+  requested_by_name: string;
+  status: ApprovalStatus;
+  created_at: string;
+  expires_at: string;
+  decided_by_name: string | null;
+  decided_at: string | null;
+  note: string | null;
+}
+
+export interface ApprovalList {
+  items: Approval[];
+  /** Waiting and not expired. */
+  waiting: number;
+}
+
+export interface ApprovalRule {
+  on: boolean;
+  categories: string[];
+  all_categories: Record<string, string>;
+  /** Owners who can approve (the rule needs two). */
+  approvers: number;
+  hours: number;
+}
+
+export interface StaffPolicy {
+  inactive_days: number;
+  warn_days: number;
+  review_days: number;
 }
 
 export interface PlatformStats {
@@ -41,11 +85,19 @@ export interface StaffMember {
   added_at: string | null;
   last_seen_at: string | null;
   status: string;
+  /** Their use of the admin app and what follows from it; null for the deployment's own owners. */
+  last_active_at?: string | null;
+  reviewed_at?: string | null;
+  reviewed_by_name?: string | null;
+  review_due_at?: string | null;
+  review_due?: boolean;
+  removal_at?: string | null;
 }
 
 export interface StaffList {
   items: StaffMember[];
   roles: Record<StaffRole, string>;
+  policy: StaffPolicy;
 }
 
 export interface StaffAction {
@@ -135,13 +187,42 @@ export interface EventFacts {
 }
 
 /** A step: in full with content open, else its shape only (thought_chars, tool names, timings). */
+export interface StepUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  [detail: string]: number | undefined;
+}
+
 export interface RunStep {
   step_number: number;
   step_started_at: string | null;
   step_completed_at: string | null;
+  /** What the model answered in this step */
   thought?: string;
-  thought_chars?: number;
-  tool_calls: { tool_name: string; status: string; duration_ms: number | null; arguments?: unknown; observation?: string }[];
+  /** The model's own thinking, when the provider returns it */
+  reasoning?: string;
+  /** What the loop added before this model call (a reminder to finish, requested page images) */
+  added?: string[];
+  usage?: StepUsage;
+  tool_calls: { tool_call_id?: string; tool_name: string; status: string; duration_ms: number | null; arguments?: unknown; observation?: string }[];
+}
+
+/** What a run was given before its first model call. */
+export interface RunPrompt {
+  system: string | null;
+  system_hash: string | null;
+  briefing: string | null;
+  tools: string[];
+}
+
+/** A run of the same document before or after this one. */
+export interface RunLink {
+  id: string;
+  trigger: string;
+  status: RunStatus;
+  started_at: string;
+  attempt: number;
 }
 
 export interface RunChange {
@@ -156,16 +237,6 @@ export interface RunChange {
   conversation_id?: string;
 }
 
-export interface Grant {
-  id: string;
-  tenant_id: string;
-  organization?: string | null;
-  reason: string;
-  created_at?: string;
-  expires_at: string;
-  ended_at?: string | null;
-}
-
 export interface RunDetail extends Names {
   run: RunFacts;
   event: EventFacts | null;
@@ -175,7 +246,12 @@ export interface RunDetail extends Names {
   final_thought: string | null;
   error: string | null;
   usage: Record<string, number>;
-  grant: Grant | null;
+  prompt: RunPrompt | null;
+  previous: RunLink | null;
+  next: RunLink | null;
+  /** Its place among the document's runs (1 = the first) */
+  position: { number: number | null; of: number } | null;
+  document: { id: string; name: string; content_type: string; size_bytes: number; page_count: number; status: string } | null;
 }
 
 export interface RunStats extends Names {
@@ -198,6 +274,7 @@ export interface DocFacts {
   via: string;
   content_type: string;
   size_bytes: number;
+  page_count?: number;
   created_at: string;
   updated_at: string;
   name?: string;
@@ -224,14 +301,24 @@ export interface TimelineItem {
   by?: string;
   duration_ms?: number;
   priority?: string;
+  /** Everything known about the step, to show when it is opened */
+  details: StepFact[];
+}
+
+/** One line of a journey step's details: text (or a number), JSON to format, or a block of code-like text. */
+export interface StepFact {
+  label: string;
+  value: unknown;
+  kind: "text" | "json" | "code";
 }
 
 export interface ProcessDetail extends Names {
   document: DocFacts;
-  content_open: boolean;
-  grant: Grant | null;
   timeline: TimelineItem[];
-  timings: { total_ms: number | null; queue_wait_ms: number | null; agent_ms: number | null; waiting_for_people_ms: number | null; delivery_ms: number | null; cost_usd: number | null };
+  timings: {
+    total_ms: number | null; queue_wait_ms: number | null; agent_ms: number | null; waiting_for_people_ms: number | null; delivery_ms: number | null;
+    cost_usd: number | null; input_tokens: number; output_tokens: number; tokens: number; model_calls: number;
+  };
   events: EventFacts[];
   runs: RunFacts[];
   changes: RunChange[];
@@ -246,12 +333,6 @@ export interface QueuesPage extends Names {
   runs: { running: number; lost_today: number; failed_today: number; running_items: RunFacts[]; failed_items: RunFacts[] };
   documents: { stuck: number; items: DocFacts[] };
   deliveries: { dead: number; retrying: number; held: number };
-}
-
-export interface GrantList {
-  items: Grant[];
-  may_open: boolean;
-  minutes: { min: number; max: number; default: number };
 }
 
 /** A fact on the platform's live view (sysadmin/live). */
@@ -630,4 +711,408 @@ export interface FollowUp {
   trial_ends_at: string | null;
   paid_until: string | null;
   period_end: string;
+}
+
+// ---- the operator's console ---------------------------------------------------------------------
+
+export interface DayPoint { day: string; value: number }
+
+export interface BusinessMetrics {
+  as_of: string;
+  revenue: { currency: string; mrr_cents: number; arr_cents: number }[];
+  organizations: { active: number; paying: number; trialing: number; active_7d: number; active_30d: number; closed_this_month: number; lapsed_this_month: number };
+  runs: { last_30d: number; failed_30d: number };
+  series: { organizations: DayPoint[]; people: DayPoint[]; documents: DayPoint[]; pages: DayPoint[]; agent_cost_usd: DayPoint[] };
+}
+
+export interface RiskReason { code: string; text: string; level: "high" | "medium" | "low" }
+export interface AtRisk { tenant_id: string; name: string; slug: string | null; plan: string | null; reasons: RiskReason[] }
+
+export interface OrgNote { id: string; body: string; pinned: boolean; author_name: string; author_id: string; created_at: string }
+
+export interface OrganizationProfile {
+  organization: { id: string; name: string; slug: string; status: "active" | "suspended" | "closed"; status_reason: string | null; status_changed_at: string | null; created_at: string; purged_at: string | null };
+  plan: { name: string; key: string; price_cents: number; currency: string; status: string; period_start: string; period_end: string; trial_ends_at: string | null; paid_until: string | null };
+  usage: { pages_used: number; pages_limit: number | null; credits: number; documents_30d: DayPoint[]; runs_30d: number; agent_cost_30d_usd: number; last_run_at: string | null };
+  money: { open_invoices: number; owed_cents: number; currency: string; overdue: number };
+  members: { user_id: string; name: string; email: string; role: string; status: string; last_seen_at: string | null; joined_at: string }[];
+  workspaces: { id: string; name: string; slug: string; documents: number; last_document_at: string | null; members: number; created_at: string }[];
+  notes: OrgNote[];
+  staff_actions: StaffAction[];
+  agent_paused: boolean;
+}
+
+export interface PersonProfile {
+  person: { id: string; name: string; email: string; email_verified: boolean; status: "active" | "disabled" | "deleted"; created_at: string; last_seen_at: string | null; timezone: string; staff_role: string | null };
+  organizations: { id: string; name: string; status: string; role: string }[];
+  workspaces: { id: string; name: string; tenant_id: string; role: string }[];
+  browsers: { id: string; label: string; ip: string; last_seen_at: string; trusted_until: string | null }[];
+  security_events: { kind: string; summary: string; device: string; ip: string; created_at: string }[];
+  staff_actions: StaffAction[];
+}
+
+export type Severity = "info" | "warning" | "critical";
+export interface Announcement {
+  id: string; title: string; body: string; severity: Severity; tenant_id: string | null; organization: string | null;
+  starts_at: string; ends_at: string | null; created_by_name: string; created_at: string; state: "live" | "scheduled" | "ended";
+}
+export type SwitchName = "signups" | "agent" | "intake";
+export interface PlatformControls {
+  maintenance: { on: boolean; message: string };
+  switches: Record<SwitchName, boolean>;
+  agent_paused_orgs: { id: string; name: string }[];
+  announcements: Announcement[];
+}
+
+export interface SecurityView {
+  last_7_days: { wrong_codes: number; browsers_confirmed: number; browsers_removed: number; codes_sent: number };
+  wrong_code_bursts: { user_id: string; name: string; email: string | null; count: number; last_at: string }[];
+  staff_review: { user_id: string; name: string; email: string; role: string; status: string; last_seen_at: string | null; last_action_at: string | null; stale: boolean }[];
+}
+
+// ---- joining the staff ---------------------------------------------------------------------------
+
+export interface StaffInvitation {
+  id: string; email: string; role: StaffRole; status: "pending" | "expired" | "accepted" | "revoked";
+  expires_at: string; invited_by_name: string; reason: string | null; email_sent_at: string | null; created_at: string; accepted_at: string | null;
+}
+
+export interface JoinView {
+  invitation: StaffInvitation;
+  role_description: string;
+  signed_in_as: string | null;
+  problem: { code: string; message: string } | null;
+  already_staff: boolean;
+  customer_account: { organizations: { id: string; name: string; role: string; status: string; outcome: "closed" | "left" }[]; workspaces: number } | null;
+}
+
+export interface SystemLesson {
+  id: string; content: string; status: "active" | "proposed" | "retired"; importance: number; source: string;
+  why?: string | null; times_proposed?: number; created_at: string;
+}
+
+// ---- support -------------------------------------------------------------------------------------
+
+export type TicketStatus = "new" | "open" | "pending" | "solved" | "closed";
+export type TicketPriority = "low" | "normal" | "high" | "urgent";
+export type TicketCategory = "billing" | "account" | "technical" | "other";
+
+export interface Ticket {
+  id: string;
+  number: string;
+  subject: string;
+  category: TicketCategory;
+  priority: TicketPriority;
+  status: TicketStatus;
+  channel: "agent" | "app" | "email";
+  requester_name: string;
+  requester_email: string;
+  tenant_id: string | null;
+  organization?: string | null;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  unverified: boolean;
+  related: { conversation_id?: string; document_id?: string; invoice_id?: string; follow_up_of?: string };
+  first_response_due: string | null;
+  resolve_due: string | null;
+  first_responded_at: string | null;
+  breached_at: string | null;
+  solved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  last_customer_at: string | null;
+  last_staff_at: string | null;
+}
+
+export interface TicketFile { id: string; filename: string; content_type: string; size: number }
+
+export interface TicketMessage {
+  id: string;
+  author_kind: "customer" | "staff" | "agent" | "system";
+  author_name: string;
+  body: string;
+  internal: boolean;
+  via: "app" | "email" | "agent";
+  created_at: string;
+  files: TicketFile[];
+}
+
+/** Who a customer is, from what staff already see elsewhere (a ticket's or a live chat's side panel). */
+export interface CustomerContext {
+  organization: { id: string; name: string; slug: string; status: string; plan: string | null } | null;
+  person: { id: string; name: string; email: string; status: string; last_seen_at: string | null } | null;
+  bills: { id: string; number: string; status: string; total_cents: number; currency: string; due_cents: number; due_at: string | null }[];
+}
+
+export interface TicketDetail extends Ticket {
+  messages: TicketMessage[];
+  context: CustomerContext & { other_tickets: { id: string; number: string; subject: string; status: TicketStatus; created_at: string }[] };
+}
+
+export interface SupportSummary { new: number; unassigned: number; mine: number; breached: number; active: number; live_waiting: number }
+
+export type LiveState = "waiting" | "live" | "ended";
+
+/** A chat in live support, as the queue shows it (the assistant's handover, not the conversation). */
+export interface LiveChatItem {
+  conversation_id: string;
+  state: LiveState;
+  tenant_id: string;
+  organization: string | null;
+  workspace: string | null;
+  person: string | null;
+  reason: string | null;
+  summary: string | null;
+  requested_at: string | null;
+  joined_at: string | null;
+  staff_id: string | null;
+  staff_name: string | null;
+}
+
+export interface LiveQueue { waiting: LiveChatItem[]; mine: LiveChatItem[]; others_live: number; online: { id: string; name: string }[] }
+
+export interface LiveMessage { id: string; role: "user" | "assistant" | "system" | "staff"; content: string; staff_name: string | null; at: string }
+
+export interface LiveChat extends LiveChatItem {
+  title: string;
+  support: { state: LiveState; ticket_number: string | null; rating: "up" | "down" | null } | null;
+  rating_note: string | null;
+  messages: LiveMessage[];
+  context: CustomerContext;
+}
+
+export type Presence = "online" | "away" | "offline";
+
+/** A job's key: notifications, documents, promotions, support (shown as Help), accounts, or one added in the admin app. */
+export type MailPurpose = string;
+export type MailDirection = "send" | "read" | "both";
+
+/** A mailbox Syruss sends (and reads) mail through: from the mail service's environment, or connected here. No secrets. */
+export interface MailAccount {
+  id: string;
+  kind: "smtp_imap" | "gmail" | "graph" | "console" | "memory";
+  address: string;
+  name: string;
+  granted: ("send" | "read")[];
+  status: "active" | "needs_reconnect";
+  last_error: string | null;
+  checked_at?: string | null;
+  created_at?: string | null;
+  from_environment: boolean;
+  /** The jobs it serves (their keys) */
+  purposes: MailPurpose[];
+  config?: Record<string, string | number | boolean>;
+}
+
+/** What a job may set for itself. */
+export interface MailJobSettings {
+  sender_name?: string;
+  reply_to?: string;
+  poll_seconds?: number;
+}
+
+/** A job: a named use of mail with a mailbox of its own, as the mail service's directory describes it. */
+export interface MailJobDef {
+  account_id: string | null;
+  address: string | null;
+  routed: boolean;
+  needs: ("send" | "read")[];
+  reads: boolean;
+  label: string;
+  direction: MailDirection;
+  system: boolean;
+  description: string;
+  settings: MailJobSettings;
+  last_sent_at: string | null;
+  last_read_at: string | null;
+  last_error: string | null;
+}
+
+/** The providers a mailbox can be connected through (OAuth: no app passwords). */
+export type MailProvider = "google" | "microsoft";
+
+/** A provider's OAuth app as the mail service describes it: whether it is set, its client id and tenant (public), never its secret. */
+export interface MailProviderInfo {
+  configured: boolean;
+  /** Microsoft's tenant (public). The client id and secret are never sent to the browser. */
+  tenant?: string;
+  /** Set in the mail service's environment rather than here (Google only) */
+  from_environment?: boolean;
+  /** What to register as the app's redirect URI with the provider */
+  redirect_uri: string;
+}
+
+export interface MailAppInput {
+  /** Empty keeps the one already set (it is never sent back) */
+  client_id: string;
+  tenant?: string;
+  /** Sealed in the browser to the mail service's key ({ client_secret }); empty keeps the secret already set */
+  sealed?: string;
+}
+
+/** Something Syruss does with mail (an email destination, support, invitations...) and the job it uses. */
+export interface MailUseDef {
+  key: string;
+  label: string;
+  description: string;
+  direction: MailDirection;
+  needs: ("send" | "read")[];
+  default_job: MailPurpose;
+  /** The job it uses now */
+  job: MailPurpose;
+  /** Whether an owner chose it (else it uses its default) */
+  assigned: boolean;
+}
+
+export interface MailOverview {
+  uses: MailUseDef[];
+  google: boolean;
+  providers: Record<MailProvider, MailProviderInfo>;
+  redirect_uri: string;
+  accounts: MailAccount[];
+  purposes: Record<MailPurpose, MailJobDef>;
+  /** The key people seal secrets to, so a password never crosses the server or Kafka in the clear. */
+  key: { fingerprint: string | null; public_key: string | null };
+}
+
+export interface MailJob {
+  id: string;
+  purpose: MailPurpose;
+  to: string;
+  subject: string;
+  status: "queued" | "sending" | "retrying" | "sent" | "dead";
+  attempts: number;
+  last_error: string | null;
+  account_id: string | null;
+  created_at: string;
+  done_at: string | null;
+  next_attempt_at: string | null;
+  retryable: boolean;
+}
+
+export interface MailImapInput {
+  address: string;
+  name: string;
+  smtp_host?: string;
+  smtp_port: number;
+  smtp_security: "none" | "starttls" | "ssl";
+  smtp_username: string;
+  smtp_password: string;
+  imap_host?: string;
+  imap_port: number;
+  imap_ssl: boolean;
+  imap_folder: string;
+  imap_username: string;
+  imap_password: string;
+  /** The passwords sealed in the browser (then the plain fields above are sent empty) */
+  sealed?: string;
+  /** The jobs it serves from the start */
+  jobs?: MailPurpose[];
+}
+
+export interface SavedReply { id: string; title: string; body: string; shortcut: string | null; created_by_name: string; updated_at: string }
+
+export interface SupportSettings {
+  first_response_hours: Record<TicketPriority, number>;
+  resolve_hours: Record<TicketPriority, number>;
+  auto_solve_days: number;
+  auto_close_days: number;
+  /** reading null: the mail service couldn't be asked */
+  mailbox: { address: string; reading: boolean | null; connected: boolean | null };
+}
+
+// ---- object and thing profiles (server/app/services/object_profiles.py) ----
+export interface ObjectSummary {
+  type: string;
+  description: string;
+  icon: string;
+  multiple: boolean;
+  identity: { id_field: string; label_field: string } | null;
+  fields: number;
+  documents: number;
+  things: number;
+  last_seen: string | null;
+}
+
+export interface ObjectField {
+  name: string;
+  type: string;
+  required: boolean;
+  description: string;
+  resolves_to: string | null;
+}
+
+export interface WeekCount {
+  week: string;
+  count: number;
+}
+
+export interface FieldFigure {
+  field: string;
+  type: string;
+  filled: number;
+  rows: number;
+  number?: { sum: number; average: number; min: number; max: number };
+  range?: { first: string; last: string };
+  top?: { value: string; count: number }[];
+  distinct?: number;
+}
+
+export interface ProfileDocument {
+  id: string;
+  name: string;
+  file_name: string;
+  status: string;
+  received_at: string;
+  rows: number;
+}
+
+export interface Paged<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface ThingSummary {
+  key: string;
+  id: string;
+  label: string;
+  documents: number;
+  first_seen: string;
+  last_seen: string;
+  /** Relative to the workspace: objects/{type}/things/{id} */
+  path: string;
+}
+
+export interface ObjectProfile {
+  object: {
+    type: string; description: string; icon: string; icon_chosen: boolean; multiple: boolean;
+    identity: { id_field: string; label_field: string } | null; fields: ObjectField[];
+  };
+  links: Record<string, string>;
+  referenced_by: { type: string; field: string }[];
+  stats: { documents: number; things: number; first_seen: string | null; last_seen: string | null; rows: number; records_read: number; records_capped: boolean };
+  weeks: WeekCount[];
+  figures: FieldFigure[];
+  things: Paged<ThingSummary> | null;
+  documents: Paged<ProfileDocument>;
+  screens: { slug: string; name: string }[];
+}
+
+export interface ThingProfile {
+  object: { type: string; icon: string; description: string };
+  thing: { key: string; id: string; label: string };
+  attributes: { field: string; type: string; value: unknown; other_values: string[]; resolves_to: string | null }[];
+  stats: { documents: number; first_seen: string | null; last_seen: string | null };
+  weeks: WeekCount[];
+  appears_with: { key: string; type: string; label: string; count: number; icon: string; path: string }[];
+  knowledge: { id: string; name: string; aliases: string[]; attributes: Record<string, unknown>; created_by: string } | null;
+  documents: Paged<ProfileDocument>;
+}
+
+/** Where a profile belongs: its organization and workspace. */
+export interface ProfileWhere {
+  organization: { id: string; name: string };
+  workspace: { id: string; name: string };
 }

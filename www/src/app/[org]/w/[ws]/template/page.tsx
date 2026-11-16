@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { ObjectIcon } from "@/components/objects/ObjectIcon";
 import { QualityView } from "@/components/quality/QualityView";
 import { Bar, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
@@ -48,7 +49,10 @@ function TemplateVersions() {
         // fields flow into columns instead.
         <div className="flex flex-col gap-5">
           {schema.objects.map((o) => (
-            <Panel key={o.type} title={o.type} aside={o.multiple === false ? "One per document" : "Many per document"}>
+            <Panel key={o.type}
+              title={<span className="flex items-center gap-2.5"><ObjectIcon name={o.icon} size="sm" />{o.type}</span>}
+              aside={<span className="flex items-center gap-3">{o.multiple === false ? "One per document" : "Many per document"}
+                <Link href={href(`objects/${encodeURIComponent(o.type)}`)} className="font-medium text-ink underline-offset-2 hover:underline">Open its page</Link></span>}>
               {o.description && <p className="mb-3 text-body text-muted">{o.description}</p>}
               <dl className="grid grid-cols-1 gap-x-8 @3xl:grid-cols-2 @6xl:grid-cols-3">
                 {o.fields.map((f) => {

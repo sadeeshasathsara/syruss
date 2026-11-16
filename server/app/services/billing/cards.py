@@ -2,6 +2,8 @@
 Paying invoices by card, through Stripe (methods/card.py makes the calls):
 
     checkout(invoice)        a Checkout page for what is due, reused while it is open
+    reconcile(invoice)       its Checkout pages as Stripe has them now: one paid while its webhook never arrived is
+                             recorded, an expired one is let go (so a finished page is never handed out again)
     handle(event)            what Stripe tells us, once per event: a payment that went through is recorded, and a card
                              the customer chose to keep is remembered for renewals
     charge_saved_card(...)   a renewal paid with the kept card, without the customer present
@@ -30,6 +32,14 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+async def has_open_checkout(db: AsyncSession, invoice_id: str) -> bool:
+    return (await db.execute(select(CardCheckout.id).where(CardCheckout.invoice_id == invoice_id, CardCheckout.status == "open").limit(1))).first() is not None
+
+
+def invoice_url(slug: str, invoice_id: str, paid: bool) -> str:
+    return _invoice_url(slug, invoice_id, paid)
+
+
 def _invoice_url(slug: str, invoice_id: str, paid: bool) -> str:
     return f"{settings.PUBLIC_APP_URL.rstrip('/')}/{slug}/settings/billing/invoices?invoice={invoice_id}" + ("&paid=card" if paid else "")
 
@@ -55,6 +65,33 @@ async def checkout(db: AsyncSession, invoice: Invoice, *, slug: str, save_card: 
                         save_card=save_card, expires_at=card_api.when(session["expires_at"])))
     await db.flush()
     return session["url"]
+
+
+async def reconcile(db: AsyncSession, invoice: Invoice) -> Paid:
+    """
+    Asks Stripe about the invoice's Checkout pages that are still open here. Stripe's webhook normally says when one
+    is paid or expires; if it never arrived (the server was down, or the webhook pointed elsewhere), the page would
+    look open here while Stripe has finished it, and paying again would only show Stripe's "you're all done". A paid
+    one is recorded as the webhook would have (once: a late webhook then changes nothing). Returns the invoice it paid.
+    """
+    pages = (await db.execute(select(CardCheckout).where(CardCheckout.invoice_id == invoice.id, CardCheckout.status == "open")
+                              .order_by(CardCheckout.created_at.desc()).limit(5))).scalars().all()
+    paid: Paid = None
+    for page in pages:
+        try:
+            now = await asyncio.to_thread(card_api.get_checkout, page.session_id)
+        except Exception as exc:  # noqa: BLE001  (Stripe unreachable: the webhook may still come)
+            logger.warning("Couldn't ask Stripe about checkout %s: %s", page.session_id, exc)
+            continue
+        if now["status"] == "complete" and now["payment_status"] == "paid":
+            page.status = "completed"
+            paid = await _record(db, invoice.id, int(now["amount_total"]), now["payment_intent"]) or paid
+            if page.save_card and now["payment_intent"]:
+                await _remember_card(db, page.tenant_id, now["payment_intent"], now["customer"])
+        elif now["status"] == "expired":
+            page.status = "expired"
+    await db.flush()
+    return paid
 
 
 async def _record(db: AsyncSession, invoice_id: Optional[str], amount_cents: int, charge_ref: Optional[str]) -> Paid:

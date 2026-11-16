@@ -23,4 +23,6 @@ class MockIAMProvider(BaseIAMProvider):
             auth_time=int(request.headers["X-Auth-Time"]) if "X-Auth-Time" in request.headers else int(time.time()),
             # The app the token came from: the everyday app unless a test says otherwise (the admin app sends syruss-admin)
             client_id=request.headers.get("X-Client-ID", "syruss-app"),
+            # How they signed in: a password and a one-time code, unless a test says otherwise
+            amr=[m for m in request.headers.get("X-Amr", "pwd otp").split() if m],
         )

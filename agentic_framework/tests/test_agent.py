@@ -222,3 +222,31 @@ async def test_chat_mode_has_only_the_chat_tools(core, memory):
                      api=core.api(), memory=memory)
     outcome = await execute(ctx, "submit_record", {}, chat.tools)
     assert outcome.text.startswith("ERROR: unknown tool 'submit_record'")
+
+
+async def test_each_step_keeps_its_tokens_thinking_and_additions_and_the_run_its_prompt(core, memory, monkeypatch):
+    """What staff open in the admin app: each step's tokens, the model's thinking, what the loop added, and the prompt."""
+    import agentic_framework.worker as worker_module
+    usage = {"input_tokens": 120, "output_tokens": 30, "total_tokens": 150}
+    model = ScriptedModel(script=[
+        AIMessage(content=[{"type": "thinking", "thinking": "Page 1 first."}, {"type": "text", "text": "Looking."}],
+                  tool_calls=[call("view_document", {"document_id": "doc8"})], usage_metadata=usage),
+        AIMessage(content="", usage_metadata=usage),  # stops without an outcome: the loop reminds it
+        AIMessage(content="", tool_calls=[call("submit_record", {
+            "document_id": "doc8", "data_json": json.dumps(RECORD), "decision": "COMMIT", "confidence": 0.9,
+            "unrecorded_content": "none"})], usage_metadata=usage),
+        AIMessage(content="Done with doc8.", usage_metadata=usage),
+    ])
+    worker = AgentWorker(WorkspaceAgent(model), memory, producer=None)
+    monkeypatch.setattr(worker_module, "CoreAPI", lambda token: core.api())
+    await worker.handle(make_event("document.submitted", {"document_id": "doc8"}, event_id="e-detail"))
+
+    progress = [b for m, p, b in core.requests if m == "PATCH" and p.startswith("/traces/")]
+    with_prompt = [b for b in progress if "prompt" in b]
+    assert len(with_prompt) == 1 and "doc8" in with_prompt[0]["prompt"]["briefing"] and with_prompt[0]["prompt"]["system"]
+    assert "view_document" in with_prompt[0]["prompt"]["tools"]
+    final = next(b for m, p, b in core.requests if m == "POST" and p == "/traces")
+    first, _, third = final["steps"][:3]
+    assert first["usage"] == usage and first["reasoning"] == "Page 1 first." and first["thought"] == "Looking."
+    assert "added" in third and "doc8 has no outcome" in third["added"][0]   # the reminder it was sent before that call
+    assert final["prompt"]["briefing"] == with_prompt[0]["prompt"]["briefing"]

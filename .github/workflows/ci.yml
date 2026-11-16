@@ -56,6 +56,7 @@ jobs:
     outputs:
       server: ${{ steps.filter.outputs.server }}
       agent: ${{ steps.filter.outputs.agent }}
+      mail: ${{ steps.filter.outputs.mail }}
       www: ${{ steps.filter.outputs.www }}
       site: ${{ steps.filter.outputs.site }}
       admin: ${{ steps.filter.outputs.admin }}
@@ -73,9 +74,48 @@ jobs:
           echo "Changed files:"; echo "$CHANGED"
           echo "server=$(echo "$CHANGED" | grep -qE '^(server/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
           echo "agent=$(echo "$CHANGED"  | grep -qE '^(agentic_framework/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "mail=$(echo "$CHANGED"   | grep -qE '^(mail/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
           echo "www=$(echo "$CHANGED"    | grep -qE '^(www/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
           echo "site=$(echo "$CHANGED"   | grep -qE '^(site/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
           echo "admin=$(echo "$CHANGED"  | grep -qE '^(admin/|\.github/workflows/ci\.yml)' && echo true || echo false)" >> $GITHUB_OUTPUT
+
+  test-mail:
+    name: Mail Service Tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.mail == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: mail/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r mail/requirements.txt
+      - name: Run Pytest Suite
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PASSWORD: testpassword
+        run: |
+          cd mail
+          pytest -v --tb=short
 
   typecheck-frontend:
     name: Frontend Typecheck & Build
@@ -101,7 +141,7 @@ jobs:
         if: needs.detect-changes.outputs.www == 'true'
         run: |
           cd www
-          npm ci || npm install
+          npm ci
           npx tsc --noEmit
           npx eslint src   # errors fail the check; warnings are shown
 
@@ -115,7 +155,7 @@ jobs:
         if: needs.detect-changes.outputs.site == 'true'
         run: |
           cd site
-          npm ci || npm install
+          npm ci
           npx tsc --noEmit
           npx eslint src   # errors fail the check; warnings are shown
 
@@ -123,7 +163,7 @@ jobs:
         if: needs.detect-changes.outputs.admin == 'true'
         run: |
           cd admin
-          npm ci || npm install
+          npm ci
           npx tsc --noEmit
           npx eslint src   # errors fail the check; warnings are shown
 

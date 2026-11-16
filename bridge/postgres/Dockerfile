@@ -3,7 +3,7 @@
 #   Apache AGE  a property graph inside Postgres (people, sites, documents and how they relate),
 #               queried with openCypher, in the same transactions as everything else
 # Same base as before (16-alpine), so an existing data volume keeps working unchanged.
-FROM postgres:16-alpine
+FROM postgres:16-alpine@sha256:f377d590e5474681d4d7838635031a2b50647923b7abfa803ce9b5ff35d5c663
 
 ARG PGVECTOR_VERSION=v0.8.7
 ARG AGE_VERSION=PG16/v1.6.0-rc0

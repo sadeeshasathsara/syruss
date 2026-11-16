@@ -10,7 +10,6 @@ Two levels, so staff see what is going on without reading customers' data:
   run:{run_id}     every event of one run as it happens, its thoughts and tool results included
   document:{id}    every event about one document
 
-Content listeners (run, document) are opened only with an access grant to the organization (sysadmin/support_access).
 
 Every server process sees every event (kafka_ws_bridge.deliver), so each one serves the listeners connected to it.
 A listener's queue is bounded: a slow one loses its oldest events and is told how many, it never holds the platform up.
@@ -96,6 +95,12 @@ def _send(key: str, event: Dict[str, Any]) -> None:
             listener.offer(event)
 
 
+def broadcast(key: str, event: Dict[str, Any]) -> None:
+    """Puts an event on a channel for this process's listeners. For things every server process learns by itself (the mail
+    service's directory is read by each process), so it needs no trip through Kafka."""
+    _send(key, {"seq": next(_seq), "at": datetime.now(timezone.utc).isoformat(), **event})
+
+
 def _fact(kind: str, payload: Dict[str, Any], **fields) -> Dict[str, Any]:
     return {"seq": next(_seq), "kind": kind, "at": payload.get("timestamp") or datetime.now(timezone.utc).isoformat(),
             "tenant_id": payload.get("tenant_id"), "template_id": payload.get("template_id"),
@@ -148,6 +153,10 @@ def deliver(payload: Dict[str, Any]) -> None:
     if not _listeners:
         return
     try:
+        channel = str(payload.get("channel_id") or "")
+        if channel.startswith("support:"):  # live support: the staff queue, or one chat (services/support/live)
+            _send(channel, {"kind": payload.get("event_type"), **(payload.get("data") or {})})
+            return
         if payload.get("channel_id") == OPS:  # a fact the platform sent itself (a run started, stepped or ended)
             _send("ops", {"seq": next(_seq), **(payload.get("data") or {})})
             run = (payload.get("data") or {}).get("run_id")

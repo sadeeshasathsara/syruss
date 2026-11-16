@@ -1,14 +1,16 @@
 """
 Traces: the record of each run.
 """
+import hashlib
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.models.outbox import AgentEventOutbox
-from app.models.trace import AgentExecutionTrace
+from app.models.trace import AgentExecutionTrace, AgentPrompt
 from app.services import budget_service, workspace_events
 from app.services.live import platform_feed
 from app.api.internal.agent_tools.scope import Workspace, get_workspace
@@ -30,11 +32,19 @@ class TraceStart(BaseModel):
     attempt: int = Field(1, ge=1)
 
 
+class PromptIn(BaseModel):
+    """What the run was given before its first model call."""
+    system: str = Field("", max_length=400_000)
+    briefing: str = Field("", max_length=400_000)
+    tools: List[str] = Field(default_factory=list)
+
+
 class TraceProgress(BaseModel):
     steps: List[Dict[str, Any]] = Field(default_factory=list, description="New or changed steps; a step replaces the one with its number")
     usage: Dict[str, Any] = Field(default_factory=dict)
     model_calls: int = 0
     cost_usd: Optional[float] = None
+    prompt: Optional[PromptIn] = None
 
 
 class TraceBody(BaseModel):
@@ -53,6 +63,26 @@ class TraceBody(BaseModel):
     model_calls: int = 0
     cost_usd: Optional[float] = None
     attempt: int = Field(1, ge=1)
+    prompt: Optional[PromptIn] = None
+
+
+async def _prompt(ws: Workspace, trace: AgentExecutionTrace, prompt: Optional[PromptIn]) -> None:
+    """Keeps what the run was given, once: the system prompt by its hash (shared by every run that had it)."""
+    if prompt is None or trace.system_prompt_hash:
+        return
+    digest = hashlib.sha256(prompt.system.encode("utf-8")).hexdigest()
+    await ws.db.execute(pg_insert(AgentPrompt).values(hash=digest, text=prompt.system, created_at=datetime.now(timezone.utc))
+                        .on_conflict_do_nothing(index_elements=["hash"]))
+    trace.system_prompt_hash, trace.briefing, trace.tools = digest, prompt.briefing, prompt.tools
+
+
+async def _link(ws: Workspace, trace: AgentExecutionTrace) -> None:
+    """Links a new run of a document to the document's run before it."""
+    if not trace.document_id or trace.previous_run_id:
+        return
+    trace.previous_run_id = (await ws.db.execute(select(AgentExecutionTrace.id).where(
+        AgentExecutionTrace.document_id == trace.document_id, AgentExecutionTrace.id != trace.id)
+        .order_by(AgentExecutionTrace.started_at.desc()).limit(1))).scalar_one_or_none()
 
 
 def _origin(trace: AgentExecutionTrace, origin: Dict[str, Any]) -> None:
@@ -100,6 +130,7 @@ async def start_trace(body: TraceStart, ws: Workspace = Depends(get_workspace)):
             run_id=body.run_id, event_id=ws.event_id, attempt=body.attempt, queued_at=event.created_at if event else None,
         )
         _origin(trace, body.origin)
+        await _link(ws, trace)
         ws.db.add(trace)
         await ws.db.commit()
     await platform_feed.publish_fact("run.started", tenant_id=ws.tenant_id, template_id=ws.template_id, **run_fact(trace))
@@ -123,6 +154,7 @@ async def trace_progress(run_id: str, body: TraceProgress, ws: Workspace = Depen
     trace.current_tool = ((last.get("tool_calls") or [{}])[-1].get("tool_name") or None) if last.get("tool_calls") else None
     trace.last_step_at = datetime.now(timezone.utc)
     _usage(trace, body.usage, body.model_calls, body.cost_usd)
+    await _prompt(ws, trace, body.prompt)
     await ws.db.commit()
     await platform_feed.publish_fact("run.step", tenant_id=ws.tenant_id, template_id=ws.template_id, **run_fact(trace))
     return {"id": trace.id, "status": trace.status}
@@ -148,6 +180,8 @@ async def report_trace(body: TraceBody, ws: Workspace = Depends(get_workspace)):
     trace.current_step = len(body.steps) or None
     _origin(trace, body.origin)
     _usage(trace, body.usage, body.model_calls, body.cost_usd)
+    await _prompt(ws, trace, body.prompt)
+    await _link(ws, trace)
     await ws.db.flush()
     await budget_service.check_alerts(ws.db, tenant_id=ws.tenant_id, template_id=ws.template_id)
     await ws.db.commit()

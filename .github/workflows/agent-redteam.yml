@@ -1,0 +1,52 @@
+name: Agent Red Team
+
+# Attacks on the agent, against the real model (agentic_framework/redteam.py): asking for its instructions, for other
+# people's data or for the platform's weak points, and documents that try to steer it, smuggle data out through an
+# image, or carry a secret. A change to the agent's charter, tools or model fails here when it gives in.
+# Runs on pull requests that change the agent, every Monday (models change underneath), and by hand.
+on:
+  pull_request:
+    branches: [dev, test, main]
+    paths:
+      - "agentic_framework/agent/**"
+      - "agentic_framework/llm.py"
+      - "agentic_framework/redteam.py"
+      - ".github/workflows/agent-redteam.yml"
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      tries:
+        description: "Times each attack is tried"
+        default: "2"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  red-team:
+    name: Attack the agent
+    runs-on: ubuntu-latest
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip without a model key
+        if: env.GEMINI_API_KEY == ''
+        run: echo "::warning::Set the GEMINI_API_KEY repository secret to run the agent red team." && exit 0
+      - uses: actions/setup-python@v5
+        if: env.GEMINI_API_KEY != ''
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: agentic_framework/requirements.txt
+      - name: Install
+        if: env.GEMINI_API_KEY != ''
+        run: pip install -r agentic_framework/requirements.txt
+      - name: Attack
+        if: env.GEMINI_API_KEY != ''
+        run: python -m agentic_framework.redteam --tries "${{ github.event.inputs.tries || '2' }}"

@@ -4,7 +4,6 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo } from "react";
-import { field } from "@/components/ops/Bits";
 import { Bar, Empty, ErrorNote, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
@@ -12,6 +11,7 @@ import { api } from "@/lib/api";
 import { ago, cn, dateTime } from "@/lib/format";
 import { STATUS, duration, hoursAgo, short, status, tokens, trigger, usd, where } from "@/lib/runs";
 import type { RunStats } from "@/lib/types";
+import { Select } from "@/components/ui/Select";
 
 const PERIODS = [
   { key: "1", label: "Last hour" },
@@ -62,12 +62,12 @@ function Runs() {
       />
 
       <div className="flex flex-wrap items-end gap-2">
-        <Select label="When" value={hours} onChange={(v) => set("hours", v)} options={PERIODS.map((p) => [p.key, p.label])} />
-        <Select label="Outcome" value={get("status") ?? ""} onChange={(v) => set("status", v)}
+        <Filter label="When" value={hours} onChange={(v) => set("hours", v)} options={PERIODS.map((p) => [p.key, p.label])} />
+        <Filter label="Outcome" value={get("status") ?? ""} onChange={(v) => set("status", v)}
           options={[["", "Any"], ["FAILURES", "Failed, gave up or lost"], ...Object.entries(STATUS).map(([k, s]) => [k, s.label] as [string, string])]} />
-        <Select label="Work" value={get("trigger") ?? ""} onChange={(v) => set("trigger", v)} options={[["", "Any"], ...(first?.triggers ?? []).map((t) => [t, trigger(t)] as [string, string])]} />
-        <Select label="Model" value={get("model") ?? ""} onChange={(v) => set("model", v)} options={[["", "Any"], ...(first?.models ?? []).map((m) => [m, m] as [string, string])]} />
-        <Select label="Asked by" value={get("origin") ?? ""} onChange={(v) => set("origin", v)} options={[["", "Anyone"], ["user", "A person or API key"], ["system", "The platform"]]} />
+        <Filter label="Work" value={get("trigger") ?? ""} onChange={(v) => set("trigger", v)} options={[["", "Any"], ...(first?.triggers ?? []).map((t) => [t, trigger(t)] as [string, string])]} />
+        <Filter label="Model" value={get("model") ?? ""} onChange={(v) => set("model", v)} options={[["", "Any"], ...(first?.models ?? []).map((m) => [m, m] as [string, string])]} />
+        <Filter label="Asked by" value={get("origin") ?? ""} onChange={(v) => set("origin", v)} options={[["", "Anyone"], ["user", "A person or API key"], ["system", "The platform"]]} />
         {scoped && (
           <Button onClick={() => router.replace(`/runs?hours=${hours}`)}>
             Only {filters.document_id ? `document ${short(filters.document_id)}` : where(names, filters.tenant_id, filters.workspace_id)} ✕
@@ -129,13 +129,13 @@ function Runs() {
   );
 }
 
-function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: [string, string][] }) {
+function Filter({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: [string, string][] }) {
   return (
     <label className="flex flex-col gap-1 text-meta text-muted">
       {label}
-      <select value={value} onChange={(e) => onChange(e.target.value)} className={cn(field, "max-w-[220px]")}>
+      <Select value={value} onValueChange={onChange} className="max-w-[220px]">
         {options.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-      </select>
+      </Select>
     </label>
   );
 }

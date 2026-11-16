@@ -10,11 +10,13 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
 import { Switch } from "@/components/ui/Switch";
-import { ACCOUNT_URL, useMe } from "@/lib/access";
+import { useMe } from "@/lib/access";
 import { api } from "@/lib/api";
-import { applyTheme, useTheme } from "@/lib/browser";
+import { applyTheme, loadPage, useTheme } from "@/lib/browser";
 import { ago, cn, dateTime } from "@/lib/format";
 import { setSound, useSoundOn } from "@/lib/sound";
+import { SignInMethods } from "./signin";
+import { usePreservedState } from "@/lib/resume";
 
 // ---- the organization ---------------------------------------------------------------------------
 
@@ -68,9 +70,9 @@ export function OrganizationGeneral() {
 export function CloseOrganization() {
   const { me } = useMe();
   const overview = useQuery({ queryKey: ["org-overview", 30], queryFn: () => api.org.overview(30) });
-  const [typed, setTyped] = useState("");
+  const [typed, setTyped] = usePreservedState("org.close.typed", "");
   const name = overview.data?.organization.name ?? "";
-  const close = useMutation({ mutationFn: () => api.org.close(typed.trim()), onSuccess: () => window.location.assign("/signed-out") });
+  const close = useMutation({ mutationFn: () => api.org.close(typed.trim()), onSuccess: () => loadPage("/signed-out") });
   const owner = me?.org_role === "owner";
 
   return (
@@ -95,17 +97,11 @@ export function SignInSettings() {
   const { me } = useMe();
   return (
     <div className="flex flex-col">
-      <SettingsHeader title="Sign-in" description="How you prove it is you. Your password and two-step verification are kept by our sign-in service." />
+      <SettingsHeader title="Sign-in" description="How you prove it is you: your password, two-step verification and Google." />
       <Section title="Your email" description="This is your sign-in and where codes and invitations arrive.">
         <p className="text-body text-ink">{me?.email ?? <Bar className="inline-block h-4 w-48" />}</p>
       </Section>
-      <Section title="Password and two-step verification" description="Change your password, or add an authenticator app so a stolen password isn't enough.">
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="secondary"><a href={`${ACCOUNT_URL}/#/security/signingin`}>Change password</a></Button>
-          <Button asChild variant="secondary"><a href={`${ACCOUNT_URL}/#/security/signingin`}>Set up two-step verification</a></Button>
-        </div>
-        <p className="mt-3 text-meta text-muted">You&apos;ll be asked to sign in again first. Risky actions here always ask for a recent sign-in.</p>
-      </Section>
+      <SignInMethods />
       <DeleteAccount email={me?.email ?? ""} />
     </div>
   );
@@ -113,8 +109,8 @@ export function SignInSettings() {
 
 /** Leaving Syruss for good. Typed confirmation, a recent sign-in, and the server refuses while an organization would be left ownerless. */
 function DeleteAccount({ email }: { email: string }) {
-  const [typed, setTyped] = useState("");
-  const remove = useMutation({ mutationFn: () => api.org.deleteMyAccount(), onSuccess: () => window.location.assign("/signed-out") });
+  const [typed, setTyped] = usePreservedState("account.delete.typed", "");
+  const remove = useMutation({ mutationFn: () => api.org.deleteMyAccount(), onSuccess: () => loadPage("/signed-out") });
   const sure = !!email && typed.trim().toLowerCase() === email.toLowerCase();
   return (
     <Section title="Delete your account" description="You leave every organization and workspace, and your name and details are removed. Work you did stays with the organizations it belongs to. This can't be undone.">

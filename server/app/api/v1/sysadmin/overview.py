@@ -17,6 +17,7 @@ from app.core.platform_permissions import PLATFORM_PERMISSIONS, PLATFORM_ROLES
 from app.models.delivery import Delivery
 from app.models.document import Document, DocumentRole, DocumentStatus
 from app.models.identity import User
+from app.models.mail import MailOutbox
 from app.models.outbox import AgentEventOutbox
 from app.models.tenant import Tenant
 from app.models.trace import AgentExecutionTrace
@@ -35,7 +36,10 @@ EVENTS_LATE_AFTER = timedelta(minutes=5)
 async def me(staff: Staff = Depends(current_staff)) -> Dict[str, Any]:
     """You, as the platform staff sees you: what the admin app shows and hides follows from this."""
     return {**staff.model_dump(exclude={"auth_time", "ip"}), "role_name": staff.role.title(),
-            "roles": PLATFORM_ROLES, "permission_names": PLATFORM_PERMISSIONS}
+            "roles": PLATFORM_ROLES, "permission_names": PLATFORM_PERMISSIONS,
+            # The admin app signs out after idle_minutes without use; the sign-in itself ends at session_ends_at
+            "session": {"idle_minutes": settings.STAFF_IDLE_MINUTES,
+                        "ends_at": datetime.fromtimestamp((staff.auth_time or 0) + settings.STAFF_SESSION_HOURS * 3600, timezone.utc)}}
 
 
 @router.get("/stats", dependencies=[Depends(require_staff())])
@@ -125,8 +129,20 @@ async def health(db: AsyncSession = Depends(get_db_session)) -> Dict[str, Any]:
             return {"status": "degraded", "detail": f"{late} event(s) sent over 5 minutes ago have no run yet"}
         return {"status": "ok", "detail": f"Last run {last:%d %b %H:%M} UTC" if last else "No runs yet"}
 
+    async def mail():
+        if settings.MAIL_BACKEND.lower() != "service":
+            return {"status": "degraded", "detail": f"Mail is only {settings.MAIL_BACKEND.lower()}: nothing is sent"}
+        dead = (await db.execute(select(func.count(MailOutbox.id)).where(
+            MailOutbox.status == "dead", MailOutbox.done_at > now - timedelta(days=1)))).scalar()
+        waiting = (await db.execute(select(func.min(MailOutbox.created_at)).where(MailOutbox.status.in_(("queued", "retrying"))))).scalar()
+        if dead:
+            return {"status": "degraded", "detail": f"{dead} email(s) couldn't be sent in the last day"}
+        if waiting and now - waiting > EVENTS_LATE_AFTER:
+            return {"status": "degraded", "detail": f"Email has waited since {waiting:%H:%M} UTC"}
+        return {"status": "ok", "detail": "Mail service sending, nothing waiting"}
+
     checks = {"database": ("Database", database), "storage": ("File storage", storage), "sign_in": ("Sign-in", sign_in),
-              "events": ("Event queue", events), "agent": ("Agent", agent)}
+              "events": ("Event queue", events), "agent": ("Agent", agent), "mail": ("Email", mail)}
     # One after another: three of the checks share the request's database session, which can't run two queries at once.
     results = {}
     for key, (_, check) in checks.items():

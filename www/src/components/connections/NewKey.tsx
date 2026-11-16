@@ -10,6 +10,7 @@ import { ShowOnce } from "@/components/ui/ShowOnce";
 import { api } from "@/lib/api";
 import type { IntakeChannelInfo } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
+import { usePreservedState } from "@/lib/resume";
 
 const EXPIRY = [
   { value: "never", label: "Never" },
@@ -26,12 +27,12 @@ const MODES = [
 export function NewKeyDialog({ channel, open, onOpenChange }: { channel: IntakeChannelInfo; open: boolean; onOpenChange: (open: boolean) => void }) {
   const { workspace } = useWorkspace();
   const queryClient = useQueryClient();
-  const [name, setName] = useState("");
-  const [mode, setMode] = useState<"live" | "test">("live");
-  const [expiry, setExpiry] = useState<(typeof EXPIRY)[number]["value"]>("365");
-  const [rate, setRate] = useState("60");
-  const [quota, setQuota] = useState("");
-  const [addresses, setAddresses] = useState("");
+  const [name, setName] = usePreservedState("key.name", "");
+  const [mode, setMode] = usePreservedState<"live" | "test">("key.mode", "live");
+  const [expiry, setExpiry] = usePreservedState<(typeof EXPIRY)[number]["value"]>("key.expiry", "365");
+  const [rate, setRate] = usePreservedState("key.rate", "60");
+  const [quota, setQuota] = usePreservedState("key.quota", "");
+  const [addresses, setAddresses] = usePreservedState("key.addresses", "");
   const [secret, setSecret] = useState<string | null>(null);
 
   const reset = () => {

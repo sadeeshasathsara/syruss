@@ -33,6 +33,9 @@ from app.core.agent_token import mint_agent_token
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.outbox import AgentEventOutbox
+from app.models.template import DocumentTemplate
+from app.services import platform_controls
+from app.core.kafka_security import kafka_security
 
 try:
     from aiokafka import AIOKafkaProducer
@@ -144,7 +147,7 @@ class AgentEventRelay:
         if self._producer:
             return True
         try:
-            producer = AIOKafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, acks="all")
+            producer = AIOKafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(), acks="all")
             await producer.start()
             self._producer = producer
             logger.info("Agent event relay connected to Kafka at %s", settings.KAFKA_BOOTSTRAP_SERVERS)
@@ -175,7 +178,14 @@ class AgentEventRelay:
             waiting = (await db.execute(
                 select(AgentEventOutbox.template_id).where(AgentEventOutbox.published_at.is_(None)).distinct()
             )).scalars().all()
+            controls = await platform_controls.current()
+            if not controls.agent or controls.maintenance:
+                return 0  # staff paused the agent (or maintenance): events wait in the outbox, in order
+            paused_tenants = controls.agent_paused_orgs
             held = [t for t in waiting if await budget_service.is_paused(db, t)]
+            if paused_tenants:
+                held += list((await db.execute(select(DocumentTemplate.id).where(
+                    DocumentTemplate.tenant_id.in_(paused_tenants), DocumentTemplate.id.in_(waiting)))).scalars().all())
             stmt = (
                 select(AgentEventOutbox)
                 .where(AgentEventOutbox.published_at.is_(None), AgentEventOutbox.template_id.not_in(held))

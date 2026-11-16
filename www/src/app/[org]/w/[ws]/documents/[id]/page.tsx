@@ -121,6 +121,7 @@ export default function DocumentDetail() {
           {e ? (
             <>
               <RecordView
+                cards
                 data={e.extracted_data}
                 schema={template.data?.schema_definition}
                 evidence={e.evidence_records}

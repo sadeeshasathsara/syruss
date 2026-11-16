@@ -25,9 +25,10 @@ from app.models.jobs import WorkspaceJob
 from app.models.screen import WorkspaceScreen
 from app.models.outbox import AgentEventOutbox
 from app.models.template import DocumentTemplate
-from app.services import data_lifecycle, graph_service, memory_service, run_watch, settings_service, workspace_events
+from app.services import data_lifecycle, graph_service, memory_service, object_index, run_watch, settings_service, staff_offboarding, workspace_events
 from app.services.agent_events import agent_event_relay, enqueue_agent_event
 from app.services.billing import dunning, service as billing
+from app.services.support import live as support_live, sla as support_sla
 
 logger = logging.getLogger("core.scheduler")
 
@@ -77,6 +78,28 @@ async def sync_graph(db: AsyncSession, template: DocumentTemplate) -> Optional[D
     job.state = state
     job.last_run_at = datetime.now(timezone.utc)
     job.last_status = "age" if state["age_synced"] else "sql"
+    return state
+
+
+# ---------------------------------------------------------------------------
+# objects (the index behind object and thing profiles)
+# ---------------------------------------------------------------------------
+
+async def sync_objects(db: AsyncSession, template: DocumentTemplate) -> Optional[Dict[str, Any]]:
+    """Indexes every committed record of the workspace: on the first pass, and again when the active template changes."""
+    job = await _claim(db, template, "objects")
+    if job is None:
+        return None
+    state = dict(job.state or {})
+    if state.get("version") == template.active_version_id:
+        return state
+    state["rows"] = await object_index.rebuild(
+        db, tenant_id=template.tenant_id, template_id=template.id, schema=template.schema_definition,
+    )
+    state["version"] = template.active_version_id
+    job.state = state
+    job.last_run_at = datetime.now(timezone.utc)
+    job.last_status = "built"
     return state
 
 
@@ -213,7 +236,9 @@ def job_dict(job: Optional[WorkspaceJob]) -> Optional[Dict[str, Any]]:
 async def tick(now: Optional[datetime] = None) -> None:
     """One pass over every published workspace; each workspace's jobs commit on their own."""
     # the platform's own, across every workspace (renewals after periods have rolled on)
-    for watch in (run_watch.mark_lost, run_watch.prune_steps, billing.roll_periods, dunning.run, data_lifecycle.purge_closed):
+    for watch in (run_watch.mark_lost, run_watch.prune_steps, billing.roll_periods, dunning.run, data_lifecycle.purge_closed,
+                  support_sla.run, support_live.expire,
+                  staff_offboarding.run):
         async with AsyncSessionLocal() as db:
             try:
                 await watch(db, now)
@@ -223,13 +248,13 @@ async def tick(now: Optional[datetime] = None) -> None:
     async with AsyncSessionLocal() as db:
         ids = (await db.execute(select(DocumentTemplate.id).where(DocumentTemplate.active_version_id.is_not(None)))).scalars().all()
     for template_id in ids:
-        for job in (sync_graph, reflect, insights):
+        for job in (sync_graph, sync_objects, reflect, insights):
             async with AsyncSessionLocal() as db:
                 try:
                     template = await db.get(DocumentTemplate, template_id)
                     if template is None:
                         break
-                    result = await (job(db, template) if job is sync_graph else job(db, template, now=now))
+                    result = await (job(db, template) if job in (sync_graph, sync_objects) else job(db, template, now=now))
                     await db.commit()
                     if job in (reflect, insights) and result and result["status"] == "woke_agent":
                         agent_event_relay.notify()

@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool = False
     MINIO_BUCKET_NAME: str = "documents"
 
-    # "development" or "production". Production refuses the mock sign-in and the destructive dev routes.
+    # "development" (someone's machine), "test" (the test server) or "production". The test server and production refuse
+    # to start with any development default below that would matter there (passwords, keys, localhost addresses):
+    # see deployment_problems in app/core/auth/dependencies.py. Production also refuses weakened security switches.
     ENV: str = "development"
     # Keycloak (authentication only: tokens carry who you are, never what you may do)
     OIDC_ISSUER: str = "http://localhost:8080/realms/syruss"
@@ -57,18 +59,27 @@ class Settings(BaseSettings):
     # The system admin app, for links in emails to Syruss's own staff (a payment slip to check)
     PUBLIC_ADMIN_URL: str = "http://localhost:3200"
 
-    # Email. "smtp" sends through SMTP_*; "console" only logs the message (local work without a mail server);
-    # "memory" keeps messages in a list (tests). Locally, Mailpit (bridge/docker-compose.yml) catches everything on 1025.
-    MAIL_BACKEND: str = "smtp"
-    SMTP_HOST: str = "localhost"
-    SMTP_PORT: int = 1025
-    SMTP_USERNAME: str = ""
-    SMTP_PASSWORD: str = ""
-    SMTP_SECURITY: str = "none"  # none | starttls | ssl
-    SMTP_TIMEOUT_SECONDS: int = 15
-    MAIL_FROM: str = "no-reply@syruss.local"
-    MAIL_FROM_NAME: str = "Syruss"
-    MAIL_REPLY_TO: str = ""
+    # Email. The server never talks to a mail server: "service" queues each message for the mail service (mail/), which
+    # holds the mail accounts and sends it; "console" only logs it (local work without the mail service); "memory" keeps
+    # messages in a list (tests). See services/notifications/transport.py.
+    MAIL_BACKEND: str = "service"
+    MAIL_OUTBOUND_TOPIC: str = "mail.outbound"
+    MAIL_EVENTS_TOPIC: str = "mail.events"
+    MAIL_INBOUND_TOPIC: str = "mail.inbound"
+    # The server talks to the mail service only over Kafka (services/mail_bus.py): signed commands, answers, the mail service's
+    # directory of public state, and an acknowledgement for each email it hands over.
+    MAIL_COMMANDS_TOPIC: str = "mail.commands"
+    MAIL_REPLIES_TOPIC: str = "mail.replies"
+    MAIL_DIRECTORY_TOPIC: str = "mail.directory"
+    MAIL_INBOUND_ACKS_TOPIC: str = "mail.inbound.acks"
+    # What commands are signed with (base64, 32 bytes): `python -m app.mail_signing_key` makes it, with the public half for mail.env.
+    # The public key the mail service signs its directory with (python -m mail signer). When set, the key secrets are sealed to is believed only
+    # if it carries the mail service's signature, so someone able to write to Kafka can't swap it. Required on a real server.
+    MAIL_SERVICE_PUBLIC_KEY: str = ""
+    MAIL_COMMAND_SIGNING_KEY: str = ""
+    # The sender's address and name, the reply address, the support mailbox, every mail server and credential are the mail service's
+    # (mail.env, and the admin app's Email page). The addresses the server needs it reads from the mail service's directory
+    # (services/mail_identity.py).
     # An invitation email can be sent again this often, no sooner
     MAIL_RESEND_SECONDS: int = 60
 
@@ -93,6 +104,13 @@ class Settings(BaseSettings):
     REQUIRE_RECENT_LOGIN: bool = True
     RECENT_LOGIN_MINUTES: int = 15
 
+    # Platform staff (the admin app): their sign-in must have included a one-time code (the token's amr says "otp"; the
+    # realm reports it once bridge/keycloak/harden.py has run), lasts STAFF_SESSION_HOURS from when they typed their
+    # password, and the admin app signs them out after STAFF_IDLE_MINUTES without using it
+    STAFF_REQUIRE_TWO_STEP: bool = True
+    STAFF_SESSION_HOURS: int = 8
+    STAFF_IDLE_MINUTES: int = 30
+
     # Browser origins allowed to call the API directly (comma-separated). Never "*": requests carry credentials.
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3100"
 
@@ -112,8 +130,19 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.ENV.lower() == "production"
 
+    @property
+    def is_deployed(self) -> bool:
+        """A real server people reach (the test server or production), where development defaults are refused."""
+        return self.ENV.lower() in ("test", "production")
+
     # Kafka (agent events out, agent telemetry in)
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
+    # Kafka login (kafka_security.py): off by default. TLS and SASL for any broker that is not on a private network.
+    KAFKA_SECURITY_PROTOCOL: str = "PLAINTEXT"   # PLAINTEXT | SSL | SASL_PLAINTEXT | SASL_SSL
+    KAFKA_SASL_MECHANISM: str = "SCRAM-SHA-512"
+    KAFKA_SASL_USERNAME: str = ""
+    KAFKA_SASL_PASSWORD: str = ""
+    KAFKA_SSL_CA_FILE: str = ""
     AGENT_EVENTS_TOPIC: str = "agent.events"
     AGENT_TELEMETRY_TOPIC: str = "agent.telemetry"
 
@@ -171,9 +200,6 @@ class Settings(BaseSettings):
     INTAKE_UPLOAD_MINUTES: int = 15                        # how long a presigned upload link works
     CLAMAV_HOST: str = ""                                  # when set, every intake file is scanned by clamd before it is stored
     CLAMAV_PORT: int = 3310
-    INTAKE_SMTP_PORT: int = 0                              # 0 = no built-in email receiver
-    INTAKE_SMTP_HOST: str = "0.0.0.0"
-    INTAKE_EMAIL_DOMAIN: str = "intake.syruss.local"       # the domain whose MX points at the receiver
     INTAKE_SFTP_PORT: int = 0                              # 0 = no built-in SFTP server
     INTAKE_SFTP_HOST: str = "0.0.0.0"
     INTAKE_SFTP_HOST_KEY: str = ""                         # path of the server's host key (created on first start when missing)

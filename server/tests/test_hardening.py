@@ -4,7 +4,7 @@ a production deployment must not start without.
 """
 import time
 import pytest
-from app.core.auth.dependencies import production_problems
+from app.core.auth.dependencies import deployment_problems, production_problems, validate_auth_config
 from app.core.config import settings
 from tests.conftest import create_template, ws
 
@@ -48,15 +48,46 @@ async def test_risky_actions_need_a_sign_in_from_the_last_few_minutes(client, mo
     assert (await client.delete(f"{API}/settings/api-keys/{key_id}", headers={**ws(tpl), "X-Auth-Time": stale["X-Auth-Time"]})).status_code == 204  # allowed once the rule is off
 
 
-def test_a_production_start_refuses_unsafe_settings(monkeypatch):
-    assert any("OIDC_ISSUER" in p for p in production_problems())  # the development issuer is http
-    monkeypatch.setattr(settings, "OIDC_ISSUER", "https://login.example.com/realms/syruss")
-    monkeypatch.setattr(settings, "PUBLIC_SITE_URL", "https://www.example.com")
-    monkeypatch.setattr(settings, "AGENT_TOKEN_SECRET", "a-real-secret-value")
-    monkeypatch.setattr(settings, "SECRETS_ENCRYPTION_KEY", "a-real-key")
-    monkeypatch.setattr(settings, "REQUIRE_TRUSTED_DEVICE", True)
-    assert production_problems() == []
+READY = {
+    "POSTGRES_PASSWORD": "a-real-db-password", "MINIO_ROOT_PASSWORD": "a-real-storage-password",
+    "AGENT_TOKEN_SECRET": "a-real-secret-value", "SECRETS_ENCRYPTION_KEY": "a-real-key",
+    "OIDC_ISSUER": "https://login.example.com/realms/syruss", "PUBLIC_SITE_URL": "https://www.example.com",
+    "PUBLIC_APP_URL": "https://app.example.com", "PUBLIC_ADMIN_URL": "https://admin.example.com",
+    "PUBLIC_API_URL": "https://api.example.com", "CORS_ORIGINS": "https://app.example.com,https://www.example.com",
+    "MAIL_BACKEND": "service", "MAIL_COMMAND_SIGNING_KEY": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+    "MAIL_SERVICE_PUBLIC_KEY": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=", "REQUIRE_TRUSTED_DEVICE": True,
+}
+
+
+def test_the_test_server_and_production_refuse_development_defaults(monkeypatch):
+    for name, value in READY.items():
+        monkeypatch.setattr(settings, name, value)
+    assert deployment_problems() == [] and production_problems() == []
+    # Each development default is named
+    dev = {"POSTGRES_PASSWORD": "postgrespassword", "MINIO_ROOT_PASSWORD": "minioadminpassword", "AGENT_TOKEN_SECRET": "dev-only-change-me",
+           "SECRETS_ENCRYPTION_KEY": "", "OIDC_ISSUER": "http://localhost:8080/realms/syruss", "PUBLIC_APP_URL": "http://localhost:3000",
+           "PUBLIC_ADMIN_URL": "https://admin.syruss.local", "PUBLIC_API_URL": "http://localhost:8000",
+           "CORS_ORIGINS": "https://app.example.com,http://localhost:3000", "MAIL_COMMAND_SIGNING_KEY": ""}
+    for name, value in dev.items():
+        monkeypatch.setattr(settings, name, value)
+        assert any(name in p for p in deployment_problems()), name
+        monkeypatch.setattr(settings, name, READY[name])
+    # Both real servers refuse them at startup; someone's machine doesn't
+    monkeypatch.setattr(settings, "POSTGRES_PASSWORD", "postgrespassword")
+    for env in ("test", "production"):
+        monkeypatch.setattr(settings, "ENV", env)
+        with pytest.raises(RuntimeError, match=f"Not safe to run as {env}: POSTGRES_PASSWORD"):
+            validate_auth_config()
+    monkeypatch.setattr(settings, "ENV", "prod")
+    with pytest.raises(RuntimeError, match="ENV must be one of"):
+        validate_auth_config()
+    monkeypatch.setattr(settings, "ENV", "development")
+    assert settings.is_deployed is False
+
+
+def test_security_switches_may_be_off_on_the_test_server_but_never_in_production(monkeypatch):
+    for name, value in READY.items():
+        monkeypatch.setattr(settings, name, value)
     monkeypatch.setattr(settings, "REQUIRE_TRUSTED_DEVICE", False)
-    monkeypatch.setattr(settings, "AGENT_TOKEN_SECRET", "dev-only-change-me")
-    problems = " ".join(production_problems())
-    assert "REQUIRE_TRUSTED_DEVICE" in problems and "AGENT_TOKEN_SECRET" in problems
+    assert deployment_problems() == []
+    assert any("REQUIRE_TRUSTED_DEVICE" in p for p in production_problems())

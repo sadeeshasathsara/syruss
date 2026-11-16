@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { InvoiceEditor, InvoiceTable } from "@/components/billing/Invoices";
 import { Label, StaffForm } from "@/components/billing/StaffForm";
 import { Fact, ReasonAction, field } from "@/components/ops/Bits";
@@ -15,6 +15,8 @@ import { api } from "@/lib/api";
 import { METHOD_LABEL, amount, money, price } from "@/lib/billing";
 import { cn, dateTime } from "@/lib/format";
 import type { CatalogItem, LimitInfo, OrgBilling } from "@/lib/types";
+import { Select } from "@/components/ui/Select";
+import { usePreservedState } from "@/lib/resume";
 
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—");
 
@@ -26,7 +28,7 @@ export default function OrganizationBilling() {
   const d = org.data;
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader back={{ href: "/billing", label: "← Billing" }} title={d ? d.organization.name : "Organization"}
+      <PageHeader back={{ href: "/billing/organizations", label: "← Billing" }} title={d ? d.organization.name : "Organization"}
         subtitle={d ? `${d.subscription.plan.name} plan · period ${day(d.subscription.period_start)} to ${day(d.subscription.period_end)}` : "Loading…"} />
       {org.isError && <ErrorNote message="Couldn't load this organization's billing." onRetry={() => org.refetch()} />}
       {!d || !setup.data || !catalog.data ? <Bar className="h-96 w-full rounded-card" /> : (
@@ -164,7 +166,7 @@ const CHANGES: { key: Change; label: string }[] = [
 
 function Changes({ d, limits, catalog }: { d: OrgBilling; limits: LimitInfo[]; catalog: CatalogItem[] }) {
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState<Change | null>(null);
+  const [open, setOpen] = usePreservedState<Change | null>("tenant.change.open", null);
   const id = d.organization.id;
   const onSale = useMemo(() => catalog.filter((i) => i.status === "published"), [catalog]);
   const plans = onSale.filter((i) => i.kind === "plan");
@@ -215,15 +217,15 @@ function Changes({ d, limits, catalog }: { d: OrgBilling; limits: LimitInfo[]; c
 }
 
 function PlanForm({ id, plans, current, onDone }: { id: string; plans: CatalogItem[]; current: string; onDone: () => void }) {
-  const [plan, setPlan] = useState(plans.find((p) => p.id !== current)?.id ?? "");
-  const [later, setLater] = useState(false);
+  const [plan, setPlan] = usePreservedState("tenant.plan.plan", plans.find((p) => p.id !== current)?.id ?? "");
+  const [later, setLater] = usePreservedState("tenant.plan.later", false);
   return (
     <StaffForm title="Change the plan" submit="Change it" busy="Changing…" ready={!!plan} onDone={onDone}
       onRun={(reason) => api.billing.change(id, "plan", { plan_id: plan, at_period_end: later, reason })}>
       <Label text="Plan">
-        <select value={plan} onChange={(e) => setPlan(e.target.value)} className={field}>
+        <Select value={plan} onValueChange={(v) => setPlan(v)}>
           {plans.map((p) => <option key={p.id} value={p.id}>{p.name} v{p.version} ({price(p)}){p.id === current ? " (now)" : ""}</option>)}
-        </select>
+        </Select>
       </Label>
       <label className="flex items-center gap-2 text-body text-ink"><input type="checkbox" checked={later} onChange={(e) => setLater(e.target.checked)} /> From the next period (a downgrade)</label>
     </StaffForm>
@@ -231,18 +233,18 @@ function PlanForm({ id, plans, current, onDone }: { id: string; plans: CatalogIt
 }
 
 function AddonForm({ id, addons, have, onDone }: { id: string; addons: CatalogItem[]; have: OrgBilling["limits"]["addons"]; onDone: () => void }) {
-  const [addon, setAddon] = useState(addons[0]?.id ?? have[0]?.addon.id ?? "");
+  const [addon, setAddon] = usePreservedState("tenant.addon.addon", addons[0]?.id ?? have[0]?.addon.id ?? "");
   const current = have.find((a) => a.addon.id === addon)?.quantity ?? 0;
-  const [quantity, setQuantity] = useState(current || 1);
+  const [quantity, setQuantity] = usePreservedState("tenant.addon.quantity", current || 1);
   const choices = [...addons, ...have.map((a) => a.addon).filter((a) => !addons.some((x) => x.id === a.id))];
   if (!choices.length) return <p className="text-body text-muted">No add-on is on sale. Create one under Plans and packs.</p>;
   return (
     <StaffForm title="How many of an add-on" submit={quantity ? "Set it" : "Remove it"} busy="Saving…" ready={!!addon} onDone={onDone}
       onRun={(reason) => api.billing.change(id, "addons", { addon_id: addon, quantity, reason })}>
       <Label text="Add-on">
-        <select value={addon} onChange={(e) => setAddon(e.target.value)} className={field}>
+        <Select value={addon} onValueChange={(v) => setAddon(v)}>
           {choices.map((a) => <option key={a.id} value={a.id}>{a.name} ({price(a)})</option>)}
-        </select>
+        </Select>
       </Label>
       <Label text={`Quantity (now ${current}; 0 removes it)`}>
         <input type="number" min={0} value={quantity} onChange={(e) => setQuantity(Math.max(0, Number(e.target.value)))} className={field} />
@@ -252,17 +254,17 @@ function AddonForm({ id, addons, have, onDone }: { id: string; addons: CatalogIt
 }
 
 function CreditsForm({ id, onDone }: { id: string; onDone: () => void }) {
-  const [pages, setPages] = useState(100);
-  const [kind, setKind] = useState<"grant" | "refund" | "adjustment">("grant");
+  const [pages, setPages] = usePreservedState("tenant.credit.pages", 100);
+  const [kind, setKind] = usePreservedState<"grant" | "refund" | "adjustment">("tenant.credit.kind", "grant");
   return (
     <StaffForm title="Give or correct prepaid credits" submit={pages >= 0 ? `Add ${pages.toLocaleString()} pages` : `Take back ${(-pages).toLocaleString()} pages`}
       busy="Saving…" ready={pages !== 0} onDone={onDone} onRun={(reason) => api.billing.change(id, "credits", { pages, kind, reason })}>
       <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
         <Label text="Pages (negative takes back)"><input type="number" value={pages} onChange={(e) => setPages(Number(e.target.value))} className={field} /></Label>
         <Label text="Kind">
-          <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} className={field}>
+          <Select value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
             <option value="grant">Given (goodwill, a deal)</option><option value="refund">Refund (pages we got wrong)</option><option value="adjustment">Correction</option>
-          </select>
+          </Select>
         </Label>
       </div>
       <p className="text-meta text-muted">Credits a customer paid for: record the payment instead, which adds them.</p>
@@ -271,10 +273,10 @@ function CreditsForm({ id, onDone }: { id: string; onDone: () => void }) {
 }
 
 function OverrideForm({ d, limits, onDone }: { d: OrgBilling; limits: LimitInfo[]; onDone: () => void }) {
-  const [key, setKey] = useState(limits[0]?.key ?? "");
-  const [value, setValue] = useState<string>("");
-  const [workspace, setWorkspace] = useState("");
-  const [until, setUntil] = useState("");
+  const [key, setKey] = usePreservedState("tenant.limit.key", limits[0]?.key ?? "");
+  const [value, setValue] = usePreservedState<string>("tenant.limit.value", "");
+  const [workspace, setWorkspace] = usePreservedState("tenant.limit.workspace", "");
+  const [until, setUntil] = usePreservedState("tenant.limit.until", "");
   const limit = limits.find((l) => l.key === key);
   return (
     <StaffForm title="Set a limit by hand" submit="Set it" busy="Saving…" ready={!!key} onDone={onDone}
@@ -282,17 +284,17 @@ function OverrideForm({ d, limits, onDone }: { d: OrgBilling; limits: LimitInfo[
         key, value: value === "" ? null : Number(value), template_id: workspace || null, expires_at: until ? new Date(until).toISOString() : null, reason })}>
       <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
         <Label text="Limit">
-          <select value={key} onChange={(e) => { setKey(e.target.value); setWorkspace(""); }} className={field}>
+          <Select value={key} onValueChange={(v) => { setKey(v); setWorkspace(""); }}>
             {limits.map((l) => <option key={l.key} value={l.key}>{l.label}</option>)}
-          </select>
+          </Select>
         </Label>
         <Label text="Value (empty: unlimited)"><input type="number" min={0} value={value} onChange={(e) => setValue(e.target.value)} className={field} placeholder="Unlimited" /></Label>
         {limit?.scope === "workspace" && (
           <Label text="For">
-            <select value={workspace} onChange={(e) => setWorkspace(e.target.value)} className={field}>
+            <Select value={workspace} onValueChange={(v) => setWorkspace(v)}>
               <option value="">Every workspace</option>
               {d.workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </select>
+            </Select>
           </Label>
         )}
         <Label text="Until (optional)"><input type="date" value={until} onChange={(e) => setUntil(e.target.value)} className={field} /></Label>
@@ -302,14 +304,14 @@ function OverrideForm({ d, limits, onDone }: { d: OrgBilling; limits: LimitInfo[
 }
 
 function TrialForm({ id, plans, onDone }: { id: string; plans: CatalogItem[]; onDone: () => void }) {
-  const [plan, setPlan] = useState(plans[0]?.id ?? "");
-  const [days, setDays] = useState(14);
+  const [plan, setPlan] = usePreservedState("tenant.trial.plan", plans[0]?.id ?? "");
+  const [days, setDays] = usePreservedState("tenant.trial.days", 14);
   return (
     <StaffForm title="Start a trial" submit={`Start ${days} days`} busy="Starting…" ready={!!plan} onDone={onDone}
       onRun={(reason) => api.billing.change(id, "trial", { plan_id: plan, days, reason })}>
       <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
         <Label text="Plan">
-          <select value={plan} onChange={(e) => setPlan(e.target.value)} className={field}>{plans.map((p) => <option key={p.id} value={p.id}>{p.name} ({price(p)})</option>)}</select>
+          <Select value={plan} onValueChange={(v) => setPlan(v)}>{plans.map((p) => <option key={p.id} value={p.id}>{p.name} ({price(p)})</option>)}</Select>
         </Label>
         <Label text="Days"><input type="number" min={1} max={90} value={days} onChange={(e) => setDays(Number(e.target.value))} className={field} /></Label>
       </div>

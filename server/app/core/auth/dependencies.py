@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import Callable, Optional
+from urllib.parse import urlsplit
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
 from starlette.requests import HTTPConnection
@@ -37,17 +38,45 @@ def build_provider() -> BaseIAMProvider:
     return OidcProvider()
 
 
-def production_problems() -> list:
-    """What would make a production deployment unsafe, in plain words (checked at startup; empty means fine)."""
+ENVIRONMENTS = ("development", "test", "production")
+# Development values in app/core/config.py that a real server must never run with
+DEV_SECRETS = {"POSTGRES_PASSWORD": "postgrespassword", "MINIO_ROOT_PASSWORD": "minioadminpassword",
+               "AGENT_TOKEN_SECRET": "dev-only-change-me"}
+PUBLIC_URLS = ("OIDC_ISSUER", "PUBLIC_SITE_URL", "PUBLIC_APP_URL", "PUBLIC_ADMIN_URL", "PUBLIC_API_URL")
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0", "[::1]")
+
+
+def _local(url: str) -> bool:
+    host = urlsplit(url).hostname or ""
+    return host in LOCAL_HOSTS or host.endswith((".local", ".localhost", ".test"))
+
+
+def deployment_problems() -> list:
+    """Development defaults the test server and production refuse, in plain words (checked at startup; empty means fine)."""
     problems = []
-    if not settings.OIDC_ISSUER.startswith("https://"):
-        problems.append("OIDC_ISSUER must be an https address")
-    if not settings.PUBLIC_SITE_URL.startswith("https://"):
-        problems.append("PUBLIC_SITE_URL must be an https address")
-    if settings.AGENT_TOKEN_SECRET == "dev-only-change-me":
-        problems.append("AGENT_TOKEN_SECRET still has its development value")
+    for name, dev in DEV_SECRETS.items():
+        if getattr(settings, name) == dev:
+            problems.append(f"{name} still has its development value")
     if not settings.SECRETS_ENCRYPTION_KEY:
         problems.append("SECRETS_ENCRYPTION_KEY is not set")
+    for name in PUBLIC_URLS:
+        url = getattr(settings, name)
+        if not url.startswith("https://") or _local(url):
+            problems.append(f"{name} must be the server's public https address")
+    origins = settings.cors_origins
+    if "*" in settings.CORS_ORIGINS or any(not o.startswith("https://") or _local(o) for o in origins):
+        problems.append("CORS_ORIGINS must list only the apps' public https addresses")
+    if settings.MAIL_BACKEND.lower() == "service" and len(settings.MAIL_COMMAND_SIGNING_KEY) < 40:
+        problems.append("MAIL_COMMAND_SIGNING_KEY is not set (python -m app.mail_signing_key makes one, and the public half for mail.env)")
+    if settings.MAIL_BACKEND.lower() == "service" and not settings.MAIL_SERVICE_PUBLIC_KEY:
+        problems.append("MAIL_SERVICE_PUBLIC_KEY is not set (python -m mail signer prints it, on the mail server)")
+    return problems
+
+
+def production_problems() -> list:
+    """What would make a production deployment unsafe, in plain words (checked at startup; empty means fine): the
+    development defaults, and security switches that may be off elsewhere but never in production."""
+    problems = deployment_problems()
     for name in ("REQUIRE_TRUSTED_DEVICE", "REQUIRE_EMAIL_VERIFICATION", "REQUIRE_RECENT_LOGIN"):
         if not getattr(settings, name):
             problems.append(f"{name} must stay on")
@@ -57,13 +86,13 @@ def production_problems() -> list:
 
 
 def validate_auth_config() -> None:
-    """Fails startup when the configuration would weaken authentication."""
-    if settings.is_production and "*" in settings.CORS_ORIGINS:
-        raise RuntimeError("CORS_ORIGINS may not contain '*' in production.")
-    if settings.is_production:
-        problems = production_problems()
+    """Fails startup when the configuration would weaken authentication, or a real server still has development values."""
+    if settings.ENV.lower() not in ENVIRONMENTS:
+        raise RuntimeError(f"ENV must be one of {', '.join(ENVIRONMENTS)} (it is '{settings.ENV}').")
+    if settings.is_deployed:
+        problems = production_problems() if settings.is_production else deployment_problems()
         if problems:
-            raise RuntimeError("Not safe to run in production: " + "; ".join(problems))
+            raise RuntimeError(f"Not safe to run as {settings.ENV.lower()}: " + "; ".join(problems))
     get_iam_provider()
     from app.core.agent_token import check_agent_keys
     from app.services.notifications import check_mail_config
@@ -115,6 +144,9 @@ async def _organization_gate(request: HTTPConnection, identity: Identity) -> Aut
             raise _forbidden("onboarding_required", "Finish setting up your account to continue.")
         if user is not None and user.status != "active":
             raise _forbidden("account_disabled", "This account is disabled.")
+        from app.services.staff_service import is_staff, refuse_staff
+        if await is_staff(db, identity.user_id):
+            raise refuse_staff()  # staff accounts work only in the admin app, never inside an organization
         if not slug:
             raise HTTPException(status_code=400, detail="Name the organization (X-Org-Slug header).")
         tenant = (await db.execute(select(Tenant).where(Tenant.slug == slug))).scalar_one_or_none()

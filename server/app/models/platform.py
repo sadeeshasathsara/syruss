@@ -5,7 +5,7 @@ admin app; their roles live here, not in Keycloak, and every action they take is
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import DateTime, ForeignKey, Index, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -26,6 +26,43 @@ class PlatformStaff(Base):
     added_by: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
+    # When they last used the admin app (kept to the nearest few minutes): unused access is taken away (offboarding)
+    last_active_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When they were told their access ends soon for lack of use (it counts again once they use it)
+    offboard_warned_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The last access review: an owner confirmed they still need it
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+
+class PlatformApproval(Base):
+    """
+    A risky staff action waiting for a second owner (when the platform's approval rule covers it). It is carried out
+    as the person who asked, once another owner approves, and only if they may still do it then. It never changes
+    after a decision.
+    """
+    __tablename__ = "platform_approvals"
+    __table_args__ = (Index("ix_platform_approvals_status", "status", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    target_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    tenant_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requested_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    requested_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    requested_by_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # pending | done | rejected | cancelled | failed (one left pending past expires_at has expired and can't be approved)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    decided_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    decided_by_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class PlatformAuditEntry(Base):
@@ -54,6 +91,9 @@ class PlatformAuditEntry(Base):
 
 class PlatformAccessGrant(Base):
     """
+    No longer used: staff see documents and runs without one (sysadmin/processes.py, runs.py). Kept for the history of
+    grants opened before.
+
     A staff member's access to one organization's content (documents, records, chats, what the agent thought and did),
     for a stated reason until a set time. Without one, staff see facts only: what ran, where, when, for how long, at
     what cost. Opening and ending one is in the platform audit log and in the organization's own activity.
@@ -69,3 +109,74 @@ class PlatformAccessGrant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Who ended it early: the staff member, or someone in the organization (who may end it at any time)
+    ended_by_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+
+class PlatformSetting(Base):
+    """
+    A platform-wide control, by key: "maintenance" ({on, message}) and "switches" ({signups, agent, intake: bool,
+    agent_paused_orgs: [tenant ids]}). Read through app.services.platform_controls, which caches them for a few seconds.
+    """
+    __tablename__ = "platform_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    updated_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
+
+
+class PlatformAnnouncement(Base):
+    """A message from Syruss shown in the app: to everyone, or to one organization, between two times."""
+    __tablename__ = "platform_announcements"
+    __table_args__ = (Index("ix_platform_announcements_window", "starts_at", "ends_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    body: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), default="info", nullable=False)  # info | warning | critical
+    tenant_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)  # None: everyone
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+    ends_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class OrganizationNote(Base):
+    """Platform staff's own note about an organization (a call, a promise, a warning). Customers never see these."""
+    __tablename__ = "organization_notes"
+    __table_args__ = (Index("ix_organization_notes_tenant_created", "tenant_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    author_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    author_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class PlatformStaffInvitation(Base):
+    """
+    An invitation to join the platform staff, sent by email. Whoever accepts must sign in with that address; accepting
+    makes their sign-in a staff account (a customer account under the same sign-in is deleted first, once they confirm).
+    """
+    __tablename__ = "platform_staff_invitations"
+    __table_args__ = (Index("ix_platform_staff_invitations_email", "email"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)  # pending | accepted | revoked
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    invited_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    invited_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    invited_by_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    accepted_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    email_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)

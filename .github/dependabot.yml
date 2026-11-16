@@ -1,0 +1,36 @@
+# Base images are pinned by digest in every Dockerfile, so a rebuild never silently picks up a different image.
+# Dependabot opens a pull request into dev when a pinned tag gets a new image (security fixes in the base), and
+# when the GitHub Actions the workflows use get new versions.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directories:
+      - /server
+      - /agentic_framework
+      - /www
+      - /site
+      - /admin
+      - /bridge/minio
+      - /bridge/postgres
+      - /bridge/keycloak-db
+      - /bridge/keycloak
+      - /bridge/kafka
+    schedule:
+      interval: weekly
+    target-branch: dev
+    groups:
+      base-images:
+        patterns: ["*"]
+    commit-message:
+      prefix: chore(docker)
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    target-branch: dev
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: chore(ci)

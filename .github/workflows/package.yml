@@ -35,6 +35,9 @@ jobs:
       agent_changed: ${{ steps.apply.outputs.agent_changed }}
       agent_version: ${{ steps.apply.outputs.agent_version }}
       agent_tag: ${{ steps.apply.outputs.agent_tag }}
+      mail_changed: ${{ steps.apply.outputs.mail_changed }}
+      mail_version: ${{ steps.apply.outputs.mail_version }}
+      mail_tag: ${{ steps.apply.outputs.mail_tag }}
       www_changed: ${{ steps.apply.outputs.www_changed }}
       www_version: ${{ steps.apply.outputs.www_version }}
       www_tag: ${{ steps.apply.outputs.www_tag }}
@@ -189,6 +192,64 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ----------------------------------------------------------------------------
+  # Mail service (mail)
+  # ----------------------------------------------------------------------------
+  release-mail:
+    name: Release & Package Mail Service
+    needs: prepare-release
+    if: needs.prepare-release.outputs.mail_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Git Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TAG="${{ needs.prepare-release.outputs.mail_tag }}"
+          VERSION="${{ needs.prepare-release.outputs.mail_version }}"
+          echo "GIT_TAG=$TAG" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "ENV_TAG=${{ github.ref_name == 'main' && 'latest' || github.ref_name }}" >> $GITHUB_ENV
+
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists."
+          else
+            echo "Creating tag $TAG"
+            git tag -a "$TAG" -m "Automated release $TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Create GitHub Release (Production)
+        if: github.ref_name == 'main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.GIT_TAG }}
+          name: "Mail ${{ env.GIT_TAG }}"
+          generate_release_notes: true
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./mail
+          push: true
+          build-args: |
+            APP_VERSION=${{ env.VERSION }}
+          tags: |
+            ghcr.io/${{ github.repository }}/mail:${{ env.ENV_TAG }}
+            ghcr.io/${{ github.repository }}/mail:v${{ env.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ----------------------------------------------------------------------------
   # Web Application (www)
   # ----------------------------------------------------------------------------
   release-www:
@@ -241,7 +302,6 @@ jobs:
           build-args: |
             NEXT_PUBLIC_APP_VERSION=${{ env.VERSION }}
             NEXT_PUBLIC_SITE_URL=${{ github.ref_name == 'test' && vars.TEST_SITE_URL || 'http://localhost:3100' }}
-            NEXT_PUBLIC_ACCOUNT_URL=${{ github.ref_name == 'test' && vars.TEST_ACCOUNT_URL || 'http://localhost:8080/realms/syruss/account' }}
           tags: |
             ghcr.io/${{ github.repository }}/www:${{ env.ENV_TAG }}
             ghcr.io/${{ github.repository }}/www:v${{ env.VERSION }}
@@ -441,7 +501,7 @@ jobs:
   # ----------------------------------------------------------------------------
   deploy-test:
     name: Tell the test server to pull
-    needs: [prepare-release, release-server, release-agent, release-www, release-site, release-admin, detect-infra, release-infra]
+    needs: [prepare-release, release-server, release-agent, release-mail, release-www, release-site, release-admin, detect-infra, release-infra]
     # Runs even when some services had no release (their jobs are skipped), but not when one failed.
     if: ${{ !cancelled() && github.ref_name == 'test' && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
@@ -457,6 +517,7 @@ jobs:
           SECRET: ${{ secrets.TEST_DEPLOY_SECRET }}
           SERVER: ${{ needs.release-server.result }}
           AGENT: ${{ needs.release-agent.result }}
+          MAIL: ${{ needs.release-mail.result }}
           WWW: ${{ needs.release-www.result }}
           SITE: ${{ needs.release-site.result }}
           ADMIN: ${{ needs.release-admin.result }}
@@ -466,6 +527,7 @@ jobs:
           services=""
           [ "$SERVER" = success ] && services="$services server"
           [ "$AGENT" = success ] && services="$services agent"
+          [ "$MAIL" = success ] && services="$services mail"
           [ "$WWW" = success ] && services="$services www"
           [ "$SITE" = success ] && services="$services site"
           [ "$ADMIN" = success ] && services="$services admin"
@@ -481,7 +543,7 @@ jobs:
 
   deploy-prod:
     name: Tell the production server to pull
-    needs: [prepare-release, release-server, release-agent, release-www, release-site, release-admin, detect-infra, release-infra]
+    needs: [prepare-release, release-server, release-agent, release-mail, release-www, release-site, release-admin, detect-infra, release-infra]
     # Runs even when some services had no release (their jobs are skipped), but not when one failed.
     if: ${{ !cancelled() && github.ref_name == 'main' && vars.PROD_DEPLOY_ENABLED == 'true' && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
@@ -499,6 +561,7 @@ jobs:
           SECRET: ${{ secrets.PROD_DEPLOY_SECRET }}
           SERVER: ${{ needs.release-server.result }}
           AGENT: ${{ needs.release-agent.result }}
+          MAIL: ${{ needs.release-mail.result }}
           WWW: ${{ needs.release-www.result }}
           SITE: ${{ needs.release-site.result }}
           ADMIN: ${{ needs.release-admin.result }}
@@ -508,6 +571,7 @@ jobs:
           services=""
           [ "$SERVER" = success ] && services="$services server"
           [ "$AGENT" = success ] && services="$services agent"
+          [ "$MAIL" = success ] && services="$services mail"
           [ "$WWW" = success ] && services="$services www"
           [ "$SITE" = success ] && services="$services site"
           [ "$ADMIN" = success ] && services="$services admin"

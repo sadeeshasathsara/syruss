@@ -23,6 +23,7 @@ from app.models.workspace_admin import WorkspaceMember
 from app.services.agent_events import enqueue_agent_event, agent_event_relay
 from app.services.billing import service as billing
 from app.services.document_service import document_service
+from app.services import object_icons
 from app.services.rules.engine import check_rule_definitions
 from app.services.workspace_service import unique_slug
 
@@ -121,7 +122,8 @@ class TemplateService:
         version: Optional[str] = None,
     ) -> DocumentTemplateVersion:
         schema = split_schema(schema)
-        problems = check_rule_definitions(schema)
+        # People may leave an object without an icon (it shows the default); a name not in the list is a mistake
+        problems = check_rule_definitions(schema) + [p for p in object_icons.problems(schema) if "has no icon" not in p]
         if problems:
             raise HTTPException(status_code=422, detail={"message": "Invalid template schema", "problems": problems})
         row = DocumentTemplateVersion(

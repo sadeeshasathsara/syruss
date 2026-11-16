@@ -34,9 +34,9 @@ from app.models.identity import OrgInvitation, OrgMember, User, WorkspaceRole, W
 from app.models.question import AgentQuestion, AgentQuestionStatus
 from app.models.outbox import AgentEventOutbox
 from app.models.audit import AuditLog
-from app.models.trace import AgentExecutionTrace
+from app.models.trace import AgentExecutionTrace, AgentPrompt
 from app.models.conversation import Conversation, ChatMessage
-from app.models.graph import EntitySighting
+from app.models.graph import EntitySighting, RecordObject
 from app.models.jobs import WorkspaceJob
 from app.models.screen import WorkspaceScreen
 from app.models.rule import TemplateRule
@@ -45,7 +45,13 @@ from app.models.delivery import Delivery, DeliveryAttempt, Destination
 from app.models.evaluation import EvalRun, EvalRunItem
 from app.models.page_view import AgentPageView
 from app.models.system_lesson import SystemLesson
-from app.models.platform import PlatformAccessGrant, PlatformAuditEntry, PlatformStaff
+from app.models.platform import (
+    OrganizationNote, PlatformAccessGrant, PlatformAnnouncement, PlatformAuditEntry, PlatformSetting, PlatformStaff,
+    PlatformStaffInvitation, PlatformApproval,
+)
+from app.models.support import SupportFile, SupportMessage, SupportSavedReply, SupportTicket
+from app.models.support_live import SupportPresence
+from app.models.mail import MailOutbox
 from app.models.billing import (
     BankAccount, BillingPayment, BillingProfile, BillingRefund, BillingSequence, BillingSettings, CardCheckout, CatalogItem, CreditEntry,
     CreditNote, Invoice,
@@ -90,6 +96,7 @@ __all__ = [
     "Conversation",
     "ChatMessage",
     "EntitySighting",
+    "RecordObject",
     "WorkspaceJob",
     "EvalRun",
     "EvalRunItem",

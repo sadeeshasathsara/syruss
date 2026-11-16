@@ -5,7 +5,7 @@ recorded for what arrived and the invoice settles) or reject it with a reason th
 import asyncio
 import io
 from PIL import Image
-from tests.conftest import AsyncSessionLocal
+from tests.conftest import AsyncSessionLocal, make_staff
 from tests.test_billing import organization
 from tests.test_invoices import ADMIN_APP, API, DETAILS, balance, pack, seller_ready
 
@@ -115,9 +115,9 @@ async def test_other_organizations_never_see_a_slip_and_viewers_cannot_approve(c
     other = await organization("nosy")
     assert (await client.get(f"{API}/billing/submissions/{sent['id']}/files/{sent['files'][0]['id']}", headers=other)).status_code == 404
     assert (await client.post(f"{API}/billing/submissions/{sent['id']}/withdraw", headers=other)).status_code == 404
-    viewer = {**person("usr_pay_viewer", "Val Viewer"), **ADMIN_APP}
+    viewer = {**ADMIN_APP, **person("usr_pay_viewer", "Val Viewer")}
     await register(viewer, None)
-    await client.post(f"{API}/sysadmin/staff", headers=ADMIN_APP, json={"email": "usr_pay_viewer@example.com", "role": "viewer", "reason": "Watches"})
+    await make_staff(client, viewer, "viewer")
     assert (await client.get(f"{API}/sysadmin/billing/submissions", headers=viewer)).status_code == 200
     assert (await client.post(f"{API}/sysadmin/billing/submissions/{sent['id']}/approve", headers=viewer, json={"reason": "Nope"})).status_code == 403
 

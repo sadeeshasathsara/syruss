@@ -1,3 +1,4 @@
+from typing import AsyncIterator
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 from app.core.config import settings
@@ -22,7 +23,7 @@ class Base(DeclarativeBase):
     pass
 
 
-async def get_db_session() -> AsyncSession:
+async def get_db_session() -> AsyncIterator[AsyncSession]:
     """Dependency that yields an async database session."""
     async with AsyncSessionLocal() as session:
         try:

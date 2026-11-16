@@ -9,10 +9,24 @@ name: syruss-test
 x-app: &app
   restart: unless-stopped
   pull_policy: missing  # updates come from the explicit `docker compose pull` the deploy hook runs
+  # Every container: runs as a non-root user, has no Linux capabilities (root powers), can't gain privileges through
+  # setuid programs, and has a cap on processes (a fork bomb or a runaway thread pool stops there).
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 1024
+
+
+# Syruss's own services run as an unprivileged user and can't change their files: the filesystem is read-only except
+# for scratch space in memory.
+x-read-only: &read-only
+  read_only: true
 
 services:
   postgres:
+    # Runs as the image's postgres user from the start (its data folder belongs to it): never root
     <<: *app
+    user: "70:70"
+    networks: [data]
     # Postgres 16 with pgvector and Apache AGE, built by CI from bridge/postgres
     image: ghcr.io/sadeeshasathsara/syruss/postgres:test
     environment:
@@ -30,7 +44,10 @@ services:
       retries: 10
 
   minio:
+    # Runs as the image's minio user from the start (bridge/minio/Dockerfile gives it /data): never root
     <<: *app
+    user: "100:101"
+    networks: [data, files]
     image: ghcr.io/sadeeshasathsara/syruss/minio:test
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -43,6 +60,7 @@ services:
 
   kafka:
     <<: *app
+    networks: [data]
     # Single-node KRaft broker built by CI from bridge/kafka (settings baked in)
     image: ghcr.io/sadeeshasathsara/syruss/kafka:test
     environment:
@@ -58,7 +76,10 @@ services:
       start_period: 60s
 
   keycloak-db:
+    # Runs as the image's postgres user from the start (its data folder belongs to it): never root
     <<: *app
+    user: "70:70"
+    networks: [auth]
     image: ghcr.io/sadeeshasathsara/syruss/keycloak-db:test
     environment:
       POSTGRES_USER: ${KEYCLOAK_DB_USER}
@@ -75,6 +96,7 @@ services:
 
   keycloak:
     <<: *app
+    networks: [auth, public, mail-relay]
     # Production-mode build with the realm and theme inside, made by CI from bridge/keycloak
     image: ghcr.io/sadeeshasathsara/syruss/keycloak:test
     depends_on:
@@ -111,9 +133,13 @@ services:
       start_period: 90s
 
   server:
-    <<: *app
+    <<: [*app, *read-only]
+    tmpfs: ["/tmp:size=256m,mode=1777", "/home/syruss:size=16m,mode=1777"]
+    networks: [data, public]
     image: ghcr.io/sadeeshasathsara/syruss/server:test
     env_file: env/server.env
+    environment:
+      ENV: test  # refuses development values (app/core/auth/dependencies.deployment_problems)
     depends_on:
       postgres:
         condition: service_healthy
@@ -126,23 +152,46 @@ services:
     mem_limit: 256m
     healthcheck:
       # The image's own check allows 5 seconds, which a busy small server misses even while /health answers
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      test: ["CMD", "python", "-c", "import sys, urllib.request; sys.exit(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=20).status != 200)"]
       interval: 30s
       timeout: 25s
       retries: 5
       start_period: 120s
 
   agent:
-    <<: *app
+    <<: [*app, *read-only]
+    tmpfs: ["/tmp:size=128m,mode=1777", "/home/syruss:size=64m,mode=1777"]
+    networks: [data, agent-egress]
     image: ghcr.io/sadeeshasathsara/syruss/agent:test
     env_file: env/agent.env
+    environment:
+      ENV: test
     depends_on:
       - server
       - kafka
     mem_limit: 256m
 
+  mail:
+    # Every email Syruss sends goes through here (mail/): the only holder of mail credentials
+    <<: [*app, *read-only]
+    tmpfs: ["/tmp:size=32m,mode=1777", "/home/syruss:size=16m,mode=1777"]
+    networks: [data, mail-egress, mail-relay]
+    image: ghcr.io/sadeeshasathsara/syruss/mail:test
+    env_file: env/mail.env
+    environment:
+      ENV: test
+      MAIL_RELAY_HOST: 0.0.0.0  # Keycloak's way in: only the mail-relay network reaches it
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    mem_limit: 128m
+
   www:
-    <<: *app
+    <<: [*app, *read-only]
+    tmpfs: ["/tmp:size=64m,mode=1777", "/app/.next/cache:size=128m,mode=1777"]
+    networks: [public]
     image: ghcr.io/sadeeshasathsara/syruss/www:test
     env_file: env/www.env
     environment:
@@ -152,7 +201,9 @@ services:
     mem_limit: 192m
 
   site:
-    <<: *app
+    <<: [*app, *read-only]
+    tmpfs: ["/tmp:size=64m,mode=1777", "/app/.next/cache:size=64m,mode=1777"]
+    networks: [public]
     image: ghcr.io/sadeeshasathsara/syruss/site:test
     env_file: env/site.env
     environment:
@@ -163,7 +214,9 @@ services:
 
   # The system admin app (platform staff only). Its settings are optional until the server has env/admin.env.
   admin:
-    <<: *app
+    <<: [*app, *read-only]
+    tmpfs: ["/tmp:size=64m,mode=1777", "/app/.next/cache:size=64m,mode=1777"]
+    networks: [public]
     image: ghcr.io/sadeeshasathsara/syruss/admin:test
     env_file:
       - path: env/admin.env
@@ -173,6 +226,17 @@ services:
     ports:
       - "127.0.0.1:3200:3200"
     mem_limit: 160m
+
+# Who can reach whom. The web apps reach the API and Keycloak, never a database; the databases, Kafka and object storage
+# can't reach the internet. A container is on only the networks it needs.
+networks:
+  public: {}                 # web apps, the API, Keycloak (and the internet through it)
+  data: {internal: true}     # the API, the agent, Postgres, Kafka, object storage
+  auth: {internal: true}     # Keycloak and its database
+  files: {}                  # object storage's published port (presigned downloads through Caddy)
+  agent-egress: {}           # the agent's way out to the model provider
+  mail-egress: {}            # the mail service's way out to the mail provider
+  mail-relay: {internal: true}  # Keycloak to the mail service's SMTP door, and nothing else
 
 volumes:
   postgres_data:

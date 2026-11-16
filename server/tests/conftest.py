@@ -6,9 +6,9 @@ import io
 import os
 import random
 
-os.environ["POSTGRES_DB"] = "doc_intelligence_test"
+os.environ["POSTGRES_DB"] = os.environ.get("TEST_POSTGRES_DB", "doc_intelligence_test")  # a run of its own: TEST_POSTGRES_DB
 os.environ["MINIO_BUCKET_NAME"] = "documents-test"
-os.environ["PLATFORM_ADMIN_USER_IDS"] = "usr_admin_default"
+os.environ["PLATFORM_ADMIN_USER_IDS"] = "usr_platform_owner"  # a staff account of its own: staff never use customer pages
 os.environ["MAIL_BACKEND"] = "memory"
 os.environ["REQUIRE_TRUSTED_DEVICE"] = "false"  # device tests switch it on for themselves
 os.environ["PUBLIC_SITE_URL"] = "http://site.test"
@@ -56,11 +56,11 @@ SCHEMA = {
     "document_type": "security_roster",
     "description": "Daily guard roster",
     "objects": [
-        {"type": "Roster", "multiple": False, "fields": [
+        {"type": "Roster", "icon": "calendar-days", "multiple": False, "fields": [
             {"name": "site_id", "type": "string", "required": True},
             {"name": "date", "type": "date", "required": True},
         ]},
-        {"type": "Guard", "multiple": True, "fields": [
+        {"type": "Guard", "icon": "shield-user", "multiple": True, "fields": [
             {"name": "employee_id", "type": "string", "required": True},
             {"name": "name", "type": "string", "required": True},
             {"name": "in_time", "type": "time"},
@@ -206,3 +206,23 @@ async def pages_allowance(pages, tenant_id: str = TENANT) -> None:
     async with AsyncSessionLocal() as db:
         await billing.set_override(db, tenant_id=tenant_id, key=billing.PAGES, value=pages, reason="test", set_by="tests")
         await db.commit()
+
+
+async def invite_staff(email: str, role: str, reason: str = "Joins the staff") -> str:
+    """An invitation as the server command makes it (python -m app.invite_staff, without its Keycloak step). Returns the link token."""
+    from app.services import staff_service
+    async with AsyncSessionLocal() as db:
+        row, plain = await staff_service.invite(db, email=email, role=role, by_id="deployment", by_name="The Syruss deployment", reason=reason)
+        await db.commit()
+        invitation_id = row.id
+    await staff_service.send(invitation_id, plain)
+    return plain
+
+
+async def make_staff(client, headers: dict, role: str, reason: str = "Joins the staff") -> None:
+    """Invites a person to the platform staff (from the server) and accepts it as them, in the admin app."""
+    token = await invite_staff(headers["X-Email"], role, reason)
+    # (the mock sign-in vouches for the address; in the app they confirm it with an emailed code)
+    accepted = await client.post(f"/api/v1/sysadmin/staff/join/{token}", headers={**headers, "X-Client-ID": "syruss-admin"},
+                                 json={"delete_customer_account": True})
+    assert accepted.status_code == 200, accepted.text

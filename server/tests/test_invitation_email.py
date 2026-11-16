@@ -138,13 +138,12 @@ def test_the_email_has_a_plain_text_part_and_a_link_that_survives_escaping():
     assert re.search(r"01 November 2026", mail["text"])
 
 
-def test_production_refuses_mail_settings_that_would_send_nowhere(monkeypatch):
-    monkeypatch.setattr(settings, "ENV", "production")
-    for backend, host in (("console", "smtp.example.com"), ("smtp", "localhost")):
-        monkeypatch.setattr(settings, "MAIL_BACKEND", backend)
-        monkeypatch.setattr(settings, "SMTP_HOST", host)
-        with pytest.raises(RuntimeError):
-            notifications.check_mail_config()
-    monkeypatch.setattr(settings, "MAIL_BACKEND", "smtp")
-    monkeypatch.setattr(settings, "SMTP_HOST", "smtp.example.com")
-    notifications.check_mail_config()
+def test_real_servers_send_through_the_mail_service(monkeypatch):
+    for env in ("test", "production"):
+        monkeypatch.setattr(settings, "ENV", env)
+        for backend in ("console", "memory", "smtp"):
+            monkeypatch.setattr(settings, "MAIL_BACKEND", backend)
+            with pytest.raises(RuntimeError):
+                notifications.check_mail_config()
+        monkeypatch.setattr(settings, "MAIL_BACKEND", "service")
+        notifications.check_mail_config()

@@ -2,8 +2,11 @@
 The platform's live view over Server-Sent Events, through the admin app's signed-in proxy (services/live/platform_feed).
 
   scope=ops                       facts from every organization (filter with tenant_id, workspace_id, kinds)
-  scope=run&id=<run>              one run; with content open, everything it thinks and does as it happens
-  scope=document&id=<document>    one document; with content open, every event about it
+  scope=run&id=<run>              one run: everything it thinks and does as it happens
+  scope=document&id=<document>    one document: every event about it
+  scope=support                   live support's queue: chats waiting, taken and ended (support.respond)
+  scope=chat&id=<conversation>    a live chat you took: its messages and typing (support.respond, and it is yours)
+  scope=mail                      the Email page: what changed in the mail service's directory (staff.manage)
 
 The stream starts with a snapshot (what is running now), so a page is right before the first event. Who is listening is
 checked again every minute (still on the staff, the content grant still open), and the stream ends after a few minutes so
@@ -18,13 +21,14 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from app.api.v1.sysadmin.access import Staff, require_staff, staff_role
 from app.api.v1.sysadmin.runs import _labelled
-from app.api.v1.sysadmin.support_access import active_grant
 from app.core.database import AsyncSessionLocal
 from app.core.platform_permissions import PLATFORM_GRANTS
+from app.models.conversation import Conversation
 from app.models.document import Document
 from app.models.identity import User
 from app.models.trace import AgentExecutionTrace as Run
-from app.services.live import platform_feed
+from app.services.live import mail_feed, platform_feed
+from app.services.support import live as support_live
 
 router = APIRouter()
 
@@ -38,22 +42,23 @@ def _frame(event: dict) -> str:
     return f"data: {json.dumps(event, default=str)}\n\n"
 
 
-async def _still_allowed(staff: Staff, tenant_id: Optional[str], content: bool) -> bool:
+async def _still_allowed(staff: Staff, tenant_id: Optional[str], content: bool, need: str = "platform.view",
+                         chat_id: Optional[str] = None) -> bool:
     async with AsyncSessionLocal() as db:
         role, _ = await staff_role(db, staff.user_id)
         user = await db.get(User, staff.user_id)
-        if role is None or "platform.view" not in PLATFORM_GRANTS[role] or (user is not None and user.status != "active"):
+        if role is None or need not in PLATFORM_GRANTS[role] or (user is not None and user.status != "active"):
             return False
-        if content:
-            staff = staff.model_copy(update={"role": role, "permissions": sorted(PLATFORM_GRANTS[role])})
-            return await active_grant(db, staff, tenant_id) is not None
+        if chat_id:
+            conv = await db.get(Conversation, chat_id)
+            return conv is not None and conv.support_state == "live" and support_live.info(conv).get("staff_id") == staff.user_id
     return True
 
 
 @router.get("/live")
 async def live(
     request: Request,
-    scope: Literal["ops", "run", "document"] = "ops",
+    scope: Literal["ops", "run", "document", "support", "chat", "mail"] = "ops",
     id: Optional[str] = None,
     tenant_id: Optional[str] = None,
     workspace_id: Optional[str] = None,
@@ -62,9 +67,29 @@ async def live(
 ):
     filters = {"tenants": {tenant_id} if tenant_id else None, "workspaces": {workspace_id} if workspace_id else None,
                "kinds": {k for k in (kinds or "").split(",") if k} or None}
-    content, owner, snapshot = False, None, None
+    content, owner, snapshot, need, chat_id = False, None, None, "platform.view", None
     async with AsyncSessionLocal() as db:
-        if scope == "ops":
+        if scope in ("support", "chat"):
+            if not staff.can("support.respond"):
+                raise HTTPException(status_code=403, detail="Live support is for staff who answer support.")
+            need = "support.respond"
+            if scope == "support":
+                listener = platform_feed.listen(support_live.QUEUE)
+                snapshot = {"kind": "snapshot", "waiting": await support_live.waiting_count(db)}
+            else:
+                conv = await db.get(Conversation, id) if id else None
+                if conv is None or conv.support_state != "live" or support_live.info(conv).get("staff_id") != staff.user_id:
+                    raise HTTPException(status_code=403, detail="This chat isn't yours: accept it from the queue first.")
+                chat_id = conv.id
+                listener = platform_feed.listen(support_live.chat_channel(conv.id))
+                snapshot = {"kind": "snapshot", "conversation_id": conv.id}
+        elif scope == "mail":
+            if not staff.can("staff.manage"):
+                raise HTTPException(status_code=403, detail="Email is for owners.")
+            need = "staff.manage"
+            listener = platform_feed.listen(mail_feed.CHANNEL)
+            snapshot = {"kind": "snapshot"}
+        elif scope == "ops":
             running = list((await db.execute(select(Run).where(Run.status == "RUNNING").order_by(Run.started_at).limit(500))).scalars().all())
             snapshot = {"kind": "snapshot", "at": datetime.now(timezone.utc), **await _labelled(db, staff, running)}
             listener = platform_feed.listen("ops", **filters)
@@ -75,18 +100,17 @@ async def live(
                 r = await db.get(Run, id) or (await db.execute(select(Run).where(Run.run_id == id).limit(1))).scalar_one_or_none()
                 if r is None or not r.run_id:
                     raise HTTPException(status_code=404, detail="No such run.")
-                owner, key, only = r.tenant_id, f"run:{r.run_id}", {"run_id": r.run_id}
+                owner, key = r.tenant_id, f"run:{r.run_id}"
                 snapshot = {"kind": "snapshot", "run_id": r.run_id, "status": r.status}
             else:
                 d = await db.get(Document, id)
                 if d is None:
                     raise HTTPException(status_code=404, detail="No such document.")
-                owner, key, only = d.tenant_id, f"document:{d.id}", {"document_id": d.id}
+                owner, key = d.tenant_id, f"document:{d.id}"
                 snapshot = {"kind": "snapshot", "document_id": d.id, "status": d.status.value}
-            content = await active_grant(db, staff, owner) is not None
-            # With content open, everything about it; without, its facts from the platform view.
-            listener = platform_feed.listen(key) if content else platform_feed.listen("ops", only=only)
-            snapshot["content_open"] = content
+            # Everything about it, as it happens (any staff member sees a run's and a document's work)
+            listener = platform_feed.listen(key)
+            snapshot["content_open"] = True
 
     async def events():
         started = asyncio.get_running_loop().time()
@@ -101,7 +125,7 @@ async def live(
                     return
                 if now - checked > RECHECK_SECONDS:
                     checked = now
-                    if not await _still_allowed(staff, owner, content):
+                    if not await _still_allowed(staff, owner, content, need, chat_id):
                         yield _frame({"kind": "closed", "reason": "access_changed"})
                         return
                 try:
