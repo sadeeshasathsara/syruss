@@ -14,6 +14,7 @@ import { AccountsView } from "./AccountsView";
 import { AppsView } from "./AppsView";
 import { JobsView } from "./JobsView";
 import { Select } from "@/components/ui/Select";
+import { usePreservedState } from "@/lib/resume";
 
 const STATUS: Record<MailJob["status"], { label: string; tone: "positive" | "warning" | "negative" | "neutral" | "info" }> = {
   queued: { label: "Queued", tone: "info" }, sending: { label: "Sending", tone: "info" }, retrying: { label: "Trying again", tone: "warning" },
@@ -40,7 +41,7 @@ export function EmailPage({ view }: { view: EmailView }) {
     if (e.kind === "mail.changed") queryClient.invalidateQueries({ queryKey: ["mail"] });
   });
   const overview = useQuery({ queryKey: ["mail", "overview"], queryFn: api.mail.overview, enabled: view !== "log" });
-  const [popup, setPopup] = useState(false);
+  const [popup, setPopup] = usePreservedState("email.popup", false);
   const pill = <Pill tone={live.state === "live" ? "positive" : "neutral"}>{live.state === "live" ? "Live" : live.state === "closed" ? "Not live" : "Connecting…"}</Pill>;
   const action = view === "jobs" ? "Add a job" : view === "accounts" ? "Connect a mailbox" : null;
   return (

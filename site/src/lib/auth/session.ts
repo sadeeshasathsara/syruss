@@ -24,6 +24,29 @@ async function key(): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", data));
 }
 
+/** The key for one kind of sealed value: the same secret, separated by purpose, so a value sealed for one use can't be opened as another. */
+async function keyFor(purpose: string): Promise<Uint8Array> {
+  const data = new TextEncoder().encode(`${authConfig().sessionSecret}\u0000${purpose}`);
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", data));
+}
+
+export async function sealFor(purpose: string, payload: Record<string, unknown>, maxAgeSeconds: number): Promise<string> {
+  return new EncryptJWT(payload)
+    .setProtectedHeader({ alg: "dir", enc: "A256GCM" })
+    .setIssuedAt()
+    .setExpirationTime(`${maxAgeSeconds}s`)
+    .encrypt(await keyFor(purpose));
+}
+
+export async function unsealFor<T = Record<string, unknown>>(purpose: string, token: string): Promise<T | null> {
+  try {
+    const { payload } = await jwtDecrypt(token, await keyFor(purpose), { clockTolerance: 5 });
+    return payload as T;
+  } catch {
+    return null;
+  }
+}
+
 export async function seal(payload: Record<string, unknown>, maxAgeSeconds: number): Promise<string> {
   return new EncryptJWT(payload)
     .setProtectedHeader({ alg: "dir", enc: "A256GCM" })

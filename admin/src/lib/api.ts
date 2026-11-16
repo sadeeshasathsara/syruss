@@ -9,7 +9,7 @@ import type {
   ObjectProfile, ObjectSummary, Paged, ProfileWhere, ThingProfile, ThingSummary,
   LiveChat, LiveMessage, LiveQueue, MailDirection, MailAppInput, MailImapInput, MailJob, MailJobSettings, MailOverview, MailProvider, MailPurpose, Presence, SavedReply, SupportSettings, SupportSummary, Ticket, TicketDetail, TicketMessage,
 } from "./types";
-import { loadPage } from "./navigate";
+import { resumeAndGo } from "./resume";
 
 /** Typed client for the platform tools (/api/v1/sysadmin), through this app's own proxy. */
 
@@ -53,7 +53,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (res.status === 401 && typeof window !== "undefined") {
     // Signed out, or the session ended: sign in again (with the one-time code) and come back to this page.
-    loadPage(`/api/auth/login?returnTo=${encodeURIComponent(here())}`);
+    await resumeAndGo(`/api/auth/login?returnTo=${encodeURIComponent(here())}`);
   }
   if (res.status === 202) {
     const body = (await res.json().catch(() => ({}))) as { approval?: Approval; message?: string };
@@ -73,7 +73,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const code = (detail as { code?: string } | undefined)?.code;
     if (res.status === 403 && code === "reauth_required" && typeof window !== "undefined") {
       // A platform change: sign in again first, then come back to this page to make it.
-      loadPage(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(here())}`);
+      await resumeAndGo(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(here())}`);
     }
     throw new ApiError(res.status, messageFrom(detail, `Request failed (${res.status}).`), code);
   }

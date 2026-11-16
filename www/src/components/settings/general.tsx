@@ -19,6 +19,7 @@ import { dateTime, fileSize } from "@/lib/format";
 import type { WorkspaceSettingsData } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 import { NoAccess, SavedNote, Section, SettingsHeader, useWorkspaceSettings } from "./kit";
+import { usePreservedState } from "@/lib/resume";
 
 const DATE_FORMATS: WorkspaceSettingsData["general"]["date_format"][] = ["YYYY-MM-DD", "DD/MM/YYYY", "MM/DD/YYYY"];
 
@@ -184,8 +185,8 @@ export function DangerZone() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { access, can } = useWorkspaceSettings();
-  const [confirming, setConfirming] = useState(false);
-  const [typed, setTyped] = useState("");
+  const [confirming, setConfirming] = usePreservedState("workspace.delete.open", false);
+  const [typed, setTyped] = usePreservedState("workspace.delete.typed", "");
   const remove = useMutation({
     mutationFn: () => api.workspaces.removeOwn(workspace.id),
     onSuccess: () => {
