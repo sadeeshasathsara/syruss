@@ -1,12 +1,14 @@
 "use client";
 
 import { Pencil } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Field";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { cn, display, fieldName, humanize, percent, rowsOf } from "@/lib/format";
 import type { Extraction, FieldEvidence, TemplateSchema } from "@/lib/types";
+import { useWorkspace } from "@/lib/workspace";
 
 type Data = Extraction["extracted_data"];
 
@@ -40,8 +42,10 @@ function referenceIndex(data: Data, schema?: TemplateSchema) {
 }
 
 /** A value, with what was literally written when the agent interpreted it. */
-function Value({ value, ev, uncertain, refers, editable, onEdit }: {
+function Value({ value, ev, uncertain, refers, editable, onEdit, to }: {
   value: unknown;
+  /** Where the thing this value names has its page (an identity, or a reference to one) */
+  to?: string;
   ev?: FieldEvidence;
   uncertain?: string;
   refers?: string;
@@ -60,7 +64,11 @@ function Value({ value, ev, uncertain, refers, editable, onEdit }: {
       )}
     />
   ) : (
-    <span className={cn("break-words", value === null || value === undefined || value === "" ? "text-faint" : "text-ink")}>{display(value)}</span>
+    to && value !== null && value !== undefined && value !== "" ? (
+      <Link href={to} className="break-words font-medium text-ink underline decoration-border decoration-1 underline-offset-4 hover:decoration-ink">{display(value)}</Link>
+    ) : (
+      <span className={cn("break-words", value === null || value === undefined || value === "" ? "text-faint" : "text-ink")}>{display(value)}</span>
+    )
   );
   return (
     <span className="flex min-w-0 flex-col gap-0.5">
@@ -97,6 +105,7 @@ export function RecordView({
   editable,
   onChange,
   onCorrect,
+  cards,
 }: {
   data: Data;
   schema?: TemplateSchema;
@@ -105,7 +114,10 @@ export function RecordView({
   editable?: boolean;
   onChange?: (next: Data) => void;
   onCorrect?: (object: string, next: Data, reason: string) => Promise<void>;
+  /** Each object in a card of its own (on a page, where it would otherwise blend into the background) */
+  cards?: boolean;
 }) {
+  const { href } = useWorkspace();
   const [correcting, setCorrecting] = useState<{ object: string; draft: Data; reason: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -153,6 +165,18 @@ export function RecordView({
           ...[...new Set(rows.flatMap((r) => Object.keys(r)))].filter((f) => !spec?.fields.map(fieldName).includes(f)),
         ];
         const single = spec ? spec.multiple === false : !Array.isArray(data[object]);
+        // A thing's id and name, and a field that points to another thing, open that thing's page
+        const thingPath = (type: string, v: unknown) => href(`objects/${encodeURIComponent(type)}/things/${encodeURIComponent(String(v).replace(/\s+/g, "").toUpperCase())}`);
+        const link = (row: Record<string, unknown>, f: string): string | undefined => {
+          if (editable_) return undefined;
+          if (spec?.identity && (f === spec.identity.id_field || f === spec.identity.label_field) && row[spec.identity.id_field] != null && row[spec.identity.id_field] !== "") {
+            return thingPath(spec.type, row[spec.identity.id_field]);
+          }
+          const fieldSpec = spec?.fields.find((x) => typeof x !== "string" && x.name === f);
+          const target = typeof fieldSpec === "object" ? fieldSpec.resolves_to : undefined;
+          const identified = target && schema?.objects.find((o) => o.type === target)?.identity;
+          return identified && row[f] != null && row[f] !== "" ? thingPath(target, row[f]) : undefined;
+        };
         const refers = (row: Record<string, unknown>, f: string) => {
           const fieldSpec = spec?.fields.find((x) => typeof x !== "string" && x.name === f);
           return typeof fieldSpec === "object" ? refName(fieldSpec.resolves_to, row[f]) : undefined;
@@ -161,7 +185,9 @@ export function RecordView({
         return (
           <section
             key={object}
-            className={cn(onCorrect && "rounded-card border p-3 transition-colors", onCorrect && (isCorrecting ? "border-control bg-card" : "border-border"))}
+            className={cards
+              ? cn("rounded-card bg-card p-4 [box-shadow:var(--shadow-card)] transition-shadow", isCorrecting && "ring-1 ring-control")
+              : cn(onCorrect && "rounded-card border p-3 transition-colors", onCorrect && (isCorrecting ? "border-control bg-card" : "border-border"))}
           >
             <div className="flex items-center gap-2">
               <h3 className="min-w-0 flex-1 text-section font-semibold text-ink">
@@ -190,7 +216,7 @@ export function RecordView({
                   <div key={f} className="contents">
                     <dt className="pt-2 text-body text-muted @md:border-t @md:border-rule @md:py-2">{humanize(f)}</dt>
                     <dd className="border-b border-rule pb-2 text-body @md:border-b-0 @md:border-t @md:py-2">
-                      <Value value={rows[0][f]} ev={findEv(object, 0, f)} uncertain={uncertainFor(object, 0, f)} refers={refers(rows[0], f)} editable={editable_} onEdit={(v) => edit(object, 0, f, v)} />
+                      <Value value={rows[0][f]} ev={findEv(object, 0, f)} uncertain={uncertainFor(object, 0, f)} refers={refers(rows[0], f)} to={link(rows[0], f)} editable={editable_} onEdit={(v) => edit(object, 0, f, v)} />
                     </dd>
                   </div>
                 ))}
@@ -210,7 +236,7 @@ export function RecordView({
                         <tr key={i} className="border-t border-rule align-top">
                           {fields.map((f) => (
                             <td key={f} className="py-2 pr-4">
-                              <Value value={r[f]} ev={findEv(object, i, f)} uncertain={uncertainFor(object, i, f)} refers={refers(r, f)} editable={editable_} onEdit={(v) => edit(object, i, f, v)} />
+                              <Value value={r[f]} ev={findEv(object, i, f)} uncertain={uncertainFor(object, i, f)} refers={refers(r, f)} to={link(r, f)} editable={editable_} onEdit={(v) => edit(object, i, f, v)} />
                             </td>
                           ))}
                         </tr>
@@ -221,13 +247,13 @@ export function RecordView({
                 {/* Narrow: one block per row, label beside value. */}
                 <ol className="mt-2 grid grid-cols-1 gap-3 @2xl:grid-cols-2 @4xl:hidden">
                   {rows.map((r, i) => (
-                    <li key={i} className="rounded-card border border-border px-3 py-2">
+                    <li key={i} className={cards ? "rounded-control bg-raised px-3 py-2" : "rounded-card border border-border px-3 py-2"}>
                       <dl className="grid grid-cols-[minmax(96px,40%)_minmax(0,1fr)] gap-x-3 gap-y-1.5">
                         {fields.map((f) => (
                           <div key={f} className="contents">
                             <dt className="text-body text-muted">{humanize(f)}</dt>
                             <dd className="text-body">
-                              <Value value={r[f]} ev={findEv(object, i, f)} uncertain={uncertainFor(object, i, f)} refers={refers(r, f)} editable={editable_} onEdit={(v) => edit(object, i, f, v)} />
+                              <Value value={r[f]} ev={findEv(object, i, f)} uncertain={uncertainFor(object, i, f)} refers={refers(r, f)} to={link(r, f)} editable={editable_} onEdit={(v) => edit(object, i, f, v)} />
                             </dd>
                           </div>
                         ))}

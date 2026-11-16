@@ -202,3 +202,48 @@ async def test_both_search_boxes_find_objects_and_things(client):
     staff = {g["key"]: g["items"] for g in (await client.get(f"{API}/sysadmin/search", headers=ADMIN_APP, params={"q": "quarrystone"})).json()["groups"]}
     [thing] = staff["things"]
     assert thing["href"] == f"/objects/{tpl}/Place/things/QX1" and "Quarry visits" in thing["tags"] and len(thing["tags"]) == 2
+
+
+# ---- the records table -----------------------------------------------------------------------------------------------
+
+async def test_an_objects_records_are_searchable_filterable_and_sortable(client):
+    tpl = await create_template(client, schema=SCHEMA)
+    first = await commit(client, tpl, "week-1.png", record(places=[("N1", "Northgate", "North"), ("S1", "Southbank", "South"), ("N2", "Northpark", "North")]))
+    second = await commit(client, tpl, "week-2.png", record(places=[("N1", "Northgate", "North"), ("E1", "Eastfield", "East")]))
+
+    got = (await client.get(f"{API}/objects/Place/records", headers=ws(tpl))).json()
+    assert got["total"] == 5 and [c["name"] for c in got["columns"]] == ["code", "name", "area"]
+    assert {c["name"] for c in got["columns"] if c["identity"]} == {"code", "name"}
+    assert {i["document_id"] for i in got["items"]} == {first, second} and all(i["thing"]["path"].startswith("objects/Place/things/") for i in got["items"])
+    assert {i["values"]["area"] for i in got["items"]} == {"North", "South", "East"}
+    assert [f["field"] for f in got["facets"]] == ["area"] and {v["value"]: v["count"] for v in got["facets"][0]["values"]} == {"North": 3, "South": 1, "East": 1}
+
+    found = (await client.get(f"{API}/objects/Place/records", headers=ws(tpl), params={"q": "south"})).json()
+    assert [i["thing"]["label"] for i in found["items"]] == ["Southbank"] and found["total"] == 1
+    by_document = (await client.get(f"{API}/objects/Place/records", headers=ws(tpl), params={"q": "week-2"})).json()
+    assert by_document["total"] == 2 and {i["document_id"] for i in by_document["items"]} == {second}          # a document's name finds its rows
+    assert (await client.get(f"{API}/objects/Place/records", headers=ws(tpl), params={"q": "%"})).json()["total"] == 0     # a % is just a character
+
+    north = (await client.get(f"{API}/objects/Place/records", headers=ws(tpl), params={"f": ["area:North"]})).json()
+    assert north["total"] == 3 and {i["values"]["area"] for i in north["items"]} == {"North"}
+    ordered = (await client.get(f"{API}/objects/Place/records", headers=ws(tpl), params={"sort": "f:name", "direction": "asc"})).json()
+    assert [i["thing"]["label"] for i in ordered["items"]] == ["Eastfield", "Northgate", "Northgate", "Northpark", "Southbank"]
+    assert (await client.get(f"{API}/objects/Place/records", headers=ws(tpl), params={"since_days": 7})).json()["total"] == 5
+    assert (await client.get(f"{API}/objects/Place/records", headers=ws(tpl), params={"page": 1})).json()["items"] == []      # one page of 25 only
+    assert (await client.get(f"{API}/objects/Place/records", headers=ws(tpl), params={"f": ["nothing:x"]})).json()["total"] == 5   # not an attribute: ignored
+
+
+async def test_a_things_records_are_its_rows_in_each_document(client):
+    tpl = await create_template(client, schema=SCHEMA)
+    first = await commit(client, tpl, "week-1.png", record(places=[("N1", "Northgate", "North"), ("S1", "Southbank", "South")]))
+    second = await commit(client, tpl, "week-2.png", record(places=[("N1", "Northgate", "Northern")]))
+    got = (await client.get(f"{API}/objects/Place/things/n1/records", headers=ws(tpl))).json()
+    assert got["total"] == 2 and {i["document_id"] for i in got["items"]} == {first, second}
+    assert sorted(i["values"]["area"] for i in got["items"]) == ["North", "Northern"]            # as each document read it
+    assert (await client.get(f"{API}/objects/Place/things/nobody/records", headers=ws(tpl))).json()["total"] == 0
+
+
+async def test_an_object_without_an_identity_has_no_records_table(client):
+    tpl = await create_template(client, schema=SCHEMA)
+    res = await client.get(f"{API}/objects/Visit/records", headers=ws(tpl))
+    assert res.status_code == 404 and res.json()["detail"]["code"] == "no_identity"

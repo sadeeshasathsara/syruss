@@ -89,3 +89,41 @@ export interface ThingProfile {
   knowledge: { id: string; name: string; aliases: string[]; attributes: Record<string, unknown>; created_by: string } | null;
   documents: Paged<ProfileDocument>;
 }
+
+/** One row of an object with an identity as a document read it: the thing's attributes in that document. */
+export interface RecordRow {
+  id: string;
+  document_id: string;
+  document_name: string;
+  file_name: string;
+  status: DocumentStatus;
+  seen_at: string;
+  /** The thing the row is about (always there for an object with an identity) */
+  thing: { key: string; id: string; label: string; path: string } | null;
+  values: Record<string, unknown>;
+}
+
+export interface RecordColumn {
+  name: string;
+  type: string;
+  /** Part of what names the thing (its id or name field) */
+  identity: boolean;
+}
+
+/** The records table: rows of an object (or of one thing) across documents, and the filters it can offer. */
+export interface ObjectRecords extends Paged<RecordRow> {
+  columns: RecordColumn[];
+  /** Attributes with only a few different values, as filter choices (first page only) */
+  facets: { field: string; values: { value: string; count: number }[] }[];
+}
+
+export interface RecordQuery {
+  /** The thing's id, for one thing's rows instead of the whole object's */
+  thing?: string;
+  q?: string;
+  filters?: Record<string, string>;
+  sinceDays?: number | null;
+  sort?: string;
+  direction?: "asc" | "desc";
+  page?: number;
+}
