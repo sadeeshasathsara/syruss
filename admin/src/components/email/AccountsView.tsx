@@ -16,6 +16,7 @@ import { canSeal, sealForMail } from "@/lib/mailSeal";
 import type { MailAccount, MailImapInput, MailOverview, MailProvider, MailPurpose } from "@/lib/types";
 import { PROVIDER_LABEL } from "./OAuthReturn";
 import { Select } from "@/components/ui/Select";
+import { usePreservedState } from "@/lib/resume";
 
 const KIND: Record<MailAccount["kind"], string> = { gmail: "Google", graph: "Microsoft", smtp_imap: "Mail server", console: "Log only", memory: "Memory" };
 
@@ -85,8 +86,8 @@ function JobSelect({ o, value, onChange, optional }: { o: MailOverview; value: M
 }
 
 function Connect({ o, open, onClose }: { o: MailOverview; open: boolean; onClose: () => void }) {
-  const [job, setJob] = useState<MailPurpose>("notifications");
-  const [imap, setImap] = useState(false);
+  const [job, setJob] = usePreservedState<MailPurpose>("email.connect.job", "notifications");
+  const [imap, setImap] = usePreservedState("email.connect.imap", false);
   const start = useMutation({ mutationFn: (provider: MailProvider) => api.mail.oauthStart(provider, [job]), onSuccess: (r) => loadPage(r.url) });
   const close = () => { setImap(false); onClose(); };
   return (
@@ -122,9 +123,9 @@ function Connect({ o, open, onClose }: { o: MailOverview; open: boolean; onClose
 
 function ImapForm({ o, onDone, onBack }: { o: MailOverview; onDone: () => void; onBack: () => void }) {
   const refresh = useRefresh();
-  const [v, setV] = useState<MailImapInput>({ address: "", name: "Syruss", smtp_host: "", smtp_port: 587, smtp_security: "starttls", smtp_username: "",
-    smtp_password: "", imap_host: "", imap_port: 993, imap_ssl: true, imap_folder: "INBOX", imap_username: "", imap_password: "" });
-  const [job, setJob] = useState<MailPurpose>("");
+  const [v, setV] = usePreservedState<MailImapInput>("email.imap.form", { address: "", name: "Syruss", smtp_host: "", smtp_port: 587, smtp_security: "starttls", smtp_username: "",
+    smtp_password: "", imap_host: "", imap_port: 993, imap_ssl: true, imap_folder: "INBOX", imap_username: "", imap_password: "" }, ["smtp_password", "imap_password"]);
+  const [job, setJob] = usePreservedState<MailPurpose>("email.imap.job", "");
   const [sealing, setSealing] = useState<boolean | null>(null);
   useEffect(() => {
     canSeal().then(setSealing);

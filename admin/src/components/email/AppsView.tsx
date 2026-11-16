@@ -12,6 +12,7 @@ import { cn } from "@/lib/format";
 import { canSeal, sealForMail } from "@/lib/mailSeal";
 import type { MailOverview, MailProvider } from "@/lib/types";
 import { PROVIDER_LABEL } from "./OAuthReturn";
+import { usePreservedState } from "@/lib/resume";
 
 const GUIDE: Record<MailProvider, string> = {
   google: "Create a Web application client in Google Cloud (Credentials), turn on the Gmail API, and add the address below as its redirect.",
@@ -32,7 +33,7 @@ function ProviderApp({ provider, o }: { provider: MailProvider; o: MailOverview 
   const info = o.providers[provider];
   const label = PROVIDER_LABEL[provider];
   const [clientId, setClientId] = useState("");
-  const [tenant, setTenant] = useState(info.tenant ?? "");
+  const [tenant, setTenant] = usePreservedState("apps.tenant", info.tenant ?? "");
   const [secret, setSecret] = useState("");
   const [sealing, setSealing] = useState<boolean | null>(null);
   const [confirming, setConfirming] = useState(false);

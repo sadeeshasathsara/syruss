@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import { ago, cn } from "@/lib/format";
 import type { MailAccount, MailDirection, MailJobDef, MailJobSettings, MailOverview } from "@/lib/types";
 import { Select } from "@/components/ui/Select";
+import { usePreservedState } from "@/lib/resume";
 
 const DIRECTION: Record<MailDirection, string> = { send: "Sends", read: "Reads", both: "Sends and reads" };
 // The built-in jobs first, in this order; the ones added here after them
@@ -178,9 +179,9 @@ const slug = (text: string) => text.toLowerCase().normalize("NFKD").replace(/[^a
 
 function NewJob({ taken, open, onClose }: { taken: string[]; open: boolean; onClose: () => void }) {
   const refresh = useRefresh();
-  const [label, setLabel] = useState("");
-  const [direction, setDirection] = useState<MailDirection>("send");
-  const [description, setDescription] = useState("");
+  const [label, setLabel] = usePreservedState("email.job.label", "");
+  const [direction, setDirection] = usePreservedState<MailDirection>("email.job.direction", "send");
+  const [description, setDescription] = usePreservedState("email.job.description", "");
   const key = slug(label);
   const create = useMutation({
     mutationFn: () => api.mail.createJob({ key, label: label.trim(), direction, description: description.trim() || undefined }),

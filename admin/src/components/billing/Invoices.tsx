@@ -15,6 +15,7 @@ import { KIND_OF_INVOICE, day, invoiceStatus, money, price } from "@/lib/billing
 import { cn } from "@/lib/format";
 import type { CatalogItem, Invoice } from "@/lib/types";
 import { Select } from "@/components/ui/Select";
+import { usePreservedState } from "@/lib/resume";
 
 const FILTERS = [
   { key: "all", label: "All" }, { key: "open", label: "Waiting" }, { key: "overdue", label: "Overdue" }, { key: "paid", label: "Paid" },
@@ -26,7 +27,7 @@ export function InvoiceList() {
   const can = useStaff().can("billing.manage");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("all");
   const [q, setQ] = useState("");
-  const [making, setMaking] = useState(false);
+  const [making, setMaking] = usePreservedState("invoice.new.open", false);
   const params = filter === "overdue" ? { overdue: "true" } : filter === "all" ? {} : { status: filter };
   const list = useQuery({ queryKey: ["billing", "invoices", filter, q], queryFn: () => api.billing.invoices({ ...params, q: q || undefined }) });
   return (
@@ -94,10 +95,10 @@ export function InvoiceEditor({ tenantId, onDone }: { tenantId?: string; onDone:
   const router = useRouter();
   const orgs = useQuery({ queryKey: ["billing", "organizations", ""], queryFn: () => api.billing.organizations(), enabled: !tenantId });
   const catalog = useQuery({ queryKey: ["billing", "catalog"], queryFn: () => api.billing.catalog() });
-  const [tenant, setTenant] = useState(tenantId ?? "");
-  const [lines, setLines] = useState<LineDraft[]>([{ item_id: "", description: "", cents: 0, quantity: 1 }]);
-  const [note, setNote] = useState("");
-  const [issue, setIssue] = useState(true);
+  const [tenant, setTenant] = usePreservedState("invoice.new.tenant", tenantId ?? "");
+  const [lines, setLines] = usePreservedState<LineDraft[]>("invoice.new.lines", [{ item_id: "", description: "", cents: 0, quantity: 1 }]);
+  const [note, setNote] = usePreservedState("invoice.new.note", "");
+  const [issue, setIssue] = usePreservedState("invoice.new.issue", true);
   const onSale: CatalogItem[] = (catalog.data ?? []).filter((i) => i.status === "published");
   const set = (n: number, patch: Partial<LineDraft>) => setLines((ls) => ls.map((l, i) => (i === n ? { ...l, ...patch } : l)));
   const ready = !!tenant && lines.every((l) => l.item_id || (l.description.trim() && l.cents >= 0)) && lines.length > 0;

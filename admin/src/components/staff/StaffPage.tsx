@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 import { useStaff } from "@/components/shell/AdminFrame";
 import { Bar, ErrorNote, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
@@ -11,6 +10,7 @@ import { ago, cn } from "@/lib/format";
 import type { StaffMember, StaffPolicy, StaffRole } from "@/lib/types";
 import { Problem } from "@/components/ui/Problem";
 import { Select } from "@/components/ui/Select";
+import { usePreservedState } from "@/lib/resume";
 
 const ROLES: StaffRole[] = ["owner", "operator", "support", "billing", "viewer"];
 const title = (r: string) => r.charAt(0).toUpperCase() + r.slice(1);
@@ -74,9 +74,9 @@ const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 
 
 /** How unused access is taken away, and how often owners confirm who still needs it. */
 function AccessPolicy({ policy, manage, onDone }: { policy: StaffPolicy; manage: boolean; onDone: () => void }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(policy);
-  const [reason, setReason] = useState("");
+  const [editing, setEditing] = usePreservedState("staff.policy.editing", false);
+  const [draft, setDraft] = usePreservedState("staff.policy.draft", policy);
+  const [reason, setReason] = usePreservedState("staff.policy.reason", "");
   const save = useMutation({
     mutationFn: () => api.staff.setPolicy({ ...draft, reason: reason.trim() }),
     onSuccess: () => { setEditing(false); setReason(""); onDone(); },
@@ -169,8 +169,8 @@ function Invitations({ manage, onDone }: { manage: boolean; onDone: () => void }
 }
 
 function Row({ member: m, editable, self, onDone }: { member: StaffMember; editable: boolean; self: boolean; onDone: () => void }) {
-  const [removing, setRemoving] = useState(false);
-  const [reason, setReason] = useState("");
+  const [removing, setRemoving] = usePreservedState("staff.remove.open", false);
+  const [reason, setReason] = usePreservedState("staff.remove.reason", "");
   const change = useMutation({ mutationFn: (role: StaffRole) => api.staff.changeRole(m.user_id, { role }), onSuccess: onDone });
   const remove = useMutation({ mutationFn: () => api.staff.remove(m.user_id, reason.trim() || undefined), onSuccess: onDone });
   const review = useMutation({ mutationFn: () => api.staff.review(m.user_id), onSuccess: onDone });

@@ -23,6 +23,7 @@ import type { IntakeChannelInfo, IntakeEventInfo, IntakeKeyInfo } from "@/lib/ty
 import { useWorkspace } from "@/lib/workspace";
 import { ALL_TYPES, channelHealth, KEY_STATE, KIND_LABEL, TYPE_LABEL } from "./health";
 import { NewKeyDialog } from "./NewKey";
+import { usePreservedState } from "@/lib/resume";
 
 function useChannels() {
   const { workspace } = useWorkspace();
@@ -40,8 +41,8 @@ function NewChannelDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const { workspace, href } = useWorkspace();
   const queryClient = useQueryClient();
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<"api" | "email" | "sftp">("api");
+  const [name, setName] = usePreservedState("channel.new.name", "");
+  const [kind, setKind] = usePreservedState<"api" | "email" | "sftp">("channel.new.kind", "api");
   const info = useQuery({ queryKey: ["channels", workspace.id, "developer-info"], queryFn: () => api.channels.developerInfo(workspace.id), enabled: open });
   const create = useMutation({
     mutationFn: () => api.channels.create(workspace.id, { name: name.trim(), kind }),
@@ -91,7 +92,7 @@ function NewChannelDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
 export function ReceivePage() {
   const { href } = useWorkspace();
   const { allowed, channels } = useChannels();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = usePreservedState("channel.creating", false);
   const title = "Receive";
   const description = "How documents get into this workspace from your other systems. Each channel knows which workspace its documents belong to.";
 
@@ -245,12 +246,12 @@ function Rules({ channel, workspaceMax }: { channel: IntakeChannelInfo; workspac
   const { workspace } = useWorkspace();
   const queryClient = useQueryClient();
   const initial = channel.config.allowed_types ?? ALL_TYPES;
-  const [types, setTypes] = useState<string[]>(initial);
-  const [maxMb, setMaxMb] = useState(channel.config.max_mb ? String(channel.config.max_mb) : "");
-  const [process, setProcess] = useState<"workspace" | "yes" | "no">(channel.config.process == null ? "workspace" : channel.config.process ? "yes" : "no");
+  const [types, setTypes] = usePreservedState<string[]>("channel.rules.types", initial);
+  const [maxMb, setMaxMb] = usePreservedState("channel.rules.maxmb", channel.config.max_mb ? String(channel.config.max_mb) : "");
+  const [process, setProcess] = usePreservedState<"workspace" | "yes" | "no">("channel.rules.process", channel.config.process == null ? "workspace" : channel.config.process ? "yes" : "no");
   const email = channel.kind === "email";
-  const [senders, setSenders] = useState((channel.config.sender_allowlist ?? []).join("\n"));
-  const [vouched, setVouched] = useState(!!channel.config.require_authentication);
+  const [senders, setSenders] = usePreservedState("channel.rules.senders", (channel.config.sender_allowlist ?? []).join("\n"));
+  const [vouched, setVouched] = usePreservedState("channel.rules.vouched", !!channel.config.require_authentication);
   const save = useMutation({
     mutationFn: () => api.channels.update(workspace.id, channel.id, { config: {
       allowed_types: types.length === ALL_TYPES.length ? null : types, max_mb: maxMb ? Number(maxMb) : null,
@@ -387,7 +388,7 @@ export function ChannelPage({ slug }: { slug: string }) {
   const { allowed, channels } = useChannels();
   const info = useQuery({ queryKey: ["channels", workspace.id, "developer-info"], queryFn: () => api.channels.developerInfo(workspace.id), enabled: allowed });
   const channel = channels.data?.find((c) => c.slug === slug);
-  const [newKey, setNewKey] = useState(false);
+  const [newKey, setNewKey] = usePreservedState("channel.key.open", false);
   const [removing, setRemoving] = useState(false);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["channels", workspace.id] });
   const toggle = useMutation({ mutationFn: (active: boolean) => api.channels.update(workspace.id, channel!.id, { status: active ? "active" : "paused" }), onSuccess: refresh });
