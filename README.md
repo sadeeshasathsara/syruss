@@ -127,3 +127,11 @@ Tables are created at startup with `create_all`, which does not alter existing t
 this redesign, reset the development database (`POST /api/v1/admin/reset` truncates; to pick up
 new columns, drop and recreate the `doc_intelligence` database). Adding Alembic migrations is
 the next step before production data exists.
+
+## Contributing, security and license
+
+- [Contributing](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security policy](SECURITY.md): report vulnerabilities privately
+- Licensed under the [GNU General Public License v3](LICENSE): anyone who distributes this software or a work based on it must make the
+  complete source available under the same license. (The GPL covers distribution; it does not require sharing the source of a service that is
+  only run for others over a network. The GNU AGPL is the license that does.)
