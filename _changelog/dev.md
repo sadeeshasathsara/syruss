@@ -17,9 +17,14 @@
 | **admin** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#admin-100-dev1) |
 | **agent** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#agent-100-dev1) |
 | **mail** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#mail-100-dev1) |
-| **server** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#server-100-dev1) |
+| **server** | `1.0.1-dev.1` | 2026-11-16 | [What changed](#server-101-dev1) |
 | **site** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#site-100-dev1) |
 | **www** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#www-100-dev1) |
+
+## [2026-11-16] - Release via dev
+
+### server (1.0.1-dev.1)
+- **The check on what the agent says can't be slowed down by text made of thousands of image starts.** Removing markdown and HTML images from the agent's replies, flags and conversations is now a single pass over the text instead of one regular expression that could work through the rest of the text from every `![` or `<img`. What is removed is unchanged.
 
 ## [2026-11-16] - Release via dev
 

