@@ -38,10 +38,58 @@ SECRETS: List[Tuple[str, re.Pattern]] = [
     # "password: Xy7!kq2..." (a value with a digit or a symbol, so "Password: required" is left alone)
     ("password", re.compile(r"(?i)\b(password|passwd|secret|api[_-]?key)\s*[:=]\s*(?=\S*[\d!@#$%^&*_\-])\S{6,}")),
 ]
-IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
-HTML_IMAGE = re.compile(r"<img\b[^>]*>", re.I)
+HTML_IMAGE_START = re.compile(r"<img\b", re.I)
 UUID = re.compile(r"(?<![\w/-])`?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`?(?![\w-])", re.I)
 SHORT_ID = re.compile(r"`?\b[0-9a-f]{8}(?:-[0-9a-f]{0,4})?(?:\.{3}|…)`?", re.I)
+
+
+def strip_markdown_images(text: str, replace) -> Tuple[str, int]:
+    """Replaces each ![description](address) with `replace(description)`. Written as a scan, not one regular expression: text made of
+    many "![" (or "![](") with no end would make that pattern work through the rest of the text from every start, and the text is
+    the agent's, so it can be anything. Here every position is looked at once: the next "]" and ")" are only searched for again when
+    the one found has been passed."""
+    out: List[str] = []
+    count, at, i = 0, 0, 0
+    close = paren = -2                      # where the next "]" / ")" is (-1: there is none, so no later image can end either)
+    while True:
+        start = text.find("![", i)
+        if start < 0:
+            break
+        if close != -1 and close < start + 2:
+            close = text.find("]", start + 2)
+        if close == -1:
+            break
+        if text[close + 1:close + 2] != "(":
+            i = start + 1
+            continue
+        if paren != -1 and paren < close + 2:
+            paren = text.find(")", close + 2)
+        if paren == -1:
+            break
+        out.append(text[at:start])
+        out.append(replace(text[start + 2:close]))
+        count += 1
+        at = i = paren + 1
+    out.append(text[at:])
+    return "".join(out), count
+
+
+def strip_html_images(text: str) -> Tuple[str, int]:
+    """Removes each <img ...>. A scan for the same reason as strip_markdown_images: many "<img" with no ">" must not cost more than one pass."""
+    out: List[str] = []
+    count, at, end = 0, 0, -2
+    for m in HTML_IMAGE_START.finditer(text):
+        if m.start() < at:
+            continue
+        if end != -1 and end < m.end():
+            end = text.find(">", m.end())
+        if end == -1:
+            break
+        out.append(text[at:m.start()])
+        count += 1
+        at = end + 1
+    out.append(text[at:])
+    return "".join(out), count
 
 
 def screen(text: str) -> Tuple[str, List[str]]:
@@ -55,8 +103,8 @@ def screen(text: str) -> Tuple[str, List[str]]:
         text, n = pattern.subn("[removed]", text)
         if n:
             found.append(kind)
-    text, n = IMAGE.subn(lambda m: f"({m.group(1) or 'image'})", text)
-    text, m = HTML_IMAGE.subn("", text)
+    text, n = strip_markdown_images(text, lambda description: f"({description or 'image'})")
+    text, m = strip_html_images(text)
     if n or m:
         found.append("image")
     text, n = UUID.subn("[internal reference]", text)
