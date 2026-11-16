@@ -48,13 +48,13 @@ jobs:
       admin_version: ${{ steps.apply.outputs.admin_version }}
       admin_tag: ${{ steps.apply.outputs.admin_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -84,7 +84,7 @@ jobs:
     if: needs.prepare-release.outputs.server_changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -108,20 +108,20 @@ jobs:
 
       - name: Create GitHub Release (Production)
         if: github.ref_name == 'main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.GIT_TAG }}
           name: "Server ${{ env.GIT_TAG }}"
           generate_release_notes: true
 
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v7
         with:
           context: ./server
           push: true
@@ -142,7 +142,7 @@ jobs:
     if: needs.prepare-release.outputs.agent_changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -166,20 +166,20 @@ jobs:
 
       - name: Create GitHub Release (Production)
         if: github.ref_name == 'main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.GIT_TAG }}
           name: "Agent ${{ env.GIT_TAG }}"
           generate_release_notes: true
 
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v7
         with:
           context: ./agentic_framework
           push: true
@@ -200,7 +200,7 @@ jobs:
     if: needs.prepare-release.outputs.mail_changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -224,20 +224,20 @@ jobs:
 
       - name: Create GitHub Release (Production)
         if: github.ref_name == 'main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.GIT_TAG }}
           name: "Mail ${{ env.GIT_TAG }}"
           generate_release_notes: true
 
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v7
         with:
           context: ./mail
           push: true
@@ -258,7 +258,7 @@ jobs:
     if: needs.prepare-release.outputs.www_changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -282,20 +282,20 @@ jobs:
 
       - name: Create GitHub Release (Production)
         if: github.ref_name == 'main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.GIT_TAG }}
           name: "Web App ${{ env.GIT_TAG }}"
           generate_release_notes: true
 
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v7
         with:
           context: ./www
           push: true
@@ -317,7 +317,7 @@ jobs:
     if: needs.prepare-release.outputs.site_changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -341,20 +341,20 @@ jobs:
 
       - name: Create GitHub Release (Production)
         if: github.ref_name == 'main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.GIT_TAG }}
           name: "Site ${{ env.GIT_TAG }}"
           generate_release_notes: true
 
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v7
         with:
           context: ./site
           push: true
@@ -375,7 +375,7 @@ jobs:
     if: needs.prepare-release.outputs.admin_changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -399,20 +399,20 @@ jobs:
 
       - name: Create GitHub Release (Production)
         if: github.ref_name == 'main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.GIT_TAG }}
           name: "Admin ${{ env.GIT_TAG }}"
           generate_release_notes: true
 
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v7
         with:
           context: ./admin
           push: true
@@ -438,11 +438,11 @@ jobs:
       images: ${{ steps.pick.outputs.images }}
       names: ${{ steps.pick.outputs.names }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -477,16 +477,16 @@ jobs:
       matrix:
         image: ${{ fromJSON(needs.detect-infra.outputs.images) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v7
         with:
           context: ${{ format('./bridge/{0}', matrix.image) }}
           push: true
@@ -509,7 +509,7 @@ jobs:
       group: deploy-test
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Call the deploy hook
         env:
@@ -553,7 +553,7 @@ jobs:
       group: deploy-prod
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Call the deploy hook
         env:

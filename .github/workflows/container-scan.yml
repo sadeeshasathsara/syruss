@@ -48,10 +48,10 @@ jobs:
           - { name: keycloak, context: bridge/keycloak, gate: false }
           - { name: kafka, context: bridge/kafka, gate: false }
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
       - name: Build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./${{ matrix.context }}
           load: true
@@ -76,7 +76,7 @@ jobs:
     name: Scan Dockerfiles and compose files
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Reported, not enforced: the Postgres images and the local development compose file run as root on purpose
       - name: Misconfigurations (high and critical)
         run: |

@@ -34,11 +34,11 @@ jobs:
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Skip without a model key
         if: env.GEMINI_API_KEY == ''
         run: echo "::warning::Set the GEMINI_API_KEY repository secret to run the agent red team." && exit 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: env.GEMINI_API_KEY != ''
         with:
           python-version: "3.12"
