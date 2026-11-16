@@ -14,12 +14,32 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.21.0-dev.1` | 2026-11-15 | [What changed](#admin-0210-dev1) |
+| **admin** | `0.22.0-dev.1` | 2026-11-16 | [What changed](#admin-0220-dev1) |
 | **agent** | `0.13.0-dev.1` | 2026-11-15 | [What changed](#agent-0130-dev1) |
 | **mail** | `0.8.0-dev.1` | 2026-11-15 | [What changed](#mail-080-dev1) |
 | **server** | `0.30.0-dev.1` | 2026-11-15 | [What changed](#server-0300-dev1) |
-| **site** | `0.2.8-dev.1` | 2026-11-14 | [What changed](#site-028-dev1) |
-| **www** | `0.18.0-dev.1` | 2026-11-15 | [What changed](#www-0180-dev1) |
+| **site** | `0.2.9-dev.1` | 2026-11-16 | [What changed](#site-029-dev1) |
+| **www** | `0.19.0-dev.1` | 2026-11-16 | [What changed](#www-0190-dev1) |
+
+## [2026-11-16] - Release via dev
+
+### admin (0.22.0-dev.1)
+- **What you were filling in is still there after you sign in again.** When a session ends, or an action asks for a fresh sign-in, and you come back to the page, the dialog you had open and what you had typed are restored: in the admin app the Email dialogs, staff policy and removal, billing (plan changes, add-ons, credits, limits, trials, new invoices) and platform notices and maintenance; in the customer app the new-channel, new-key, channel rules, API key, webhook, role, member removal, destination setup and the confirm-by-typing dialogs for closing an organization, deleting a workspace and deleting an account.
+- **The browser is never trusted with it.** The draft is sealed by the app's own server (AES-256-GCM) before it is kept, so the browser holds only an opaque blob it can't read or change. The blob is tied to the person who was signed in, to that page, and to the next 15 minutes; it is used once, and a different person signing in, another page or a changed blob gets nothing. It is kept in the tab only (not in local storage).
+- **Passwords, keys, secrets and tokens are never kept**, in the browser or on the server: forms leave them out, and the server drops anything that looks like one even if a form sends it. You retype those.
+- **A sealed draft can never be taken for a session.** Drafts are sealed with a key of their own (derived from the app's secret and the purpose), and only someone signed in can have anything sealed, so the route can't be used to produce session or sign-in values.
+
+### site (0.2.9-dev.1)
+- **What you were filling in is still there after you sign in again.** When a session ends, or an action asks for a fresh sign-in, and you come back to the page, the dialog you had open and what you had typed are restored: in the admin app the Email dialogs, staff policy and removal, billing (plan changes, add-ons, credits, limits, trials, new invoices) and platform notices and maintenance; in the customer app the new-channel, new-key, channel rules, API key, webhook, role, member removal, destination setup and the confirm-by-typing dialogs for closing an organization, deleting a workspace and deleting an account.
+- **The browser is never trusted with it.** The draft is sealed by the app's own server (AES-256-GCM) before it is kept, so the browser holds only an opaque blob it can't read or change. The blob is tied to the person who was signed in, to that page, and to the next 15 minutes; it is used once, and a different person signing in, another page or a changed blob gets nothing. It is kept in the tab only (not in local storage).
+- **Passwords, keys, secrets and tokens are never kept**, in the browser or on the server: forms leave them out, and the server drops anything that looks like one even if a form sends it. You retype those.
+- **A sealed draft can never be taken for a session.** Drafts are sealed with a key of their own (derived from the app's secret and the purpose), and only someone signed in can have anything sealed, so the route can't be used to produce session or sign-in values.
+
+### www (0.19.0-dev.1)
+- **What you were filling in is still there after you sign in again.** When a session ends, or an action asks for a fresh sign-in, and you come back to the page, the dialog you had open and what you had typed are restored: in the admin app the Email dialogs, staff policy and removal, billing (plan changes, add-ons, credits, limits, trials, new invoices) and platform notices and maintenance; in the customer app the new-channel, new-key, channel rules, API key, webhook, role, member removal, destination setup and the confirm-by-typing dialogs for closing an organization, deleting a workspace and deleting an account.
+- **The browser is never trusted with it.** The draft is sealed by the app's own server (AES-256-GCM) before it is kept, so the browser holds only an opaque blob it can't read or change. The blob is tied to the person who was signed in, to that page, and to the next 15 minutes; it is used once, and a different person signing in, another page or a changed blob gets nothing. It is kept in the tab only (not in local storage).
+- **Passwords, keys, secrets and tokens are never kept**, in the browser or on the server: forms leave them out, and the server drops anything that looks like one even if a form sends it. You retype those.
+- **A sealed draft can never be taken for a session.** Drafts are sealed with a key of their own (derived from the app's secret and the purpose), and only someone signed in can have anything sealed, so the route can't be used to produce session or sign-in values.
 
 ## [2026-11-15] - Release via dev
 
