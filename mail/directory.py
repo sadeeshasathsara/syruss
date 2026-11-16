@@ -52,8 +52,12 @@ class Directory:
         keys = [j.key for j in jobs]
         out: Dict[str, Dict[str, Any]] = {}
         _, public = await self.store.box()
-        out["meta"] = {"public_key": base64.b64encode(public).decode(), "fingerprint": sealing.fingerprint(public),
-                       "providers": {p: apps.describe(p) for p in apps.PROVIDERS}}
+        signer_private, signer_public = await self.store.signer()
+        key, fingerprint = base64.b64encode(public).decode(), sealing.fingerprint(public)
+        out["meta"] = {"public_key": key, "fingerprint": fingerprint, "providers": {p: apps.describe(p) for p in apps.PROVIDERS},
+                       # signed, so a server that knows our signing key believes this key only when we said it (Kafka has no login)
+                       "signer": base64.b64encode(signer_public).decode(),
+                       "signature": base64.b64encode(sealing.sign(signer_private, sealing.directory_message(key, fingerprint))).decode()}
         if self.router.fallback.kind != "none":
             out["account:" + self.router.fallback.id] = describe_account(None, self.router.fallback, routes, keys)
         for row in await self.store.accounts():

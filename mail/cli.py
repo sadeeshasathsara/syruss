@@ -15,6 +15,7 @@ link is an email) and for keys. Run it where the service runs, with the same env
 Everything after that is done in the admin app (Email).
 """
 import argparse
+import base64
 import asyncio
 import getpass
 import sys
@@ -77,6 +78,17 @@ async def _jobs() -> int:
         await store.close()
 
 
+async def _signer() -> int:
+    store = Store()
+    await store.init()
+    try:
+        _, public = await store.signer()
+        print(base64.b64encode(public).decode())
+        return 0
+    finally:
+        await store.close()
+
+
 async def _fingerprint() -> int:
     store = Store()
     await store.init()
@@ -93,6 +105,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("keygen", help="a new master key")
     sub.add_parser("fingerprint", help="the fingerprint of the key secrets are sealed to")
+    sub.add_parser("signer", help="the key this service signs its directory with: give it to the server as MAIL_SERVICE_PUBLIC_KEY")
     sub.add_parser("jobs", help="each job and the account that serves it")
     c = sub.add_parser("connect", help="connect a mail server")
     c.add_argument("--address", required=True, help="the mailbox's address (the From address)")
@@ -117,4 +130,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         return asyncio.run(_connect(args))
     if args.command == "jobs":
         return asyncio.run(_jobs())
+    if args.command == "signer":
+        return asyncio.run(_signer())
     return asyncio.run(_fingerprint())

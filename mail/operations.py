@@ -12,6 +12,8 @@ from sqlalchemy import delete, select, update
 from mail import apps, oauth
 from mail.accounts import ENV_ACCOUNT_ID, account_from_row
 from mail.accounts.base import MailNotPermitted
+from mail.config import settings
+from mail.netguard import refuse_internal
 from mail.purposes import Job, JobError, Use, clean_settings, validate_new, validate_use
 from mail.router import Router
 from mail.store import AccountRow, CursorRow, JobRow, PurposeRow, Store, seal, unseal
@@ -41,6 +43,11 @@ class Operations:
         address = (address or "").strip().lower()
         if "@" not in address:
             raise OperationError("Give the mailbox's address.")
+        if settings.is_deployed:   # development uses localhost (Mailpit); a real server only reaches the public internet
+            try:
+                await refuse_internal(str(config.get("smtp_host") or ""), str(config.get("imap_host") or ""))
+            except ValueError as e:
+                raise OperationError(str(e)) from e
         row = AccountRow(id=f"imap-{uuid.uuid4().hex[:12]}", kind="smtp_imap", address=address, name=(name or "Syruss")[:120],
                          config=config, secret=seal(secret), created_by=by, status="active")
         row.granted = account_from_row(row, {}).granted.names()

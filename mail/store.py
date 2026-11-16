@@ -292,6 +292,23 @@ class Store:
             kept = unseal(row.value)
         return base64.b64decode(kept["private"]), base64.b64decode(kept["public"])
 
+    async def signer(self) -> Tuple[bytes, bytes]:
+        """(private, public) of the key this service signs its directory with, made on first use and kept sealed. The server is given
+        the public half (MAIL_SERVICE_PUBLIC_KEY) so it believes the box key only when this service says it."""
+        async with self.session() as s:
+            row = await s.get(SettingRow, "signer")
+            if row is None:
+                private, public = sealing.new_signing_keypair()
+                row = SettingRow(key="signer", value=seal({"private": base64.b64encode(private).decode(), "public": base64.b64encode(public).decode()}))
+                s.add(row)
+                try:
+                    await s.commit()
+                except Exception:  # another process made it first
+                    await s.rollback()
+                    row = await s.get(SettingRow, "signer")
+            kept = unseal(row.value)
+        return base64.b64decode(kept["private"]), base64.b64decode(kept["public"])
+
     async def open_box(self, blob: bytes) -> bytes:
         private, public = await self.box()
         return sealing.box_open(private, public, blob)

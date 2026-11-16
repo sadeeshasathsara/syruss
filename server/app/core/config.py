@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     MAIL_DIRECTORY_TOPIC: str = "mail.directory"
     MAIL_INBOUND_ACKS_TOPIC: str = "mail.inbound.acks"
     # What commands are signed with (base64, 32 bytes): `python -m app.mail_signing_key` makes it, with the public half for mail.env.
+    # The public key the mail service signs its directory with (python -m mail signer). When set, the key secrets are sealed to is believed only
+    # if it carries the mail service's signature, so someone able to write to Kafka can't swap it. Required on a real server.
+    MAIL_SERVICE_PUBLIC_KEY: str = ""
     MAIL_COMMAND_SIGNING_KEY: str = ""
     # The sender's address and name, the reply address, the support mailbox, every mail server and credential are the mail service's
     # (mail.env, and the admin app's Email page). The addresses the server needs it reads from the mail service's directory

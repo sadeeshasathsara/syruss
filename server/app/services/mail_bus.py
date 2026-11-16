@@ -22,6 +22,7 @@ import uuid
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -53,6 +54,9 @@ def canonical(envelope: Dict[str, Any]) -> bytes:
     """The bytes that are signed: everything but `sig`, keys sorted, no spaces (mail/commands.py: canonical)."""
     body = {k: envelope[k] for k in ("id", "type", "ts", "by", "payload") if k in envelope}
     return json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+DIRECTORY_CONTEXT = b"syruss-mail-directory-v1"   # the same words as mail/sealing.py
 
 
 def sign(private: bytes, message: bytes) -> bytes:
@@ -209,6 +213,8 @@ class MailBus:
             entry = None
         else:
             entry = json.loads(value)
+            if key == "meta" and not self._signed(entry):
+                return          # Kafka has no login: a key nobody vouched for is not believed (what is already believed stays)
             if self.state.get(key) == entry:
                 return          # the mail service publishes everything every minute: nothing new, nobody is told
             self.state[key] = entry
@@ -217,6 +223,20 @@ class MailBus:
                 await listener(key, entry)
             except Exception:  # noqa: BLE001
                 logger.exception("A directory listener failed")
+
+    def _signed(self, meta: Dict[str, Any]) -> bool:
+        """Whether the directory's key carries the mail service's signature. Without MAIL_SERVICE_PUBLIC_KEY (development) it is taken as it is."""
+        pinned = settings.MAIL_SERVICE_PUBLIC_KEY.strip()
+        if not pinned:
+            return True
+        try:
+            message = DIRECTORY_CONTEXT + b"|" + str(meta.get("public_key", "")).encode() + b"|" + str(meta.get("fingerprint", "")).encode()
+            ed25519.Ed25519PublicKey.from_public_bytes(base64.b64decode(pinned)).verify(base64.b64decode(str(meta.get("signature", ""))), message)
+            return True
+        except (InvalidSignature, ValueError, TypeError):
+            logger.error("Ignored a mail directory key that the mail service didn't sign: someone is writing to the directory topic, or "
+                         "MAIL_SERVICE_PUBLIC_KEY isn't the mail service's (python -m mail signer).")
+            return False
 
     async def ready(self, timeout: float = 5.0) -> bool:
         """Waits (a little) for the directory to be read. False when the mail service hasn't been heard from."""
