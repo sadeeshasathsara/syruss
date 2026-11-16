@@ -7,14 +7,14 @@ from sqlalchemy import select, update
 from app.models.identity import User
 from app.models.platform import PlatformAuditEntry
 from app.models.tenant import Tenant
-from tests.conftest import AsyncSessionLocal, person, register
+from tests.conftest import AsyncSessionLocal, make_staff, person, register
 
 API = "/api/v1/sysadmin"
-ADMIN_APP = {"X-Client-ID": "syruss-admin"}
+ADMIN_APP = {"X-Client-ID": "syruss-admin", "X-User-ID": "usr_platform_owner", "X-Username": "Pat Platform", "X-Email": "owner@syruss.test"}
 
 
 def staff_headers(user_id: str, name: str = "Staff Person", **extra) -> dict:
-    return {**person(user_id, name), **ADMIN_APP, **extra}
+    return {**ADMIN_APP, **person(user_id, name), **extra}
 
 
 async def test_only_platform_staff_signed_in_through_the_admin_app_get_in(client):
@@ -28,42 +28,45 @@ async def test_only_platform_staff_signed_in_through_the_admin_app_get_in(client
     assert res.status_code == 403 and res.json()["detail"]["code"] == "platform_staff_required"
 
 
-async def test_owners_manage_the_staff_and_every_change_is_recorded(client):
+async def test_owners_manage_the_staff_and_every_change_is_recorded(client, mailbox):
     viewer = staff_headers("usr_sys_viewer", "Vic Viewer")
-    await register(viewer, None)
-    assert (await client.post(f"{API}/staff", headers=ADMIN_APP, json={"email": "nobody@example.com", "role": "viewer"})).status_code == 404
-    added = await client.post(f"{API}/staff", headers=ADMIN_APP, json={"email": "usr_sys_viewer@example.com", "role": "viewer", "reason": "On call"})
-    assert added.status_code == 201 and added.json()["permissions"] == ["platform.view"]
-    assert (await client.post(f"{API}/staff", headers=ADMIN_APP, json={"email": "usr_sys_viewer@example.com", "role": "viewer"})).status_code == 409
+    await make_staff(client, viewer, "viewer", reason="On call")
+    assert any(m.to == "usr_sys_viewer@example.com" and "invited you" in m.subject for m in mailbox)
+    # Nobody is added from the admin app: only from the server.
+    added = await client.post(f"{API}/staff/invitations", headers=ADMIN_APP, json={"email": "new@example.com", "role": "viewer", "reason": "From the app"})
+    assert added.status_code == 405
 
     # A viewer sees the platform but changes nothing.
     assert (await client.get(f"{API}/stats", headers=viewer)).status_code == 200
-    denied = await client.post(f"{API}/staff", headers=viewer, json={"email": "dev@syruss.test", "role": "viewer"})
+    denied = await client.put(f"{API}/staff/policy", headers=viewer, json={"inactive_days": 0, "warn_days": 0, "review_days": 0, "reason": "Help me"})
     assert denied.status_code == 403 and denied.json()["detail"]["code"] == "platform_permission_denied"
 
     # Staff changes need a fresh sign-in.
     stale = {**ADMIN_APP, "X-Auth-Time": str(int(time.time()) - 3600)}
     assert (await client.patch(f"{API}/staff/usr_sys_viewer", headers=stale, json={"role": "support"})).json()["detail"]["code"] == "reauth_required"
+    mailbox.clear()
     changed = await client.patch(f"{API}/staff/usr_sys_viewer", headers=ADMIN_APP, json={"role": "support", "reason": "Helps customers now"})
-    assert changed.json()["role"] == "support" and "support.access" in changed.json()["permissions"]
+    assert changed.json()["role"] == "support" and "support.respond" in changed.json()["permissions"]
+    assert [m.subject for m in mailbox if m.to == "usr_sys_viewer@example.com"] == ["Your platform staff role is now Support"]
 
     # The deployment's owners and your own place can't be changed here.
-    assert (await client.patch(f"{API}/staff/usr_admin_default", headers=ADMIN_APP, json={"role": "viewer"})).status_code == 409
+    assert (await client.patch(f"{API}/staff/usr_platform_owner", headers=ADMIN_APP, json={"role": "viewer"})).status_code == 409
     listed = (await client.get(f"{API}/staff", headers=ADMIN_APP)).json()["items"]
-    assert {m["user_id"]: (m["role"], m["from_config"]) for m in listed}["usr_admin_default"] == ("owner", True)
+    assert {m["user_id"]: (m["role"], m["from_config"]) for m in listed}["usr_platform_owner"] == ("owner", True)
+    mailbox.clear()
     assert (await client.delete(f"{API}/staff/usr_sys_viewer", headers=ADMIN_APP, params={"reason": "Left the team"})).status_code == 204
     assert (await client.get(f"{API}/me", headers=viewer)).status_code == 403   # gone from the staff, gone from the tools
+    assert [m.subject for m in mailbox if m.to == "usr_sys_viewer@example.com"] == ["You're no longer on the Syruss platform staff"]
 
     log = (await client.get(f"{API}/audit", headers=ADMIN_APP, params={"action": "staff"})).json()["items"]
     mine = [(e["action"], e["reason"]) for e in log if e["target_id"] == "usr_sys_viewer"]
-    assert mine == [("staff.removed", "Left the team"), ("staff.role_changed", "Helps customers now"), ("staff.added", "On call")]
-    assert log[0]["actor_id"] == "usr_admin_default"
+    assert mine == [("staff.removed", "Left the team"), ("staff.role_changed", "Helps customers now"), ("staff.joined", None)]
+    assert log[0]["actor_id"] == "usr_platform_owner"
 
 
 async def test_a_disabled_account_loses_the_platform_tools_whatever_its_role(client):
     operator = staff_headers("usr_sys_operator", "Ola Operator")
-    await register(operator, None)
-    await client.post(f"{API}/staff", headers=ADMIN_APP, json={"email": "usr_sys_operator@example.com", "role": "operator"})
+    await make_staff(client, operator, "operator")
     assert (await client.get(f"{API}/me", headers=operator)).json()["role"] == "operator"
     async with AsyncSessionLocal() as db:
         await db.execute(update(User).where(User.id == "usr_sys_operator").values(status="disabled"))
@@ -77,7 +80,8 @@ async def test_the_overview_counts_the_platform_and_checks_each_service(client):
     assert set(stats) == {"organizations", "people", "workspaces", "documents", "agent", "deliveries"}
     health = (await client.get(f"{API}/health", headers=ADMIN_APP)).json()
     services = {s["key"]: s for s in health["services"]}
-    assert list(services) == ["database", "storage", "sign_in", "events", "agent"]
+    assert list(services) == ["database", "storage", "sign_in", "events", "agent", "mail"]
+    assert services["mail"]["status"] == "degraded" and "memory" in services["mail"]["detail"]  # tests keep mail in memory
     assert services["database"]["status"] == "ok" and services["storage"]["status"] == "ok"
     assert all(s["status"] in ("ok", "degraded", "down") and isinstance(s["latency_ms"], int) for s in services.values())
 

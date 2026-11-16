@@ -73,6 +73,7 @@ except Exception:
     SERVICES: Dict[str, str] = {
         "server": "server",
         "agent": "agentic_framework",
+        "mail": "mail",
         "www": "www",
         "site": "site",
         "admin": "admin",

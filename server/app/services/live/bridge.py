@@ -5,6 +5,7 @@ import uuid
 from app.core.config import settings
 from app.services.live import platform_feed
 from app.services.live.broadcaster import broadcaster
+from app.core.kafka_security import kafka_security
 
 try:
     from aiokafka import AIOKafkaConsumer
@@ -32,7 +33,7 @@ class KafkaWebSocketBridge:
         try:
             self.consumer = AIOKafkaConsumer(
                 settings.AGENT_TELEMETRY_TOPIC,
-                bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(),
                 group_id=f"core-ws-bridge-{uuid.uuid4().hex[:8]}",
                 auto_offset_reset="latest",
             )
@@ -59,7 +60,7 @@ class KafkaWebSocketBridge:
         """
         platform_feed.deliver(payload)
         channel_id = payload.get("channel_id")
-        if channel_id == platform_feed.OPS:
+        if channel_id == platform_feed.OPS or str(channel_id or "").startswith("support:"):  # the staff's own: never a customer's channel
             return
         if channel_id:
             await broadcaster.broadcast_to_channel(channel_id, payload)

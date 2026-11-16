@@ -1,9 +1,15 @@
+import type { SearchAnswer } from "@/components/shell/CommandPalette";
 import type {
   BankAccountInfo, BillingPayment, BillingSettingsPage, BillingSetup, CatalogDraft, CatalogItem, CatalogKind, CreditNoteInfo, FollowUp, MoneySummary, OrganizationAccount, PersonAccount,
+  Announcement, AtRisk, BusinessMetrics, OrgNote, OrganizationProfile, PersonProfile, PlatformControls, SecurityView, Severity, SwitchName,
   Invoice, OrgBilling, OrgBillingRow, PaymentFileInfo, SellerSettings, Submission, TaxRateInfo,
-  Grant, GrantList, Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
-  StaffActionPage, StaffList, StaffMe, StaffMember, StaffRole,
+  Names, PlatformHealth, PlatformStats, ProcessDetail, ProcessList, QueuesPage, RunDetail, RunList, RunStats,
+  StaffActionPage, StaffInvitation, StaffList, StaffMe, StaffMember, StaffRole, JoinView, SystemLesson,
+  Approval, ApprovalList, ApprovalRule, StaffPolicy,
+  ObjectProfile, ObjectSummary, Paged, ProfileWhere, ThingProfile, ThingSummary,
+  LiveChat, LiveMessage, LiveQueue, MailDirection, MailAppInput, MailImapInput, MailJob, MailJobSettings, MailOverview, MailProvider, MailPurpose, Presence, SavedReply, SupportSettings, SupportSummary, Ticket, TicketDetail, TicketMessage,
 } from "./types";
+import { resumeAndGo } from "./resume";
 
 /** Typed client for the platform tools (/api/v1/sysadmin), through this app's own proxy. */
 
@@ -14,6 +20,16 @@ export class ApiError extends Error {
     super(message);
   }
 }
+
+/** A risky action the platform's rule holds for a second owner: nothing changed yet. */
+export class ApprovalPending extends ApiError {
+  constructor(message: string, public approval: Approval) {
+    super(202, message, "approval_pending");
+  }
+}
+
+/** Pages listening for held actions (the Approvals count) hear of each one. */
+export const APPROVAL_EVENT = "syruss:approval-requested";
 
 function messageFrom(detail: unknown, fallback: string): string {
   if (typeof detail === "string") return detail;
@@ -37,7 +53,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (res.status === 401 && typeof window !== "undefined") {
     // Signed out, or the session ended: sign in again (with the one-time code) and come back to this page.
-    window.location.assign(`/api/auth/login?returnTo=${encodeURIComponent(here())}`);
+    await resumeAndGo(`/api/auth/login?returnTo=${encodeURIComponent(here())}`);
+  }
+  if (res.status === 202) {
+    const body = (await res.json().catch(() => ({}))) as { approval?: Approval; message?: string };
+    if (body.approval) {
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(APPROVAL_EVENT));
+      throw new ApprovalPending(body.message ?? "Sent to another platform owner to approve.", body.approval);
+    }
+    return body as T;
   }
   if (!res.ok) {
     let detail: unknown;
@@ -49,7 +73,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const code = (detail as { code?: string } | undefined)?.code;
     if (res.status === 403 && code === "reauth_required" && typeof window !== "undefined") {
       // A platform change: sign in again first, then come back to this page to make it.
-      window.location.assign(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(here())}`);
+      await resumeAndGo(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(here())}`);
     }
     throw new ApiError(res.status, messageFrom(detail, `Request failed (${res.status}).`), code);
   }
@@ -65,11 +89,93 @@ export const api = {
   health: () => request<PlatformHealth>("/health"),
   staff: {
     list: () => request<StaffList>("/staff"),
-    add: (body: { email: string; role: StaffRole; reason?: string }) => request<StaffMember>("/staff", { method: "POST", body: json(body) }),
+    invitations: () => request<StaffInvitation[]>("/staff/invitations"),
+    revokeInvitation: (id: string) => request<void>(`/staff/invitations/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    viewJoin: (token: string) => request<JoinView>(`/staff/join/${encodeURIComponent(token)}`),
+    sendJoinCode: (token: string) => request<unknown>(`/staff/join/${encodeURIComponent(token)}/verify/send`, { method: "POST" }),
+    confirmJoinCode: (token: string, code: string) =>
+      request<unknown>(`/staff/join/${encodeURIComponent(token)}/verify`, { method: "POST", body: json({ code }) }),
+    acceptJoin: (token: string, deleteCustomerAccount: boolean) =>
+      request<{ role: StaffRole }>(`/staff/join/${encodeURIComponent(token)}`, { method: "POST", body: json({ delete_customer_account: deleteCustomerAccount }) }),
     changeRole: (userId: string, body: { role: StaffRole; reason?: string }) =>
       request<StaffMember>(`/staff/${encodeURIComponent(userId)}`, { method: "PATCH", body: json(body) }),
     remove: (userId: string, reason?: string) =>
       request<void>(`/staff/${encodeURIComponent(userId)}${reason ? `?reason=${encodeURIComponent(reason)}` : ""}`, { method: "DELETE" }),
+    review: (userId: string, note?: string) =>
+      request<StaffMember>(`/staff/${encodeURIComponent(userId)}/review`, { method: "POST", body: json({ note: note || null }) }),
+    setPolicy: (body: StaffPolicy & { reason: string }) => request<StaffPolicy>("/staff/policy", { method: "PUT", body: json(body) }),
+  },
+  support: {
+    summary: () => request<SupportSummary>("/support/summary"),
+    tickets: (params: Record<string, string | undefined>) => request<{ items: Ticket[] }>(`/support/tickets?${query(params)}`),
+    ticket: (id: string) => request<TicketDetail>(`/support/tickets/${encodeURIComponent(id)}`),
+    answer: (id: string, body: { body: string; internal: boolean; then?: "pending" | "solved"; files: File[] }) => {
+      const form = new FormData();
+      form.set("body", body.body);
+      form.set("internal", String(body.internal));
+      if (body.then) form.set("then", body.then);
+      body.files.forEach((f) => form.append("files", f));
+      return request<TicketMessage>(`/support/tickets/${encodeURIComponent(id)}/messages`, { method: "POST", body: form });
+    },
+    change: (id: string, body: { status?: string; priority?: string; category?: string; assignee_id?: string }) =>
+      request<Ticket>(`/support/tickets/${encodeURIComponent(id)}`, { method: "PATCH", body: json(body) }),
+    merge: (id: string, into: string) => request<Ticket>(`/support/tickets/${encodeURIComponent(id)}/merge`, { method: "POST", body: json({ into }) }),
+    fileUrl: (ticketId: string, fileId: string) => `${API}/support/tickets/${encodeURIComponent(ticketId)}/files/${encodeURIComponent(fileId)}`,
+    staff: () => request<{ id: string; name: string }[]>("/support/staff"),
+    savedReplies: () => request<SavedReply[]>("/support/saved-replies"),
+    addSavedReply: (body: { title: string; body: string; shortcut?: string | null }) =>
+      request<SavedReply>("/support/saved-replies", { method: "POST", body: json(body) }),
+    editSavedReply: (id: string, body: { title: string; body: string; shortcut?: string | null }) =>
+      request<SavedReply>(`/support/saved-replies/${encodeURIComponent(id)}`, { method: "PATCH", body: json(body) }),
+    removeSavedReply: (id: string) => request<void>(`/support/saved-replies/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    settings: () => request<SupportSettings>("/support/settings"),
+    setSettings: (body: Omit<SupportSettings, "mailbox"> & { reason: string }) =>
+      request<unknown>("/support/settings", { method: "PUT", body: json(body) }),
+    live: {
+      presence: () => request<{ status: Presence }>("/support/live/presence"),
+      setPresence: (status: Presence) => request<{ status: Presence }>("/support/live/presence", { method: "PUT", body: json({ status }) }),
+      queue: () => request<LiveQueue>("/support/live/queue"),
+      accept: (id: string) => request<LiveChat>(`/support/live/chats/${encodeURIComponent(id)}/accept`, { method: "POST" }),
+      chat: (id: string) => request<LiveChat>(`/support/live/chats/${encodeURIComponent(id)}`),
+      say: (id: string, body: string) => request<LiveMessage>(`/support/live/chats/${encodeURIComponent(id)}/messages`, { method: "POST", body: json({ body }) }),
+      typing: (id: string) => request<void>(`/support/live/chats/${encodeURIComponent(id)}/typing`, { method: "POST" }),
+      transfer: (id: string, to: string) => request<unknown>(`/support/live/chats/${encodeURIComponent(id)}/transfer`, { method: "POST", body: json({ to }) }),
+      ticket: (id: string) => request<{ id: string; number: string }>(`/support/live/chats/${encodeURIComponent(id)}/ticket`, { method: "POST" }),
+      end: (id: string) => request<unknown>(`/support/live/chats/${encodeURIComponent(id)}/end`, { method: "POST" }),
+    },
+  },
+  mail: {
+    overview: () => request<MailOverview>("/mail/overview"),
+    jobs: (status?: string) => request<MailJob[]>(`/mail/jobs?${query({ status, limit: "100" })}`),
+    retry: (id: string) => request<unknown>(`/mail/jobs/${encodeURIComponent(id)}/retry`, { method: "POST" }),
+    addImap: (body: MailImapInput) => request<unknown>("/mail/accounts/imap", { method: "POST", body: json(body) }),
+    test: (id: string, purpose?: MailPurpose) =>
+      request<{ ok: boolean; detail: string }>(`/mail/accounts/${encodeURIComponent(id)}/test?${query({ purpose })}`, { method: "POST" }),
+    remove: (id: string) => request<void>(`/mail/accounts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    route: (purpose: MailPurpose, accountId: string | null) =>
+      request<unknown>(`/mail/routes/${purpose}`, { method: "PUT", body: json({ account_id: accountId }) }),
+    createJob: (body: { key: string; label: string; direction: MailDirection; description?: string; settings?: MailJobSettings }) =>
+      request<{ key: string }>("/mail/purposes", { method: "POST", body: json(body) }),
+    updateJob: (key: string, body: { label?: string; description?: string; settings?: MailJobSettings }) =>
+      request<{ key: string }>(`/mail/purposes/${encodeURIComponent(key)}`, { method: "PUT", body: json(body) }),
+    deleteJob: (key: string) => request<void>(`/mail/purposes/${encodeURIComponent(key)}`, { method: "DELETE" }),
+    oauthStart: (provider: MailProvider, purposes: MailPurpose[]) =>
+      request<{ url: string }>(`/mail/${provider}/start`, { method: "POST", body: json({ purposes }) }),
+    oauthFinish: (provider: MailProvider, code: string, state: string) =>
+      request<{ id: string; address: string; granted: string[]; purposes: MailPurpose[] }>(`/mail/${provider}/finish`, { method: "POST", body: json({ code, state }) }),
+    assignUse: (key: string, job: string | null) => request<MailOverview>(`/mail/uses/${encodeURIComponent(key)}`, { method: "PUT", body: json({ job }) }),
+    setApp: (provider: MailProvider, body: MailAppInput) => request<MailOverview>(`/mail/apps/${provider}`, { method: "PUT", body: json(body) }),
+    clearApp: (provider: MailProvider) => request<void>(`/mail/apps/${provider}`, { method: "DELETE" }),
+  },
+  approvals: {
+    list: (status: "pending" | "done" | "rejected" | "cancelled" | "failed" | "all" = "pending") => request<ApprovalList>(`/approvals?status=${status}`),
+    approve: (id: string, note?: string) =>
+      request<{ approval: Approval }>(`/approvals/${encodeURIComponent(id)}/approve`, { method: "POST", body: json({ note: note || null }) }),
+    reject: (id: string, note: string) => request<Approval>(`/approvals/${encodeURIComponent(id)}/reject`, { method: "POST", body: json({ note }) }),
+    cancel: (id: string) => request<Approval>(`/approvals/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
+    rule: () => request<ApprovalRule>("/platform/approvals"),
+    setRule: (body: { on: boolean; categories: string[]; reason: string }) =>
+      request<{ on: boolean; categories: string[] }>("/platform/approvals", { method: "PUT", body: json(body) }),
   },
   audit: (params: { before?: string | null; action?: string; limit?: number } = {}) => {
     const q = new URLSearchParams();
@@ -85,6 +191,16 @@ export const api = {
     get: (id: string) => request<RunDetail>(`/runs/${encodeURIComponent(id)}`),
     stop: (id: string, reason: string) => request<{ stopping: boolean }>(`/runs/${encodeURIComponent(id)}/stop`, { method: "POST", body: json({ reason }) }),
   },
+  objects: {
+    list: (template: string) => request<ProfileWhere & { objects: ObjectSummary[] }>(`/objects/${encodeURIComponent(template)}`),
+    get: (template: string, type: string, page = 0) =>
+      request<ProfileWhere & ObjectProfile>(`/objects/${encodeURIComponent(template)}/${encodeURIComponent(type)}?page=${page}`),
+    things: (template: string, type: string, q = "", page = 0) =>
+      request<Paged<ThingSummary>>(`/objects/${encodeURIComponent(template)}/${encodeURIComponent(type)}/things?page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
+    thing: (template: string, type: string, id: string, page = 0) =>
+      request<ProfileWhere & ThingProfile>(`/objects/${encodeURIComponent(template)}/${encodeURIComponent(type)}/things/${encodeURIComponent(id)}?page=${page}`),
+  },
+
   processes: {
     list: (params: Record<string, string | undefined>) => request<ProcessList>(`/processes?${query(params)}`),
     get: (id: string) => request<ProcessDetail>(`/processes/${encodeURIComponent(id)}`),
@@ -96,11 +212,37 @@ export const api = {
   },
   queues: () => request<QueuesPage>("/queues"),
   names: (tenants: string[], workspaces: string[]) => request<Names>(`/names?${query({ tenants: tenants.join(","), workspaces: workspaces.join(",") })}`),
-  access: {
-    list: () => request<GrantList>("/access"),
-    open: (body: { tenant_id: string; reason: string; minutes: number }) => request<Grant>("/access", { method: "POST", body: json(body) }),
-    end: (id: string) => request<void>(`/access/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  lessons: {
+    list: () => request<{ items: SystemLesson[] }>("/lessons"),
+    add: (content: string) => request<SystemLesson>("/lessons", { method: "POST", body: json({ content }) }),
+    set: (id: string, status: SystemLesson["status"]) => request<SystemLesson>(`/lessons/${encodeURIComponent(id)}`, { method: "PATCH", body: json({ status }) }),
   },
+
+  console: {
+    metrics: () => request<BusinessMetrics>("/metrics"),
+    atRisk: () => request<AtRisk[]>("/organizations/at-risk"),
+    organization: (id: string) => request<OrganizationProfile>(`/organizations/${encodeURIComponent(id)}/profile`),
+    addNote: (id: string, body: string, pinned = false) =>
+      request<OrgNote>(`/organizations/${encodeURIComponent(id)}/notes`, { method: "POST", body: json({ body, pinned }) }),
+    pinNote: (id: string, noteId: string) => request<OrgNote>(`/organizations/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}/pin`, { method: "POST" }),
+    removeNote: (id: string, noteId: string) => request<void>(`/organizations/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, { method: "DELETE" }),
+    pauseAgent: (id: string, paused: boolean, reason: string) =>
+      request<{ agent_paused: boolean }>(`/organizations/${encodeURIComponent(id)}/agent`, { method: "POST", body: json({ paused, reason }) }),
+    person: (id: string) => request<PersonProfile>(`/people/${encodeURIComponent(id)}/profile`),
+    forgetBrowsers: (id: string, reason: string) =>
+      request<{ browsers_forgotten: number }>(`/people/${encodeURIComponent(id)}/forget-browsers`, { method: "POST", body: json({ reason }) }),
+    platform: () => request<PlatformControls>("/platform"),
+    setMaintenance: (on: boolean, message: string, reason: string) =>
+      request<PlatformControls["maintenance"]>("/platform/maintenance", { method: "PUT", body: json({ on, message, reason }) }),
+    setSwitch: (name: SwitchName, on: boolean, reason: string) =>
+      request<Record<SwitchName, boolean>>("/platform/switches", { method: "PUT", body: json({ name, on, reason }) }),
+    announce: (body: { title: string; body: string; severity: Severity; tenant_id?: string | null; starts_at?: string | null; ends_at?: string | null; reason: string }) =>
+      request<Announcement>("/announcements", { method: "POST", body: json(body) }),
+    endAnnouncement: (id: string) => request<Announcement>(`/announcements/${encodeURIComponent(id)}/end`, { method: "POST" }),
+    search: (q: string) => request<SearchAnswer>(`/search?q=${encodeURIComponent(q)}`),
+    security: () => request<SecurityView>("/security"),
+  },
+
   accounts: {
     organizations: (q?: string) => request<OrganizationAccount[]>(`/organizations${q ? `?q=${encodeURIComponent(q)}` : ""}`),
     suspend: (id: string, reason: string) =>

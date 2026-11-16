@@ -4,8 +4,12 @@ import { Menu, MessageSquareText, PanelRightClose } from "lucide-react";
 import { IconButton, Button } from "@/components/ui/Button";
 import { Sheet, SheetClose } from "@/components/ui/Sheet";
 import { cn } from "@/lib/format";
+import { Announcements } from "./Announcements";
 import { NotificationBell, NotificationToasts } from "./NotificationBell";
+import { SearchTrigger } from "./CommandPalette";
 import { OfflineBanner } from "./OfflineBanner";
+import { AppVersion } from "./AppVersion";
+import { OrgSearch } from "./Search";
 import { useShell } from "./ShellContext";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserMenu } from "./UserMenu";
@@ -37,12 +41,14 @@ export function AppFrame({
   const showDocked = !!chat && docked && chatOpen;
 
   return (
+    <OrgSearch>
     <div className="relative flex h-dvh flex-col overflow-hidden">
       <OfflineBanner />
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
         {/* Sidebar (≥1024) */}
         <aside className="hidden w-[228px] flex-none flex-col gap-4 overflow-y-auto px-3 pb-3 pt-2 scrollbar-thin lg:flex">
           {sidebar}
+          <AppVersion />
         </aside>
 
         {/* Compact top bar (<1024) */}
@@ -51,6 +57,7 @@ export function AppFrame({
             <Menu />
           </IconButton>
           <span className="min-w-0 flex-1 truncate px-1 text-body font-semibold text-ink">{title}</span>
+          <SearchTrigger variant="icon" />
           <NotificationBell />
           {chat && (
             <IconButton aria-label="Open Syruss AI" onClick={() => setChatOpen(true)}>
@@ -64,6 +71,7 @@ export function AppFrame({
           {/* Top bar of the frame (≥1024): scope on the left, utilities on the right, no rule. */}
           <div className="hidden h-12 flex-none items-center gap-2 pr-3 lg:flex">
             <div className="min-w-0 flex-1">{topbar}</div>
+            <SearchTrigger className="w-64 flex-none xl:w-80" />
             <ThemeToggle />
             {chat && !showDocked && (
               <Button variant="secondary" size="sm" onClick={() => setChatOpen(true)}>
@@ -79,7 +87,7 @@ export function AppFrame({
               id="main"
               className="@container relative min-h-0 min-w-0 flex-1 overflow-y-auto bg-well scrollbar-thin lg:rounded-sheet lg:border lg:border-border"
             >
-              <div className="mx-auto w-full max-w-[1280px] px-4 py-5 sm:px-6 sm:py-6">{children}</div>
+              <div className="mx-auto w-full max-w-[1280px] px-4 py-5 sm:px-6 sm:py-6"><Announcements />{children}</div>
             </main>
 
             {showDocked && (
@@ -107,7 +115,7 @@ export function AppFrame({
             <ThemeToggle />
             <SheetClose label="Close navigation" />
           </div>
-          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4">{sidebar}</div>
+          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4">{sidebar}<AppVersion /></div>
         </Sheet>
 
         {/* Chat sheet when it cannot be docked */}
@@ -124,5 +132,6 @@ export function AppFrame({
       </div>
     <NotificationToasts />
     </div>
+    </OrgSearch>
   );
 }

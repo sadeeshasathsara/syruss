@@ -140,6 +140,20 @@ PAYMENT_SUBMITTED = Kind(
     email=EmailSpec("payment_submitted", "{{ organization }} sent a payment for invoice {{ number }}"),
 )
 
+STAFF_INVITATION = Kind(
+    key="staff_invitation",
+    variables=("inviter", "role", "role_description", "url", "expires_on"),
+    optional=("new_signin",),
+    email=EmailSpec("staff_invitation", "{{ inviter }} invited you to the Syruss platform staff"),
+)
+
+STAFF_UPDATE = Kind(
+    key="staff_update",
+    variables=("title", "body"),
+    optional=("url",),
+    email=EmailSpec("staff_update", "{{ title }}"),
+)
+
 STAFF_ATTENTION = Kind(
     key="staff_attention",
     variables=("title", "body", "organization", "url"),
@@ -202,4 +216,4 @@ CREDIT_NOTE_ISSUED = Kind(
 )
 
 KINDS: Dict[str, Kind] = {k.key: k for k in (INVITATION, EMAIL_CODE, DEVICE_CODE, DEVICE_ADDED, BILLING_ALERT, INVOICE_ISSUED, PAYMENT_RECEIVED,
-                                             PAYMENT_SUBMITTED, PAYMENT_REJECTED, INVOICE_REMINDER, PLAN_LAPSED, CREDIT_NOTE_ISSUED, STAFF_ATTENTION)}
+                                             PAYMENT_SUBMITTED, PAYMENT_REJECTED, INVOICE_REMINDER, PLAN_LAPSED, CREDIT_NOTE_ISSUED, STAFF_ATTENTION, STAFF_INVITATION, STAFF_UPDATE)}

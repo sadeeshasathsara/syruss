@@ -7,11 +7,11 @@ from sqlalchemy import select
 from app.models.billing import UsageEvent
 from app.models.platform import PlatformAuditEntry
 from app.services.billing import credits
-from tests.conftest import AsyncSessionLocal, pages_allowance, person, register
+from tests.conftest import AsyncSessionLocal, pages_allowance, person, register, make_staff
 from tests.test_billing import organization, send, tiff, used, workspace
 
 API = "/api/v1"
-ADMIN_APP = {"X-Client-ID": "syruss-admin"}
+ADMIN_APP = {"X-Client-ID": "syruss-admin", "X-User-ID": "usr_platform_owner", "X-Username": "Pat Platform", "X-Email": "owner@syruss.test"}
 
 
 async def grant(tenant_id: str, pages: int) -> None:
@@ -75,9 +75,9 @@ async def test_staff_build_the_catalog_in_versions_and_a_published_one_never_cha
     stale = {**ADMIN_APP, "X-Auth-Time": str(int(time.time()) - 3600)}
     assert (await client.post(f"{API}/sysadmin/billing/catalog/{v2.json()['id']}/publish", headers=stale,
                               json={"reason": "Stale"})).json()["detail"]["code"] == "reauth_required"
-    viewer = {**person("usr_bill_viewer", "Vee Viewer"), **ADMIN_APP}
+    viewer = {**ADMIN_APP, **person("usr_bill_viewer", "Vee Viewer")}
     await register(viewer, None)
-    await client.post(f"{API}/sysadmin/staff", headers=ADMIN_APP, json={"email": "usr_bill_viewer@example.com", "role": "viewer", "reason": "Watches"})
+    await make_staff(client, viewer, "viewer")
     assert (await client.get(f"{API}/sysadmin/billing/catalog", headers=viewer)).status_code == 200
     assert (await client.post(f"{API}/sysadmin/billing/catalog/{v2.json()['id']}/publish", headers=viewer,
                               json={"reason": "Not allowed"})).status_code == 403

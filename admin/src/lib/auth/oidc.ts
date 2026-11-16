@@ -21,15 +21,23 @@ const client = (): o.Client => ({ client_id: authConfig().clientId });
 const clientAuth = () => o.ClientSecretPost(authConfig().clientSecret);
 export const redirectUri = () => `${authConfig().appOrigin}/api/auth/callback`;
 
-export type Transaction = { verifier: string; state: string; nonce: string; returnTo: string };
+export type Transaction = { verifier: string; state: string; nonce: string; returnTo: string; action?: string };
+
+/**
+ * The single Keycloak steps an app may start for the signed-in person (Application Initiated Actions): set up an
+ * authenticator, change or set the password, remove one of their own credentials. Keycloak shows only that step, in
+ * the Syruss theme, asks for the password again first when the sign-in isn't recent, and comes straight back.
+ */
+const ACCOUNT_STEP = /^(CONFIGURE_TOTP|UPDATE_PASSWORD|delete_credential:[0-9a-f-]{36})$/;
 
 /** The address to send the person to (Keycloak's sign-in or registration page) and what to remember meanwhile. */
-export async function beginLogin(opts: { mode: Mode; returnTo?: string | null; idpHint?: string | null; reauth?: boolean }) {
+export async function beginLogin(opts: { mode: Mode; returnTo?: string | null; idpHint?: string | null; reauth?: boolean; action?: string | null }) {
   const as = await server();
   const verifier = o.generateRandomCodeVerifier();
   const tx: Transaction = {
     verifier, state: o.generateRandomState(), nonce: o.generateRandomNonce(), returnTo: safeReturnTo(opts.returnTo, "/"),
   };
+  if (opts.action && ACCOUNT_STEP.test(opts.action)) tx.action = opts.action;
   // Keycloak's own registration page lives next to its authorization endpoint.
   const base = opts.mode === "signup" ? as.authorization_endpoint!.replace(/\/auth$/, "/registrations") : as.authorization_endpoint!;
   const url = new URL(base);
@@ -42,6 +50,7 @@ export async function beginLogin(opts: { mode: Mode; returnTo?: string | null; i
   url.searchParams.set("state", tx.state);
   url.searchParams.set("nonce", tx.nonce);
   if (opts.idpHint === "google") url.searchParams.set("kc_idp_hint", "google");
+  if (tx.action) url.searchParams.set("kc_action", tx.action);
   // Asked to sign in again (before a risky action): Keycloak must ask for the credentials, not reuse its session.
   if (opts.reauth) {
     url.searchParams.set("prompt", "login");

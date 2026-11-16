@@ -41,6 +41,14 @@ SERVICES: Dict[str, ServiceConfig] = {
         dev_cmd="python -m agentic_framework",
         prod_cmd="python -m agentic_framework",
     ),
+    "mail": ServiceConfig(
+        name="mail",
+        path="mail",
+        description="Mail service (every email Syruss sends and reads)",
+        port=None,
+        dev_cmd="python -m mail",
+        prod_cmd="python -m mail",
+    ),
     "www": ServiceConfig(
         name="www",
         path="www",

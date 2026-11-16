@@ -1,4 +1,4 @@
-import { Building2, CreditCard, ShieldCheck, SlidersHorizontal, UserRound } from "lucide-react";
+import { Building2, CreditCard, LifeBuoy, ShieldCheck, SlidersHorizontal, UserRound } from "lucide-react";
 import type { ComponentType } from "react";
 
 export interface OrgSettingsSection {
@@ -15,6 +15,7 @@ export interface OrgSettingsSection {
 export const ORG_SETTINGS: OrgSettingsSection[] = [
   { key: "organization", label: "Organization", icon: Building2, subs: [
     { key: "general", label: "General" },
+    { key: "support", label: "Support and privacy" },
     { key: "danger", label: "Close the organization" },
   ] },
   { key: "billing", label: "Billing", icon: CreditCard, subs: [
@@ -24,6 +25,7 @@ export const ORG_SETTINGS: OrgSettingsSection[] = [
     { key: "details", label: "Billing details" },
     { key: "history", label: "History" },
   ] },
+  { key: "help", label: "Help & support", icon: LifeBuoy, subs: [{ key: "tickets", label: "Your requests" }] },
   { key: "profile", label: "Your profile", icon: UserRound, subs: [{ key: "details", label: "Details" }] },
   { key: "security", label: "Account and security", icon: ShieldCheck, subs: [
     { key: "sign-in", label: "Sign-in" },

@@ -6,7 +6,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.sysadmin.access import Staff
 from app.models.audit import AuditLog
-from app.models.platform import PlatformAccessGrant
 from app.models.tenant import Tenant
 from app.models.trace import AgentExecutionTrace as Run
 from app.models.workspace import Workspace
@@ -26,15 +25,6 @@ def tell_organization(db: AsyncSession, staff: Staff, tenant_id: str, text: str,
     """Shows in the organization's own activity what Syruss support did and why ("Ana of Syruss support stopped a run …")."""
     db.add(AuditLog(tenant_id=tenant_id, event_type="PLATFORM_ACTION", entity_type="Organization", entity_id=tenant_id,
                     actor="platform", details={"staff": staff.name, "text": text, "reason": reason, **details}))
-
-
-async def open_tenants(db: AsyncSession, staff: Staff) -> Set[str]:
-    """The organizations whose content this staff member has open right now."""
-    if not staff.can("support.access"):
-        return set()
-    return set((await db.execute(select(PlatformAccessGrant.tenant_id).where(
-        PlatformAccessGrant.staff_id == staff.user_id, PlatformAccessGrant.ended_at.is_(None),
-        PlatformAccessGrant.expires_at > datetime.now(timezone.utc)))).scalars().all())
 
 
 def run_facts(r: Run) -> Dict[str, Any]:

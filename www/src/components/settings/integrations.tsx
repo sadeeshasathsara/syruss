@@ -15,6 +15,7 @@ import { ago, dateTime, humanize } from "@/lib/format";
 import type { WebhookInfo } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 import { NoAccess, Section, SettingsHeader, ShowOnce, useWorkspaceSettings } from "./kit";
+import { usePreservedState } from "@/lib/resume";
 
 const EXPIRY = [
   { value: "never", label: "Never" },
@@ -39,9 +40,9 @@ export function ApiKeySettings() {
   const { access, can } = useWorkspaceSettings();
   const allowed = can("integrations.manage");
   const keys = useQuery({ queryKey: ["api-keys", workspace.id], queryFn: () => api.settings.apiKeys(workspace.id), enabled: allowed });
-  const [name, setName] = useState("");
-  const [scope, setScope] = useState<"read" | "write">("read");
-  const [expiry, setExpiry] = useState<(typeof EXPIRY)[number]["value"]>("90");
+  const [name, setName] = usePreservedState("apikey.name", "");
+  const [scope, setScope] = usePreservedState<"read" | "write">("apikey.scope", "read");
+  const [expiry, setExpiry] = usePreservedState<(typeof EXPIRY)[number]["value"]>("apikey.expiry", "90");
   const [created, setCreated] = useState<string | null>(null);
   const refresh = () => ["api-keys", "billing"].forEach((k) => queryClient.invalidateQueries({ queryKey: [k, workspace.id] }));
   const create = useMutation({
@@ -187,8 +188,8 @@ export function WebhookSettings() {
   const { access, can } = useWorkspaceSettings();
   const allowed = can("integrations.manage");
   const hooks = useQuery({ queryKey: ["webhooks", workspace.id], queryFn: () => api.settings.webhooks(workspace.id), enabled: allowed });
-  const [url, setUrl] = useState("");
-  const [events, setEvents] = useState<string[]>(["*"]);
+  const [url, setUrl] = usePreservedState("webhook.url", "");
+  const [events, setEvents] = usePreservedState<string[]>("webhook.events", ["*"]);
   const [secret, setSecret] = useState<string | null>(null);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["webhooks", workspace.id] });
   const create = useMutation({

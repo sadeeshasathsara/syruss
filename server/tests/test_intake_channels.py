@@ -1,6 +1,6 @@
-"""Documents arriving by e-mail and SFTP, and files scanned for viruses on the way in: held to the same rules as the API."""
+"""Documents arriving by e-mail (read from the documents mailbox by the mail service) and SFTP, and files scanned for viruses on the way in:
+held to the same rules as the API."""
 import asyncio
-import smtplib
 import struct
 from email.message import EmailMessage
 
@@ -12,9 +12,11 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.document import Document
 from app.models.intake import IntakeEvent
-from app.services.intake.email import email_receiver
+from app.services.intake import email as intake_email
+from app.services.notifications import mail_relay
 from app.services.intake.sftp import sftp_receiver
 from tests.conftest import business_plan, create_template, png_bytes, ws
+from tests.mail_fakes import FakeMail, account, directory, job
 
 API = "/api/v1"
 
@@ -26,11 +28,11 @@ def fresh_limits():
 
 @pytest.fixture
 async def mail_port(monkeypatch):
-    monkeypatch.setattr(settings, "INTAKE_SMTP_PORT", 2525)
-    monkeypatch.setattr(settings, "INTAKE_EMAIL_DOMAIN", "in.syruss.test")
-    port = await email_receiver.listen("127.0.0.1", 0)
-    yield port
-    await email_receiver.stop()
+    """A mail service whose Document inbound job reads docs@in.syruss.test."""
+    entries = directory()
+    entries["account:docs-1"] = account("docs-1", "docs@in.syruss.test", ["read"], ["documents"])
+    entries["job:documents"] = job("documents", "Document inbound", "read", "docs-1", "docs@in.syruss.test", True, True)
+    return await FakeMail.install(monkeypatch, entries)
 
 
 @pytest.fixture
@@ -73,20 +75,18 @@ def mail(to: str, *, sender="supplier@acme.test", subject="Invoice 1001", attach
     return msg
 
 
-async def send_mail(port: int, msg: EmailMessage, to: str = None):
-    def go():
-        with smtplib.SMTP("127.0.0.1", port, timeout=20) as smtp:
-            return smtp.send_message(msg, to_addrs=[to or msg["To"]])
-    return await asyncio.to_thread(go)
+async def send_mail(_mail, msg: EmailMessage) -> str:
+    """The message arrives in the documents mailbox: the mail service reads it and the server takes it in."""
+    return await intake_email.take_in(msg.as_bytes())
 
 
 # --- e-mail ------------------------------------------------------------------------------------------------
 
 async def test_a_channel_gets_its_own_address_and_attachments_become_documents(client, mail_port):
     tpl, ch = await new_channel(client, "email")
-    assert ch["address"].endswith("@in.syruss.test") and ch["receiver_ready"] and ch["endpoint"] is None
+    assert ch["address"].startswith("docs+") and ch["address"].endswith("@in.syruss.test") and ch["receiver_ready"] and ch["endpoint"] is None
     msg = mail(ch["address"], attach=[("one.png", None), ("two.png", None)])
-    await send_mail(mail_port, msg)
+    assert await send_mail(mail_port, msg) == "accepted"
     docs = await documents(tpl)
     assert [d.original_filename for d in docs] == ["one.png", "two.png"]
     assert all(d.channel_id == ch["id"] and d.source["via"] == "email" and d.source["sender"] == "supplier@acme.test" for d in docs)
@@ -95,78 +95,84 @@ async def test_a_channel_gets_its_own_address_and_attachments_become_documents(c
     assert [(e.outcome, e.via) for e in log] == [("accepted", "email"), ("accepted", "email")]
 
 
+async def test_the_address_may_be_on_any_of_the_headers_a_mail_server_leaves(client, mail_port):
+    tpl, ch = await new_channel(client, "email")
+    msg = mail("someone-else@acme.test", headers={"Delivered-To": ch["address"].upper()})   # a bcc or a list: only Delivered-To names us
+    assert await send_mail(mail_port, msg) == "accepted"
+    assert len(await documents(tpl)) == 1
+
+
 async def test_the_same_message_sent_again_does_not_make_a_second_document(client, mail_port):
     tpl, ch = await new_channel(client, "email")
     msg = mail(ch["address"], attach=[("one.png", png_bytes())])
     await send_mail(mail_port, msg)
-    await send_mail(mail_port, msg)           # a mail server retrying after a lost reply
+    await send_mail(mail_port, msg)           # the mail service offering it again after a lost acknowledgement
     assert len(await documents(tpl)) == 1
+
+
+async def test_a_message_is_acknowledged_once_it_is_taken_in(client, mail_port):
+    tpl, ch = await new_channel(client, "email")
+    assert await mail_relay.take_in("item-1", "documents", mail(ch["address"]).as_bytes()) is True
+    assert [(topic, key) for topic, key, _ in mail_port.published] == [(settings.MAIL_INBOUND_ACKS_TOPIC, "item-1")]
+    assert len(await documents(tpl)) == 1
+    with pytest.raises(Exception):                                      # a message that can't be taken in now is not acknowledged: it comes again
+        await mail_relay.take_in("item-2", "documents", None)           # type: ignore[arg-type]
+    assert len(mail_port.published) == 1
 
 
 async def test_mail_is_only_taken_for_live_channel_addresses(client, mail_port):
     tpl, ch = await new_channel(client, "email")
-    for wrong in ("nobody@in.syruss.test", "anyone@gmail.com"):
-        with pytest.raises(smtplib.SMTPRecipientsRefused) as refused:
-            await send_mail(mail_port, mail(wrong))
-        assert list(refused.value.recipients.values())[0][0] == 550
+    for wrong in ("docs@in.syruss.test", "docs+nobody@in.syruss.test", "docs+x@gmail.com", "other+" + ch["address"].split("+")[1]):
+        assert await send_mail(mail_port, mail(wrong)) == "ignored"
     await client.patch(f"{API}/channels/{ch['id']}", headers=ws(tpl), json={"status": "paused"})
-    with pytest.raises(smtplib.SMTPRecipientsRefused):
-        await send_mail(mail_port, mail(ch["address"]))
+    assert await send_mail(mail_port, mail(ch["address"])) == "ignored"
     assert await documents(tpl) == []
 
 
 async def test_only_the_allowed_senders_are_accepted(client, mail_port):
     tpl, ch = await new_channel(client, "email", sender_allowlist=["billing@acme.test", "@trusted.test"])
-    with pytest.raises(smtplib.SMTPDataError) as refused:
-        await send_mail(mail_port, mail(ch["address"], sender="stranger@evil.test"))
-    assert refused.value.smtp_code == 550 and b"does not accept mail from your address" in refused.value.smtp_error
-    await send_mail(mail_port, mail(ch["address"], sender="billing@acme.test", message_id="<a@x>"))
-    await send_mail(mail_port, mail(ch["address"], sender="anyone@trusted.test", message_id="<b@x>"))
+    assert await send_mail(mail_port, mail(ch["address"], sender="stranger@evil.test")) == "refused"
+    assert await send_mail(mail_port, mail(ch["address"], sender="billing@acme.test", message_id="<a@x>")) == "accepted"
+    assert await send_mail(mail_port, mail(ch["address"], sender="anyone@trusted.test", message_id="<b@x>")) == "accepted"
     assert len(await documents(tpl)) == 2
     refusals = [e for e in await events(ch["id"]) if e.outcome == "rejected"]
     assert refusals and "stranger@evil.test" in refusals[0].reason
 
 
-async def test_a_channel_can_require_that_the_mail_gateway_vouched_for_the_sender(client, mail_port):
+async def test_a_channel_can_require_that_the_provider_vouched_for_the_sender(client, mail_port):
     tpl, ch = await new_channel(client, "email", require_authentication=True)
-    with pytest.raises(smtplib.SMTPDataError) as refused:
-        await send_mail(mail_port, mail(ch["address"]))
-    assert refused.value.smtp_code == 550 and b"SPF or DKIM" in refused.value.smtp_error
-    await send_mail(mail_port, mail(ch["address"], headers={"Authentication-Results": "mx.example; dkim=pass header.d=acme.test; spf=pass"}))
+    assert await send_mail(mail_port, mail(ch["address"])) == "refused"
+    assert "SPF or DKIM" in [e for e in await events(ch["id"]) if e.outcome == "rejected"][0].reason
+    assert await send_mail(mail_port, mail(ch["address"], headers={"Authentication-Results": "mx.example; dkim=pass header.d=acme.test; spf=pass"})) == "accepted"
     assert len(await documents(tpl)) == 1
 
 
 async def test_mail_with_nothing_readable_attached_is_refused_with_the_reason(client, mail_port):
     tpl, ch = await new_channel(client, "email")
-    with pytest.raises(smtplib.SMTPDataError) as none:
-        await send_mail(mail_port, mail(ch["address"], attach=[]))
-    assert none.value.smtp_code == 554 and b"no attached file" in none.value.smtp_error.lower() or b"No attached file" in none.value.smtp_error
-    with pytest.raises(smtplib.SMTPDataError) as pdf:
-        await send_mail(mail_port, mail(ch["address"], attach=[("invoice.pdf", b"%PDF-1.7 " + b"x" * 400)], message_id="<pdf@x>"))
-    assert pdf.value.smtp_code == 554 and b"PDF" in pdf.value.smtp_error
-    with pytest.raises(smtplib.SMTPDataError) as fake:
-        await send_mail(mail_port, mail(ch["address"], attach=[("invoice.png", b"MZ\x90\x00" + b"x" * 500)], message_id="<exe@x>"))
-    assert fake.value.smtp_code == 554
+    assert await send_mail(mail_port, mail(ch["address"], attach=[])) == "refused"
+    assert await send_mail(mail_port, mail(ch["address"], attach=[("invoice.pdf", b"%PDF-1.7 " + b"x" * 400)], message_id="<pdf@x>")) == "refused"
+    assert await send_mail(mail_port, mail(ch["address"], attach=[("invoice.png", b"MZ\x90\x00" + b"x" * 500)], message_id="<exe@x>")) == "refused"
+    reasons = [e.reason for e in await events(ch["id"]) if e.outcome == "rejected"]
+    assert len(reasons) == 3 and "no attached file" in reasons[0].lower() and "PDF" in reasons[1]
     assert await documents(tpl) == []
 
 
 async def test_pictures_in_the_signature_are_not_documents(client, mail_port):
     tpl, ch = await new_channel(client, "email")
     msg = mail(ch["address"], attach=[("logo.png", None)], inline=True)
-    with pytest.raises(smtplib.SMTPDataError):
-        await send_mail(mail_port, msg)
+    assert await send_mail(mail_port, msg) == "refused"
     assert await documents(tpl) == []
 
 
-async def test_a_channel_asks_for_the_receiver_to_be_switched_on(client, monkeypatch):
-    monkeypatch.setattr(settings, "INTAKE_SMTP_PORT", 0)
+async def test_a_channel_asks_for_a_mailbox_and_the_receiver_to_be_switched_on(client, monkeypatch):
+    await FakeMail.install(monkeypatch)                      # the documents job has no mailbox that can read
     monkeypatch.setattr(settings, "INTAKE_SFTP_PORT", 0)
     tpl = await create_template(client)
     for kind in ("email", "sftp"):
         res = await client.post(f"{API}/channels", headers=ws(tpl), json={"name": kind, "kind": kind})
         assert res.status_code == 409 and "not switched on" in res.json()["detail"]
     info = (await client.get(f"{API}/channels/developer-info", headers=ws(tpl))).json()
-    assert info["email"]["enabled"] is False and info["sftp"]["enabled"] is False
+    assert info["email"] == {"enabled": False, "mailbox": None} and info["sftp"]["enabled"] is False
 
 
 # --- SFTP ---------------------------------------------------------------------------------------------------
@@ -307,3 +313,9 @@ async def test_files_are_scanned_and_a_scanner_that_cannot_be_reached_lets_nothi
     down = await send(png_bytes())
     assert down.status_code == 503 and down.json()["detail"]["code"] == "unavailable"
     assert len(await documents(tpl)) == 1
+
+
+async def test_an_email_channels_address_is_not_guessable(client, mail_port):
+    tpl, ch = await new_channel(client, "email")
+    token = ch["address"].split("+", 1)[1].split("@")[0]
+    assert len(token.rsplit("-", 1)[1]) == 16                  # 64 random bits after the channel's name

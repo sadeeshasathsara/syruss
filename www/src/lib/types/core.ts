@@ -46,6 +46,8 @@ export interface TemplateField {
 export interface TemplateObject {
   type: string;
   description?: string;
+  /** Its picture: a name from the object icon list (lib/objectIcons) */
+  icon?: string;
   multiple?: boolean;
   identity?: { id_field: string; label_field: string };
   fields: Array<string | TemplateField>;
@@ -308,9 +310,23 @@ export interface KnowledgeSource {
 export interface ChatMessage {
   id: string;
   conversation_id: string;
-  role: "user" | "assistant" | "system";
+  /** staff: someone from the Syruss team, in live support (agent_trace.staff names them) */
+  role: "user" | "assistant" | "system" | "staff";
   content: string;
   created_at: string;
+  agent_trace?: { staff?: { name?: string } } & Record<string, unknown>;
+}
+
+/** Live support from the Syruss team in a chat: waiting for someone, someone is in it, or it ended. */
+export interface LiveSupport {
+  state: "waiting" | "live" | "ended";
+  staff_name: string | null;
+  requested_at: string | null;
+  joined_at: string | null;
+  ended_at: string | null;
+  end_reason: string | null;
+  ticket_number: string | null;
+  rating: "up" | "down" | null;
 }
 
 export interface Conversation {
@@ -326,6 +342,7 @@ export interface Conversation {
   audience?: "admin" | "reviewer" | null;
   resolution?: string | null;
   context_metadata?: Record<string, unknown>;
+  live_support?: LiveSupport | null;
   created_at?: string;
   updated_at?: string;
 }

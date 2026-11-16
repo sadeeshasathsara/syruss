@@ -1,6 +1,7 @@
-import type {
+import type { SearchAnswer } from "@/components/shell/CommandPalette";
+import type { ObjectRecords, RecordQuery,
   Access, AgentQuestion, AgentRun, AgentRunDetail, MemoryItem, MemoryKind, ApiKeyInfo, ApiSourceInput, AppNotification, AuditEntry, Billing, ChatMessage, Conversation,
-  DocumentItem, Entity, MyOrganization, Screen, ScreenCatalogue, ScreenDefinition, ScreenFilter, ScreenRun, ScreenStarter, ScreenSummary, Extraction, Invitation, InvitationPreview, KnowledgeSource, Me, Member, NotificationPref,
+  DocumentItem, Entity, MyOrganization, ObjectProfile, ObjectSummary, Paged, ThingProfile, ThingSummary, Screen, ScreenCatalogue, ScreenDefinition, ScreenFilter, ScreenRun, ScreenStarter, ScreenSummary, Extraction, Invitation, InvitationPreview, KnowledgeSource, Me, Member, NotificationPref,
   InviteIssued, LogPage, OrgActivityPage, OrgOverview, OrgPeriod, Organization, Overview, SecurityEventPage, TrustedDevice, Proposal, RecordSet, ReviewTask, Role, RoleCatalogue, Template, TemplateSchema, TemplateVersion, OrgMemberInfo, OrgInvitationInfo, OrgRole, Permission,
   WebhookDeliveryInfo, WebhookInfo, Workspace, WorkspaceEventType, WorkspaceSettingsData, BudgetStatus, ReflectionState,
   IntakeActivityPage, IntakeChannelInfo, IntakeKeyInfo, DeveloperInfo, ChannelConfigPatch, NewIntakeKey,
@@ -10,6 +11,7 @@ import type {
   Rule, RuleCheckResult, RuleDraft, RuleInput, RuleLanguage, ValidationRule,
   Offers, OrgBilling, PurchaseStarted, BillingDetails, Invoice, SentPayment,
 } from "./types";
+import { resumeAndGo } from "./resume";
 
 /**
  * Typed client for the core API. Workspace calls always name their workspace explicitly
@@ -65,7 +67,7 @@ async function request<T>(path: string, init: RequestInit & { workspaceId?: stri
   if (res.status === 401 && typeof window !== "undefined") {
     // Signed out (or the session ended): sign in again and come back to this page.
     const here = window.location.pathname + window.location.search;
-    window.location.assign(`${SITE}/api/auth/login?mode=signin&returnTo=${encodeURIComponent(`/continue?next=${encodeURIComponent(here)}`)}`);
+    await resumeAndGo(`${SITE}/api/auth/login?mode=signin&returnTo=${encodeURIComponent(`/continue?next=${encodeURIComponent(here)}`)}`);
   }
   if (!res.ok) {
     let detail: unknown;
@@ -76,12 +78,12 @@ async function request<T>(path: string, init: RequestInit & { workspaceId?: stri
     }
     if (res.status === 403 && (detail as { code?: string } | undefined)?.code === "reauth_required" && typeof window !== "undefined") {
       // A risky action: sign in again (Keycloak asks for the password), then come back to this page to do it.
-      window.location.assign(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      await resumeAndGo(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
     }
     if (res.status === 403 && (detail as { code?: string } | undefined)?.code === "device_unverified" && typeof window !== "undefined") {
       // A browser the account hasn't confirmed: the code page is on the site, and brings the person back here.
       const here = window.location.pathname + window.location.search;
-      window.location.assign(`${SITE}/verify-device?next=${encodeURIComponent(`/continue?next=${encodeURIComponent(here)}`)}`);
+      await resumeAndGo(`${SITE}/verify-device?next=${encodeURIComponent(`/continue?next=${encodeURIComponent(here)}`)}`);
     }
     throw new ApiError(res.status, messageFrom(detail, `Request failed (${res.status}).`), detail);
   }
@@ -90,6 +92,43 @@ async function request<T>(path: string, init: RequestInit & { workspaceId?: stri
 }
 
 const json = (body: unknown) => JSON.stringify(body);
+
+export interface SupportGrant {
+  id: string;
+  staff: string;
+  reason: string;
+  opened_at: string;
+  until: string;
+  open: boolean;
+  ended_at: string | null;
+  /** Who ended it early (support, or someone here); null when it ran out. */
+  ended_by: string | null;
+}
+
+export type TicketStatus = "new" | "open" | "pending" | "solved" | "closed";
+
+export interface SupportTicket {
+  id: string;
+  number: string;
+  subject: string;
+  category: string;
+  status: TicketStatus;
+  channel: "agent" | "app" | "email";
+  requester_name: string;
+  created_at: string;
+  updated_at: string;
+  solved_at: string | null;
+}
+
+export interface SupportMessage {
+  id: string;
+  author_kind: "customer" | "staff" | "agent" | "system";
+  author_name: string;
+  body: string;
+  via: "app" | "email" | "agent";
+  created_at: string;
+  files: { id: string; filename: string; content_type: string; size: number }[];
+}
 
 export const api = {
   screens: {
@@ -277,6 +316,24 @@ export const api = {
       request<Proposal>(`/knowledge/proposals/${id}/review`, { method: "POST", workspaceId, body: json({ action, notes }) }),
   },
 
+  objects: {
+    list: (workspaceId: string) => request<ObjectSummary[]>("/objects", { workspaceId }),
+    get: (workspaceId: string, type: string, page = 0) =>
+      request<ObjectProfile>(`/objects/${encodeURIComponent(type)}?page=${page}`, { workspaceId }),
+    things: (workspaceId: string, type: string, q = "", page = 0) =>
+      request<Paged<ThingSummary>>(`/objects/${encodeURIComponent(type)}/things?page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`, { workspaceId }),
+    records: (workspaceId: string, type: string, o: RecordQuery = {}) => {
+      const params = new URLSearchParams({ page: String(o.page ?? 0), sort: o.sort ?? "seen", direction: o.direction ?? "desc" });
+      if (o.q?.trim()) params.set("q", o.q.trim());
+      if (o.sinceDays) params.set("since_days", String(o.sinceDays));
+      for (const [field, value] of Object.entries(o.filters ?? {})) if (value) params.append("f", `${field}:${value}`);
+      const base = `/objects/${encodeURIComponent(type)}${o.thing ? `/things/${encodeURIComponent(o.thing)}` : ""}/records`;
+      return request<ObjectRecords>(`${base}?${params}`, { workspaceId });
+    },
+    thing: (workspaceId: string, type: string, id: string, page = 0) =>
+      request<ThingProfile>(`/objects/${encodeURIComponent(type)}/things/${encodeURIComponent(id)}?page=${page}`, { workspaceId }),
+  },
+
   entities: {
     list: (workspaceId: string, query?: string) =>
       request<Entity[]>(`/knowledge/entities?limit=200${query ? `&query=${encodeURIComponent(query)}` : ""}`, { workspaceId }),
@@ -426,6 +483,37 @@ export const api = {
       request<{ workspace: { id: string; slug: string }; role: Role }>(`/invitations/${encodeURIComponent(token)}/accept`, { method: "POST" }),
   },
 
+  // Syruss support's access to the organization's content: whether it may open it, who has it open, and before
+  // Help & support: tickets with the Syruss team (the agent can open one from a chat too)
+  support: {
+    tickets: (status?: "active" | "done") => request<{ items: SupportTicket[]; can_see_all: boolean }>(`/support/tickets${status ? `?status=${status}` : ""}`),
+    ticket: (id: string) => request<SupportTicket & { messages: SupportMessage[] }>(`/support/tickets/${encodeURIComponent(id)}`),
+    open: (body: { subject: string; body: string; category: string; files: File[] }) => {
+      const form = new FormData();
+      form.set("subject", body.subject);
+      form.set("body", body.body);
+      form.set("category", body.category);
+      body.files.forEach((f) => form.append("files", f));
+      return request<SupportTicket>("/support/tickets", { method: "POST", body: form });
+    },
+    reply: (id: string, body: string, files: File[]) => {
+      const form = new FormData();
+      form.set("body", body);
+      files.forEach((f) => form.append("files", f));
+      return request<SupportMessage>(`/support/tickets/${encodeURIComponent(id)}/messages`, { method: "POST", body: form });
+    },
+    close: (id: string) => request<SupportTicket>(`/support/tickets/${encodeURIComponent(id)}/close`, { method: "POST" }),
+    fileUrl: (ticketId: string, fileId: string, org: string) =>
+      `/api/v1/support/tickets/${encodeURIComponent(ticketId)}/files/${encodeURIComponent(fileId)}?org=${encodeURIComponent(org)}`,
+  },
+
+
+
+  // What Syruss is telling everyone now: announcements and maintenance (for the banner at the top of every page)
+  /** One search across the organization: only what you may open (hrefs are relative to the organization). */
+  search: (q: string) => request<SearchAnswer>(`/search?q=${encodeURIComponent(q)}`),
+  announcements: () => request<{ maintenance: { on: boolean; message: string } | null; items: { id: string; title: string; body: string; severity: "info" | "warning" | "critical"; starts_at: string; ends_at: string | null }[] }>("/announcements"),
+
   notifications: {
     list: (opts: { unreadOnly?: boolean; before?: string; limit?: number } = {}) => {
       const q = new URLSearchParams();
@@ -529,6 +617,11 @@ export const api = {
       request<ChatMessage>(`/conversations/${conversationId}/messages?wait=false`, {
         method: "POST", workspaceId, body: json({ content, context }),
       }),
+    /** Live support: you are typing to the team member in the chat, you end it, or you rate it afterwards. */
+    supportTyping: (workspaceId: string, id: string) => request<void>(`/conversations/${id}/support/typing`, { method: "POST", workspaceId }),
+    supportEnd: (workspaceId: string, id: string) => request<unknown>(`/conversations/${id}/support/end`, { method: "POST", workspaceId }),
+    supportRate: (workspaceId: string, id: string, rating: "up" | "down", note?: string) =>
+      request<unknown>(`/conversations/${id}/support/rating`, { method: "POST", workspaceId, body: json({ rating, note: note || null }) }),
   },
 };
 

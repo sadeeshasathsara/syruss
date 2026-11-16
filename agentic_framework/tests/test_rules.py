@@ -36,9 +36,17 @@ def test_what_the_agent_reads_names_no_kind_of_document():
         **{f"{name} guide": guides.read(name) for name in guides.GUIDES},
         **{f"{name} tool": tool.description + json.dumps(tool.args.model_json_schema()) for name, tool in TOOLS.items()},
     }
+    # Help on using Syruss talks about Syruss's own invoices (its billing), which is not an example of a business's documents.
+    help_texts = {"chat charter's help": charter.ASSISTANT_CHARTER.split("# Helping with Syruss", 1)[1].split("\n# ", 1)[0],
+                  **{w: texts.pop(w) for w in [f"{name} guide" for name in guides.HELP] + ["get_billing_status tool"]}}
+    texts["chat charter"] = texts["chat charter"].replace(help_texts["chat charter's help"], "")
     business = re.compile(r"\b(shifts?|guards?|rosters?|invoices?|suppliers?|employees?|night|overtime|salary|patients?|S12)\b", re.I)
     for where, text in texts.items():
         found = business.search(text)
+        assert not found, (where, found and found.group(0))
+    not_billing = re.compile(r"\b(shifts?|guards?|rosters?|suppliers?|employees?|night|overtime|salary|patients?|S12)\b", re.I)
+    for where, text in help_texts.items():
+        found = not_billing.search(text)
         assert not found, (where, found and found.group(0))
 
 

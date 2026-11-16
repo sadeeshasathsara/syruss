@@ -1,15 +1,19 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Building2, CreditCard, FileText, LayoutDashboard, Layers, LogOut, Moon, Radio, ScrollText, ShieldCheck, Sun, UsersRound } from "lucide-react";
-import Link from "next/link";
+import { LogOut, Menu, Moon, ShieldCheck, Sun, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { createContext, useContext, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { BrandMark } from "@/components/shell/Brand";
+import { IdleSignOut } from "@/components/shell/IdleSignOut";
+import { Nav } from "@/components/shell/Nav";
+import { PresenceProvider } from "@/components/support/Presence";
+import { SearchTrigger } from "@/components/shell/CommandPalette";
+import { AdminSearch } from "@/components/shell/Search";
 import { Button, IconButton } from "@/components/ui/Button";
 import { ApiError, api } from "@/lib/api";
-import { cn } from "@/lib/format";
 import type { StaffMe } from "@/lib/types";
+import { resumeAndGo } from "@/lib/resume";
 
 const StaffContext = createContext<StaffMe | null>(null);
 
@@ -19,18 +23,6 @@ export function useStaff(): StaffMe & { can: (permission: string) => boolean } {
   if (!me) throw new Error("useStaff outside the admin frame");
   return { ...me, can: (permission: string) => me.permissions.includes(permission) };
 }
-
-const NAV = [
-  { href: "/overview", label: "Overview", icon: LayoutDashboard },
-  { href: "/live", label: "Live", icon: Radio },
-  { href: "/runs", label: "Agent runs", icon: Bot },
-  { href: "/documents", label: "Documents", icon: FileText },
-  { href: "/queues", label: "Queues", icon: Layers },
-  { href: "/accounts", label: "Accounts", icon: Building2 },
-  { href: "/billing", label: "Billing", icon: CreditCard },
-  { href: "/staff", label: "Staff", icon: UsersRound },
-  { href: "/audit", label: "Audit log", icon: ScrollText },
-];
 
 // Signing out ends the session on this app's server and at Keycloak, so it is a real form post, not a fetch.
 function signOut() {
@@ -77,7 +69,12 @@ const REFUSALS: Record<string, { title: string; body: string }> = {
   account_disabled: { title: "This account is disabled", body: "A disabled account can't use the platform tools." },
   admin_app_required: { title: "Sign in again", body: "Your session came from another Syruss app. Sign in to the admin app itself." },
   device_unverified: { title: "Confirm this browser first", body: "Sign in to the Syruss app once from this browser to confirm it with the emailed code, then come back here." },
+  two_step_required: { title: "Sign in with your one-time code", body: "The platform tools need a sign-in with a password and a one-time code from your authenticator app." },
 };
+
+function signInAgain() {
+  void resumeAndGo(`/api/auth/login?reauth=1&returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+}
 
 function Gate({ children }: { children: (me: StaffMe) => React.ReactNode }) {
   const me = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 5 * 60_000, retry: false });
@@ -96,7 +93,8 @@ function Gate({ children }: { children: (me: StaffMe) => React.ReactNode }) {
             <p className="text-body text-muted">{refusal?.body ?? (me.error as Error | null)?.message ?? "Try again in a moment."}</p>
             <div className="mt-2 flex gap-2">
               {!refusal && <Button onClick={() => me.refetch()}>Try again</Button>}
-              <Button variant={refusal ? "primary" : "secondary"} onClick={signOut}>Sign out</Button>
+              {code === "two_step_required" && <Button variant="primary" onClick={signInAgain}>Sign in again</Button>}
+              <Button variant={refusal && code !== "two_step_required" ? "primary" : "secondary"} onClick={signOut}>Sign out</Button>
             </div>
           </>
         )}
@@ -110,47 +108,82 @@ function Gate({ children }: { children: (me: StaffMe) => React.ReactNode }) {
  * API confirms you're on the platform staff; every call is checked again on the server.
  */
 export function AdminFrame({ children }: { children: React.ReactNode }) {
-  const path = usePathname();
   return (
     <Gate>
       {(me) => (
         <StaffContext.Provider value={me}>
+          <IdleSignOut minutes={me.session?.idle_minutes ?? 30} onSignOut={signOut} />
+          <PresenceProvider enabled={me.permissions.includes("support.respond")}>
+            <AdminSearch permissions={me.permissions}><Frame me={me}>{children}</Frame></AdminSearch>
+          </PresenceProvider>
+        </StaffContext.Provider>
+      )}
+    </Gate>
+  );
+}
+
+function Frame({ me, children }: { me: StaffMe; children: React.ReactNode }) {
+  const can = (permission: string) => me.permissions.includes(permission);
+  const pathname = usePathname();
+  // The menu belongs to the page it was opened on: going anywhere closes it. Escape closes it; Tab stays inside it.
+  const [menuAt, setMenuAt] = useState<string | null>(null);
+  const menu = menuAt === pathname;
+  const setMenu = (open: boolean) => setMenuAt(open ? pathname : null);
+  const drawer = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    drawer.current?.querySelector<HTMLElement>("a, button")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuAt(null);
+      if (e.key !== "Tab" || !drawer.current) return;
+      const focusable = [...drawer.current.querySelectorAll<HTMLElement>("a[href]:not([tabindex='-1']), button:not([disabled])")];
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menu]);
+  const brand = (
+    <div className="flex items-center gap-2 px-1">
+      <BrandMark />
+      <span className="text-section font-semibold text-ink">Syruss</span>
+      <span className="rounded-chip bg-[var(--pill-accent-bg)] px-1.5 text-meta font-medium text-[var(--pill-accent-ink)]">System admin</span>
+    </div>
+  );
+  return (
           <div className="flex h-dvh flex-col overflow-hidden bg-frame lg:flex-row">
-            <aside className="flex flex-none flex-col gap-1 border-b border-border px-3 py-2 lg:w-[228px] lg:border-b-0 lg:pt-3">
-              <div className="flex items-center gap-2 px-1 pb-1 lg:pb-3">
-                <BrandMark />
-                <span className="text-section font-semibold text-ink">Syruss</span>
-                <span className="rounded-chip bg-[var(--pill-accent-bg)] px-1.5 text-meta font-medium text-[var(--pill-accent-ink)]">System admin</span>
-                <span className="ml-auto flex items-center lg:hidden"><ThemeToggle /><IconButton aria-label="Sign out" onClick={signOut}><LogOut /></IconButton></span>
-              </div>
-              <nav aria-label="Platform tools" className="-mx-3 overflow-x-auto px-3 lg:mx-0 lg:px-0">
-                <ul className="flex gap-1 lg:flex-col">
-                  {NAV.map(({ href, label, icon: Icon }) => {
-                    const active = path === href || path.startsWith(`${href}/`);
-                    return (
-                      <li key={href} className="flex-none">
-                        <Link
-                          href={href}
-                          aria-current={active ? "page" : undefined}
-                          className={cn(
-                            "flex h-8 items-center gap-2 rounded-control px-2.5 text-body transition-colors pointer-coarse:h-10",
-                            active ? "bg-active font-medium text-ink" : "text-muted hover:bg-raised hover:text-ink",
-                          )}
-                        >
-                          <Icon className="size-4" aria-hidden /> {label}
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </nav>
+            {/* Wide screens: the sidebar */}
+            <aside className="hidden w-[236px] flex-none flex-col gap-4 overflow-y-auto px-3 pb-4 pt-3 scrollbar-thin lg:flex">
+              <div className="pb-1">{brand}</div>
+              <Nav can={can} />
             </aside>
+
+            {/* Narrow screens: a bar with the menu button; the sidebar slides over the page */}
+            <div className="flex h-12 flex-none items-center gap-2 border-b border-border px-3 lg:hidden">
+              <IconButton aria-label="Open the menu" aria-expanded={menu} aria-controls="admin-menu" onClick={() => setMenu(true)}><Menu /></IconButton>
+              {brand}
+              <span className="ml-auto flex items-center"><SearchTrigger variant="icon" /><ThemeToggle /><IconButton aria-label="Sign out" onClick={signOut}><LogOut /></IconButton></span>
+            </div>
+            {menu && (
+              <div className="fixed inset-0 z-40 lg:hidden">
+                <button type="button" aria-label="Close the menu" tabIndex={-1} className="absolute inset-0 bg-black/40 animate-fade" onClick={() => setMenu(false)} />
+                <div ref={drawer} id="admin-menu" role="dialog" aria-modal="true" aria-label="Menu"
+                  className="absolute inset-y-0 left-0 flex w-[min(300px,86vw)] flex-col gap-4 overflow-y-auto border-r border-border bg-frame px-3 pb-6 pt-3 shadow-xl">
+                  <div className="flex items-center justify-between">{brand}<IconButton aria-label="Close the menu" onClick={() => setMenu(false)}><X /></IconButton></div>
+                  <div className="px-1"><SearchTrigger label="Search everything" className="max-w-none" /></div>
+                  <Nav can={can} onNavigate={() => setMenu(false)} />
+                  <p className="mt-auto px-2.5 text-meta text-muted">{me.name} · {me.role_name}</p>
+                </div>
+              </div>
+            )}
 
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <div className="hidden h-12 flex-none items-center gap-2 pr-3 lg:flex">
-                <p className="flex min-w-0 flex-1 items-center gap-1.5 text-meta text-muted">
+                <div className="min-w-0 flex-1"><SearchTrigger label="Search organizations, people, documents, tickets" /></div>
+                <p className="hidden min-w-0 items-center gap-1.5 text-meta text-muted 2xl:flex" title="Every change you make here is recorded in the audit log.">
                   <ShieldCheck className="size-3.5 flex-none" aria-hidden />
-                  <span className="truncate">Every change you make here is recorded in the audit log.</span>
+                  <span className="truncate">Changes are audited</span>
                 </p>
                 <ThemeToggle />
                 <div className="flex items-center gap-2 pl-1 text-right">
@@ -166,8 +199,5 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
               </main>
             </div>
           </div>
-        </StaffContext.Provider>
-      )}
-    </Gate>
   );
 }

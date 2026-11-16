@@ -1,10 +1,12 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useRef, useState } from "react";
-import { ContentAccess, Fact, LiveDot, ReasonAction } from "@/components/ops/Bits";
+import { Fact, LiveDot, ReasonAction } from "@/components/ops/Bits";
+import { DocumentViewer } from "@/components/ops/DocumentViewer";
+import { RunSteps } from "@/components/ops/RunSteps";
 import { useStaff } from "@/components/shell/AdminFrame";
 import { Bar, Empty, ErrorNote, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Pill } from "@/components/ui/Pill";
@@ -12,7 +14,7 @@ import { api } from "@/lib/api";
 import { cn, dateTime } from "@/lib/format";
 import { useLive } from "@/lib/live";
 import { duration, short, status, tokens, trigger, usd, where } from "@/lib/runs";
-import type { LiveFact, RunDetail, RunStep } from "@/lib/types";
+import type { LiveFact, RunDetail, RunLink } from "@/lib/types";
 
 const fmt = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v, null, 2));
 
@@ -23,7 +25,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const run = useQuery({ queryKey: ["run", id], queryFn: () => api.runs.get(id) });
   const d = run.data;
   const running = d?.run.status === "RUNNING";
-  // While it runs, with content open: what the agent is thinking and doing in the step under way
+  // While it runs: what the agent is thinking and doing in the step under way
   const [now, setNow] = useState<LiveFact[]>([]);
   const refetching = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const onEvent = useCallback((e: LiveFact) => {
@@ -40,7 +42,6 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   if (run.isError) return <ErrorNote message={(run.error as Error).message} onRetry={() => run.refetch()} />;
   if (!d) return <div className="flex flex-col gap-4"><Bar className="h-8 w-72" /><Bar className="h-24 w-full rounded-card" /><Bar className="h-64 w-full rounded-card" /></div>;
   const r = d.run;
-  const org = d.organizations[r.tenant_id]?.name ?? "This organization";
   const wait = r.queued_at ? new Date(r.started_at).getTime() - new Date(r.queued_at).getTime() : null;
 
   return (
@@ -48,7 +49,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       <PageHeader
         back={{ href: "/runs", label: "‹ Agent runs" }}
         title={<span className="flex flex-wrap items-center gap-2">{trigger(r.trigger)} <Pill tone={status(r.status).tone}>{status(r.status).label}</Pill></span>}
-        subtitle={`${where(d, r.tenant_id, r.template_id)} · started ${dateTime(r.started_at)}${r.attempt > 1 ? ` · try ${r.attempt}` : ""}`}
+        subtitle={`${where(d, r.tenant_id, r.template_id)} · started ${dateTime(r.started_at)}${r.attempt > 1 ? ` · try ${r.attempt}` : ""}${d.position?.number ? ` · run ${d.position.number} of ${d.position.of} for this document` : ""}`}
         actions={running ? (
           <>
             <LiveDot state={live.state} missed={live.missed} />
@@ -57,7 +58,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           </>
         ) : undefined}
       />
-      <ContentAccess tenantId={r.tenant_id} organization={org} grant={d.grant} />
+      {d.document && <Neighbours previous={d.previous} next={d.next} documentId={d.document.id} />}
 
       <Panel>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 @3xl:grid-cols-4 @5xl:grid-cols-6">
@@ -66,7 +67,8 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           <Fact label="Waited to start">{duration(wait)}</Fact>
           <Fact label="Took">{running ? "Still running" : duration(r.duration_ms)}</Fact>
           <Fact label="Steps / tool calls">{r.steps} / {r.tool_calls}{r.tool_errors ? <span className="text-[var(--pill-warning-ink)]"> ({r.tool_errors} refused)</span> : null}</Fact>
-          <Fact label="Cost">{usd(r.cost_usd)} <span className="text-muted">· {tokens(r.input_tokens)} in, {tokens(r.output_tokens)} out</span></Fact>
+          <Fact label="Tokens">{tokens(r.input_tokens + r.output_tokens)} <span className="text-muted">· {tokens(r.input_tokens)} in, {tokens(r.output_tokens)} out</span></Fact>
+          <Fact label="Model calls / cost">{r.model_calls} <span className="text-muted">· {usd(r.cost_usd)}</span></Fact>
           {r.document_id && <Fact label="Document"><Link href={`/documents/${r.document_id}`} className="text-ink underline-offset-2 hover:underline">{r.document_name ?? `Document ${short(r.document_id)}`}</Link></Fact>}
           {r.conversation_id && <Fact label="Conversation"><span className="num">{short(r.conversation_id)}</span></Fact>}
           {d.event && <Fact label="Event"><span className="num">{d.event.type} · {short(d.event.id)}</span></Fact>}
@@ -89,23 +91,26 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         </Panel>
       )}
 
-      <Panel title="Step by step" aside={d.grant ? undefined : "Shape only: thoughts and tool results need content open"}>
+      {d.document && <DocumentViewer id={d.document.id} contentType={d.document.content_type} pages={d.document.page_count}
+        name={d.document.name} sizeBytes={d.document.size_bytes} />}
+
+      <Panel title="Step by step" aside="Open a step to see what was sent to the model, what it answered and the tools it ran">
         {d.steps.length === 0 && !now.length ? (
           <Empty title={running ? "No step finished yet" : "No steps recorded"}>{running ? "Each step appears here the moment it is done." : "The run ended before its first step, or its steps are past their keeping time."}</Empty>
         ) : (
-          <ol className="flex flex-col divide-y divide-rule">
-            {d.steps.map((s) => <Step key={s.step_number} step={s} open={!!d.grant} />)}
+          <>
+            <RunSteps steps={d.steps} prompt={d.prompt} />
             {running && now.length > 0 && (
-              <li className="flex flex-col gap-1.5 py-3">
+              <div className="flex flex-col gap-1.5 border-t border-rule py-3">
                 <span className="text-meta font-medium text-[var(--pill-info-ink)]">Now</span>
                 {now.map((e, i) => (
                   <p key={i} className="whitespace-pre-wrap text-body text-ink [overflow-wrap:anywhere]">
                     {e.kind === "agent_thought" ? String(e.data?.thought ?? "") : e.kind === "tool_called" ? `→ ${e.data?.tool_name} ${fmt(e.data?.arguments ?? "")}` : `← ${e.data?.tool_name}: ${String(e.data?.result ?? "").slice(0, 400)}`}
                   </p>
                 ))}
-              </li>
+              </div>
             )}
-          </ol>
+          </>
         )}
         {d.final_thought && d.final_thought.trim() !== (d.steps.at(-1)?.thought ?? "").trim() && <p className="mt-3 whitespace-pre-wrap rounded-control bg-raised px-3 py-2 text-body text-ink">{d.final_thought}</p>}
       </Panel>
@@ -115,45 +120,24 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   );
 }
 
-function Step({ step: s, open }: { step: RunStep; open: boolean }) {
-  const took = s.step_started_at && s.step_completed_at ? new Date(s.step_completed_at).getTime() - new Date(s.step_started_at).getTime() : null;
+/** The runs of the same document before and after this one: each run names the one before it, a linked list. */
+function Neighbours({ previous, next, documentId }: { previous: RunLink | null; next: RunLink | null; documentId: string }) {
+  const link = (r: RunLink | null, dir: "previous" | "next") => r ? (
+    <Link href={`/runs/${r.id}`} className={cn("flex min-w-0 items-center gap-2 rounded-control border border-border px-3 py-2 hover:bg-raised", dir === "next" && "justify-end text-right")}>
+      {dir === "previous" && <ChevronLeft className="size-4 flex-none text-muted" aria-hidden />}
+      <span className="min-w-0">
+        <span className="block text-meta text-muted">{dir === "previous" ? "Previous run" : "Next run"} of this document</span>
+        <span className="block truncate text-body text-ink">{trigger(r.trigger)} · {status(r.status).label} · {dateTime(r.started_at)}</span>
+      </span>
+      {dir === "next" && <ChevronRight className="size-4 flex-none text-muted" aria-hidden />}
+    </Link>
+  ) : <span className={cn("rounded-control border border-dashed border-control px-3 py-2 text-meta text-faint", dir === "next" && "text-right")}>{dir === "previous" ? "The first run of this document" : "No run after this one yet"}</span>;
   return (
-    <li className="flex flex-col gap-2 py-3">
-      <div className="flex items-baseline gap-2">
-        <span className="num text-meta font-medium text-ink">Step {s.step_number}</span>
-        <span className="num text-meta text-muted">{duration(took)}{!open && s.thought_chars ? ` · thought ${s.thought_chars} characters` : ""}</span>
-      </div>
-      {open && s.thought && <p className="whitespace-pre-wrap text-body text-ink [overflow-wrap:anywhere]">{s.thought}</p>}
-      {s.tool_calls.length > 0 && (
-        <ul className="flex flex-col gap-1">
-          {s.tool_calls.map((c, i) => <ToolCall key={i} call={c} open={open} />)}
-        </ul>
-      )}
-    </li>
-  );
-}
-
-function ToolCall({ call: c, open }: { call: RunStep["tool_calls"][number]; open: boolean }) {
-  const [shown, setShown] = useState(false);
-  const label = (
-    <>
-      <span className={cn("font-medium", c.status === "error" ? "text-[var(--pill-warning-ink)]" : "text-ink")}>{c.tool_name}</span>
-      <span className="num text-meta text-muted">{duration(c.duration_ms)}{c.status === "error" ? " · refused or failed" : ""}</span>
-    </>
-  );
-  if (!open) return <li className="flex items-baseline gap-2 pl-3 text-body">{label}</li>;
-  return (
-    <li className="pl-3">
-      <button type="button" onClick={() => setShown((v) => !v)} aria-expanded={shown} className="flex items-baseline gap-2 text-body">
-        <ChevronRight className={cn("size-3.5 self-center text-muted transition-transform", shown && "rotate-90")} aria-hidden />{label}
-      </button>
-      {shown && (
-        <div className="mt-1.5 grid grid-cols-1 gap-2 @4xl:grid-cols-2">
-          <pre className="max-h-72 overflow-auto rounded-control bg-raised p-2 text-meta text-ink scrollbar-thin">{fmt(c.arguments ?? {})}</pre>
-          <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-control bg-raised p-2 text-meta text-ink scrollbar-thin [overflow-wrap:anywhere]">{c.observation ?? ""}</pre>
-        </div>
-      )}
-    </li>
+    <nav aria-label="Runs of this document" className="grid grid-cols-1 gap-2 @2xl:grid-cols-[1fr_auto_1fr] @2xl:items-center">
+      {link(previous, "previous")}
+      <Link href={`/documents/${documentId}`} className="text-center text-meta text-ink underline-offset-2 hover:underline">The document&apos;s whole journey</Link>
+      {link(next, "next")}
+    </nav>
   );
 }
 

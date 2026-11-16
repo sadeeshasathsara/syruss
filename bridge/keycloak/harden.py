@@ -3,13 +3,14 @@ Checks the running Keycloak realm against the sign-in settings Syruss expects, a
 
     python bridge/keycloak/harden.py            # show what differs and fix it
     python bridge/keycloak/harden.py --check    # only show (exit 1 if anything differs)
-    python bridge/keycloak/harden.py --smtp     # also give Keycloak the mail server in server/.env, so it can send
-                                                # "forgot your password" emails (stores the SMTP password in Keycloak)
+    python bridge/keycloak/harden.py --smtp     # also point Keycloak's email at the mail service (mail/), so its
+                                                # "forgot your password" emails go out like all of Syruss's mail
 
 The same settings are in realm-syruss.json, which a brand-new Keycloak imports; this script brings an existing one in line.
 It also adds any client the realm file has and the running realm lacks (such as syruss-admin), and gives the system admin
-app its own sign-in flow that always asks for a one-time code. A brand-new Keycloak needs this run once too: the import
-creates the client, but the flow is made here.
+app its own sign-in flow that always asks for a one-time code, short sessions (30 minutes idle, 8 hours at most), and
+tokens that say how the person signed in (amr: "pwd", "otp"), which the server checks before opening any platform tool.
+A brand-new Keycloak needs this run once too: the import creates the client, but the flow is made here.
 Needs KEYCLOAK_URL / KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD in the environment, or the local defaults.
 """
 import json
@@ -39,7 +40,10 @@ WANTED = {
     # Stolen sessions and tokens
     "accessTokenLifespan": 300,           # an access token is good for five minutes
     "ssoSessionIdleTimeout": 1800,        # 30 minutes without activity ends the session
-    "ssoSessionMaxLifespan": 36000,       # and no session lives past ten hours
+    "ssoSessionMaxLifespan": 36000,       # and no session lives past ten hours...
+    "rememberMe": True,                   # ...unless they tick "Keep me signed in": then the browser stays signed in
+    "ssoSessionIdleTimeoutRememberMe": 2592000,   # for 30 days (asking the password and any one-time code once a month).
+    "ssoSessionMaxLifespanRememberMe": 2592000,   # The admin app's own client limits (8 hours) still apply to staff.
     "revokeRefreshToken": True,           # a refresh token works once...
     "refreshTokenMaxReuse": 0,            # ...and a replayed one revokes the whole session (theft detected)
     "sslRequired": "external",            # plain http only for localhost
@@ -57,8 +61,9 @@ WANTED = {
 }
 # Browsers shouldn't frame the sign-in pages (clickjacking) or let them be sniffed.
 WANTED_HEADERS = {
-    "xFrameOptions": "DENY",
-    "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'none'; object-src 'none';",
+    # Only Keycloak's own pages may frame it: its account page checks the sign-in in a hidden frame of its own
+    "xFrameOptions": "SAMEORIGIN",
+    "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';",
     "xContentTypeOptions": "nosniff",
     "xRobotsTag": "none",
     "xXSSProtection": "1; mode=block",
@@ -82,16 +87,22 @@ def call(method, path, token=None, body=None, form=None):
 
 
 def smtp_from_env() -> dict:
+    """Keycloak's mail server: the mail service's relay (mail/relay.py), with the login and From address it accepts.
+    Read from the environment, else mail/.env. KEYCLOAK_SMTP_HOST is how Keycloak's container reaches the mail service:
+    "mail" on the servers (their mail-relay network), host.docker.internal on your machine (the default)."""
     values = {}
-    for line in (Path(__file__).resolve().parents[2] / "server" / ".env").read_text(encoding="utf-8").splitlines():
-        if "=" in line and not line.lstrip().startswith("#"):
-            k, _, v = line.partition("=")
-            values[k.strip()] = v.strip()
-    host, port, security = values.get("SMTP_HOST", ""), values.get("SMTP_PORT", "587"), values.get("SMTP_SECURITY", "starttls").lower()
+    env_file = Path(__file__).resolve().parents[2] / "mail" / ".env"
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            if "=" in line and not line.lstrip().startswith("#"):
+                k, _, v = line.partition("=")
+                values[k.strip()] = v.strip()
+    get = lambda name, default="": os.environ.get(name) or values.get(name) or default  # noqa: E731
     return {
-        "host": host, "port": port, "from": values.get("MAIL_FROM", ""), "fromDisplayName": values.get("MAIL_FROM_NAME", "Syruss"),
-        "auth": "true" if values.get("SMTP_USERNAME") else "false", "user": values.get("SMTP_USERNAME", ""), "password": values.get("SMTP_PASSWORD", ""),
-        "starttls": "true" if security == "starttls" else "false", "ssl": "true" if security == "ssl" else "false",
+        "host": get("KEYCLOAK_SMTP_HOST", "host.docker.internal"), "port": get("MAIL_RELAY_PORT", "2525"),
+        "from": get("MAIL_FROM"), "fromDisplayName": get("MAIL_FROM_NAME", "Syruss"),
+        "auth": "true", "user": get("MAIL_RELAY_USERNAME", "keycloak"), "password": get("MAIL_RELAY_PASSWORD"),
+        "starttls": "false", "ssl": "false",  # an internal hop: the relay is reachable only from Keycloak's network
     }
 
 
@@ -99,6 +110,14 @@ def smtp_from_env() -> dict:
 # redirect to another provider, and a one-time code every time (someone without one is asked to set it up first).
 ADMIN_CLIENT = "syruss-admin"
 ADMIN_FLOW = "syruss admin browser"
+# Staff sessions: 30 minutes without use ends one, and none lives past a working day
+ADMIN_CLIENT_ATTRIBUTES = {"client.session.idle.timeout": "1800", "client.session.max.lifespan": "28800"}
+# What each step of the admin flow is reported as in the token's amr claim, and for how long after it was done (Keycloak
+# leaves a step out once that many seconds have passed: longer than a staff session, so it holds for the whole of one)
+AMR = {"auth-username-password-form": "pwd", "auth-otp-form": "otp"}
+AMR_MAX_AGE = "36000"
+AMR_MAPPER = {"name": "amr", "protocol": "openid-connect", "protocolMapper": "oidc-amr-mapper",
+              "config": {"access.token.claim": "true", "id.token.claim": "true", "introspection.token.claim": "true"}}
 # Development values the compose file falls back to; a real deployment sets SYRUSS_* (see bridge/.env.example).
 DEFAULTS = {"SYRUSS_SITE_URL": "http://localhost:3100", "SYRUSS_APP_URL": "http://localhost:3000", "SYRUSS_ADMIN_URL": "http://localhost:3200",
             "SYRUSS_SITE_CLIENT_SECRET": "dev-site-secret-change-me", "SYRUSS_APP_CLIENT_SECRET": "dev-app-secret-change-me",
@@ -123,9 +142,11 @@ def wanted_requirement(execution: dict, parent: str):
     provider, name, subflow = execution.get("providerId"), execution.get("displayName", ""), execution.get("authenticationFlow")
     if provider in ("auth-cookie", "identity-provider-redirector") or (subflow and execution["level"] == 0 and name.endswith(" Organization")):
         return "DISABLED"
-    if provider == "conditional-user-configured" and parent.endswith("Conditional OTP"):
+    # Keycloak 26.0 calls the second step "Conditional OTP"; from 26.3 it is "Conditional 2FA" (with more conditions)
+    second_step = ("Conditional OTP", "Conditional 2FA")
+    if provider in ("conditional-user-configured", "conditional-credential") and parent.endswith(second_step):
         return "DISABLED"   # the code is asked of everyone, not only of those who already set one up
-    if provider == "auth-otp-form" or (subflow and (name.endswith("Conditional OTP") or name.endswith(" forms"))):
+    if provider == "auth-otp-form" or (subflow and (name.endswith(second_step) or name.endswith(" forms"))):
         return "REQUIRED"
     return None
 
@@ -155,13 +176,69 @@ def ensure_admin_sign_in(token: str, check_only: bool) -> list:
             differed.append(f"flow step '{execution['displayName']}': {execution['requirement']} -> {want}")
             if not check_only:
                 call("PUT", path, token, {**execution, "requirement": want})
+        if execution.get("providerId") in AMR:
+            differed += ensure_reference(token, execution, AMR[execution["providerId"]], check_only)
     [client] = call("GET", f"/admin/realms/{REALM}/clients?clientId={ADMIN_CLIENT}", token) or [None]
-    if client and (client.get("authenticationFlowBindingOverrides") or {}).get("browser") != flows[ADMIN_FLOW]["id"]:
+    if client is None:
+        return differed
+    changed = False
+    if (client.get("authenticationFlowBindingOverrides") or {}).get("browser") != flows[ADMIN_FLOW]["id"]:
         differed.append(f"client {ADMIN_CLIENT}: signs in through the '{ADMIN_FLOW}' flow")
+        client["authenticationFlowBindingOverrides"] = {**(client.get("authenticationFlowBindingOverrides") or {}), "browser": flows[ADMIN_FLOW]["id"]}
+        changed = True
+    # Keycloak's emailed setup link for a new staff sign-in (python -m app.invite_staff) leads back to the invitation
+    wanted_uris = next((c.get("redirectUris", []) for c in realm_clients() if c["clientId"] == ADMIN_CLIENT), [])
+    missing = [u for u in wanted_uris if u not in (client.get("redirectUris") or [])]
+    if missing:
+        differed.append(f"client {ADMIN_CLIENT}: may return to {', '.join(missing)}")
+        client["redirectUris"] = (client.get("redirectUris") or []) + missing
+        changed = True
+    attributes = client.get("attributes") or {}
+    for key, value in ADMIN_CLIENT_ATTRIBUTES.items():
+        if attributes.get(key) != value:
+            differed.append(f"client {ADMIN_CLIENT}: {key} {attributes.get(key)!r} -> {value!r}")
+            client["attributes"] = {**attributes, **ADMIN_CLIENT_ATTRIBUTES}
+            changed = True
+    if changed and not check_only:
+        call("PUT", f"/admin/realms/{REALM}/clients/{client['id']}", token, client)
+    mappers = call("GET", f"/admin/realms/{REALM}/clients/{client['id']}/protocol-mappers/models", token) or []
+    if not any(m.get("protocolMapper") == AMR_MAPPER["protocolMapper"] for m in mappers):
+        differed.append(f"client {ADMIN_CLIENT}: tokens say how the person signed in (amr)")
         if not check_only:
-            client["authenticationFlowBindingOverrides"] = {**(client.get("authenticationFlowBindingOverrides") or {}), "browser": flows[ADMIN_FLOW]["id"]}
-            call("PUT", f"/admin/realms/{REALM}/clients/{client['id']}", token, client)
+            call("POST", f"/admin/realms/{REALM}/clients/{client['id']}/protocol-mappers/models", token, AMR_MAPPER)
     return differed
+
+
+def ensure_reference(token: str, execution: dict, reference: str, check_only: bool) -> list:
+    """The step is reported in the token's amr as `reference` (Keycloak reports only steps configured to be)."""
+    wanted = {"default.reference.value": reference, "default.reference.maxAge": AMR_MAX_AGE}
+    config_id = execution.get("authenticationConfig")
+    current = call("GET", f"/admin/realms/{REALM}/authentication/config/{config_id}", token) if config_id else None
+    have = (current or {}).get("config") or {}
+    # Newer Keycloak shows these values masked ("**********"): a key that is there is then taken as set by this script
+    if all(have.get(k) in (v, "**********") for k, v in wanted.items()):
+        return []
+    if not check_only:
+        if current:
+            call("PUT", f"/admin/realms/{REALM}/authentication/config/{config_id}", token, {**current, "config": {**have, **wanted}})
+        else:
+            call("POST", f"/admin/realms/{REALM}/authentication/executions/{execution['id']}/config", token,
+                 {"alias": f"syruss admin amr {reference}", "config": wanted})
+    return [f"flow step '{execution['displayName']}': reported in the token as amr '{reference}'"]
+
+
+def ensure_account_console_off(token: str, check_only: bool) -> list:
+    """
+    Keycloak's own account pages are off: people manage their password, two-step verification and Google in Syruss's
+    settings, which start single Keycloak steps (Application Initiated Actions) and read Keycloak's account API with the
+    person's own token. That API belongs to the "account" client, which stays on.
+    """
+    [console] = call("GET", f"/admin/realms/{REALM}/clients?clientId=account-console", token) or [None]
+    if not console or not console.get("enabled", True):
+        return []
+    if not check_only:
+        call("PUT", f"/admin/realms/{REALM}/clients/{console['id']}", token, {**console, "enabled": False})
+    return ["client account-console: Keycloak's own account pages are turned off (Syruss's settings replace them)"]
 
 
 def main() -> int:
@@ -176,6 +253,7 @@ def main() -> int:
     for name, (now, want) in {**changes, **{f"headers.{k}": v for k, v in header_changes.items()}}.items():
         print(f"  {name}: {now!r} -> {want!r}")
     admin_sign_in = ensure_admin_sign_in(token, check_only)
+    admin_sign_in += ensure_account_console_off(token, check_only)
     for line in admin_sign_in:
         print(f"  {line}")
     if not changes and not header_changes and not admin_sign_in:
@@ -189,13 +267,13 @@ def main() -> int:
         print("Updated.")
     if "--smtp" in sys.argv and not check_only:
         smtp = smtp_from_env()
-        if not smtp["host"]:
-            print("No SMTP_HOST in server/.env: Keycloak's mail server left as it is.")
+        if not smtp["password"] or not smtp["from"]:
+            print("No MAIL_RELAY_PASSWORD or MAIL_FROM (environment or mail/.env): Keycloak's mail server left as it is.")
         else:
             realm = call("GET", f"/admin/realms/{REALM}", token)
             realm["smtpServer"] = smtp
             call("PUT", f"/admin/realms/{REALM}", token, realm)
-            print(f"Keycloak will send mail through {smtp['host']}:{smtp['port']}.")
+            print(f"Keycloak will send mail through the mail service at {smtp['host']}:{smtp['port']}.")
     return 1 if (changes or header_changes or admin_sign_in) and check_only else 0
 
 

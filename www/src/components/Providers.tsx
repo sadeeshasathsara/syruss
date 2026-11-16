@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
+import { ResumeBoot } from "@/lib/resume";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -15,6 +16,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   );
   return (
     <QueryClientProvider client={client}>
+      <ResumeBoot />
       <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
     </QueryClientProvider>
   );

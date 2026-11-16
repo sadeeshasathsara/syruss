@@ -1,0 +1,7 @@
+{{ title }}
+
+{{ body }}
+{% if url %}
+Open the admin app: {{ url }}
+{% endif %}
+You get this because you are, or were, on the Syruss platform staff. If this looks wrong, tell a platform owner at once.

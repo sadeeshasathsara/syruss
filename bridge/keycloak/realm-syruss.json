@@ -25,6 +25,8 @@
   "accessTokenLifespan": 300,
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 36000,
+  "ssoSessionIdleTimeoutRememberMe": 2592000,
+  "ssoSessionMaxLifespanRememberMe": 2592000,
   "revokeRefreshToken": true,
   "refreshTokenMaxReuse": 0,
   "defaultSignatureAlgorithm": "RS256",
@@ -33,8 +35,8 @@
   "adminEventsEnabled": true,
   "adminEventsDetailsEnabled": true,
   "browserSecurityHeaders": {
-    "xFrameOptions": "DENY",
-    "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'none'; object-src 'none';",
+    "xFrameOptions": "SAMEORIGIN",
+    "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';",
     "xContentTypeOptions": "nosniff",
     "xRobotsTag": "none",
     "xXSSProtection": "1; mode=block",
@@ -129,7 +131,7 @@
       "serviceAccountsEnabled": false,
       "rootUrl": "${SYRUSS_ADMIN_URL}",
       "baseUrl": "${SYRUSS_ADMIN_URL}",
-      "redirectUris": ["${SYRUSS_ADMIN_URL}/api/auth/callback"],
+      "redirectUris": ["${SYRUSS_ADMIN_URL}/api/auth/callback", "${SYRUSS_ADMIN_URL}/join/*"],
       "webOrigins": ["${SYRUSS_ADMIN_URL}"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
@@ -148,6 +150,17 @@
             "included.custom.audience": "syruss-api",
             "id.token.claim": "false",
             "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "amr",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-amr-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "introspection.token.claim": "true"
           }
         }
       ]

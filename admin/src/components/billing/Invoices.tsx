@@ -14,6 +14,8 @@ import { api } from "@/lib/api";
 import { KIND_OF_INVOICE, day, invoiceStatus, money, price } from "@/lib/billing";
 import { cn } from "@/lib/format";
 import type { CatalogItem, Invoice } from "@/lib/types";
+import { Select } from "@/components/ui/Select";
+import { usePreservedState } from "@/lib/resume";
 
 const FILTERS = [
   { key: "all", label: "All" }, { key: "open", label: "Waiting" }, { key: "overdue", label: "Overdue" }, { key: "paid", label: "Paid" },
@@ -25,7 +27,7 @@ export function InvoiceList() {
   const can = useStaff().can("billing.manage");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("all");
   const [q, setQ] = useState("");
-  const [making, setMaking] = useState(false);
+  const [making, setMaking] = usePreservedState("invoice.new.open", false);
   const params = filter === "overdue" ? { overdue: "true" } : filter === "all" ? {} : { status: filter };
   const list = useQuery({ queryKey: ["billing", "invoices", filter, q], queryFn: () => api.billing.invoices({ ...params, q: q || undefined }) });
   return (
@@ -93,10 +95,10 @@ export function InvoiceEditor({ tenantId, onDone }: { tenantId?: string; onDone:
   const router = useRouter();
   const orgs = useQuery({ queryKey: ["billing", "organizations", ""], queryFn: () => api.billing.organizations(), enabled: !tenantId });
   const catalog = useQuery({ queryKey: ["billing", "catalog"], queryFn: () => api.billing.catalog() });
-  const [tenant, setTenant] = useState(tenantId ?? "");
-  const [lines, setLines] = useState<LineDraft[]>([{ item_id: "", description: "", cents: 0, quantity: 1 }]);
-  const [note, setNote] = useState("");
-  const [issue, setIssue] = useState(true);
+  const [tenant, setTenant] = usePreservedState("invoice.new.tenant", tenantId ?? "");
+  const [lines, setLines] = usePreservedState<LineDraft[]>("invoice.new.lines", [{ item_id: "", description: "", cents: 0, quantity: 1 }]);
+  const [note, setNote] = usePreservedState("invoice.new.note", "");
+  const [issue, setIssue] = usePreservedState("invoice.new.issue", true);
   const onSale: CatalogItem[] = (catalog.data ?? []).filter((i) => i.status === "published");
   const set = (n: number, patch: Partial<LineDraft>) => setLines((ls) => ls.map((l, i) => (i === n ? { ...l, ...patch } : l)));
   const ready = !!tenant && lines.every((l) => l.item_id || (l.description.trim() && l.cents >= 0)) && lines.length > 0;
@@ -112,19 +114,19 @@ export function InvoiceEditor({ tenantId, onDone }: { tenantId?: string; onDone:
       }}>
       {!tenantId && (
         <Label text="Organization">
-          <select value={tenant} onChange={(e) => setTenant(e.target.value)} className={field}>
+          <Select value={tenant} onValueChange={(v) => setTenant(v)}>
             <option value="">Choose…</option>
             {(orgs.data ?? []).map((o) => <option key={o.id} value={o.id}>{o.name} ({o.slug})</option>)}
-          </select>
+          </Select>
         </Label>
       )}
       <div className="flex flex-col gap-2">
         {lines.map((l, n) => (
           <div key={n} className="grid grid-cols-1 gap-2 rounded-control border border-border p-2 @2xl:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_7rem_5rem_auto]">
-            <select value={l.item_id} onChange={(e) => set(n, { item_id: e.target.value })} className={field} aria-label="Catalog item">
+            <Select value={l.item_id} onValueChange={(v) => set(n, { item_id: v })} aria-label="Catalog item">
               <option value="">A line written here</option>
               {onSale.map((i) => <option key={i.id} value={i.id}>{i.name} ({price(i)})</option>)}
-            </select>
+            </Select>
             <input value={l.description} onChange={(e) => set(n, { description: e.target.value })} disabled={!!l.item_id} placeholder="What it is"
               aria-label="Description" className={field} />
             {l.item_id ? <span className="self-center text-meta text-muted">Catalog price</span> : <MoneyInput cents={l.cents} onChange={(c) => set(n, { cents: c })} />}

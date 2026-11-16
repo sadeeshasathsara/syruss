@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { authConfig, safeReturnTo } from "@/lib/auth/config";
-import { checkDevice, ensureDeviceToken } from "@/lib/auth/device";
+import { adminHomeFor, checkDevice, ensureDeviceToken } from "@/lib/auth/device";
 import { beginLogin, completeLogin, logoutUrl, refresh, unreachable, type Transaction } from "@/lib/auth/oidc";
 import { clearSealed, clearSession, readSealed, readSession, writeSealed, writeSession } from "@/lib/auth/session";
 
@@ -24,7 +24,7 @@ async function login(request: NextRequest) {
   const mode = q.get("mode") === "signup" ? "signup" : "signin";
   let started;
   try {
-    started = await beginLogin({ mode, returnTo: q.get("returnTo"), idpHint: q.get("idp"), reauth: q.get("reauth") === "1" });
+    started = await beginLogin({ mode, returnTo: q.get("returnTo"), idpHint: q.get("idp"), reauth: q.get("reauth") === "1", action: q.get("action") });
   } catch {
     return failed("unavailable"); // Keycloak didn't answer, so there is no sign-in page to send them to
   }
@@ -37,6 +37,15 @@ async function callback(request: NextRequest) {
   const tx = await readSealed<Transaction>(jar, txName());
   clearSealed(jar, txName());
   if (!tx) return failed("expired");
+  // Back from a single account step (see beginLogin): the page that started it says how it went (done, or not)
+  const stepStatus = request.nextUrl.searchParams.get("kc_action_status");
+  const afterStep = (path: string) => {
+    if (!tx.action) return path;
+    const url = new URL(path, "https://return-to.invalid");
+    url.searchParams.set("step", stepStatus === "success" ? "done" : stepStatus === "cancelled" ? "cancelled" : "failed");
+    return url.pathname + url.search;
+  };
+  if (tx.action && !request.nextUrl.searchParams.get("code")) return go(afterStep(safeReturnTo(tx.returnTo, "/")));
   const error = request.nextUrl.searchParams.get("error");
   if (error) return error === "access_denied" ? NextResponse.redirect(new URL("/", authConfig().siteOrigin), { status: 303 }) : failed("signin");
   let session;
@@ -48,7 +57,14 @@ async function callback(request: NextRequest) {
   } catch (e) {
     return failed(unreachable(e) ? "unavailable" : "signin");
   }
-  const returnTo = safeReturnTo(tx.returnTo, "/");
+  // A Syruss staff account works only in the admin app: from anywhere else it goes to the admin dashboard, whatever
+  // address it was going to (and this app keeps no session for it). In the admin app itself, its own pages are kept.
+  const adminHome = await adminHomeFor(session);
+  if (adminHome && new URL(adminHome).origin !== authConfig().appOrigin) {
+    await clearSession();
+    return NextResponse.redirect(new URL("/overview", adminHome), { status: 303 });
+  }
+  const returnTo = afterStep(safeReturnTo(tx.returnTo, "/"));
   // Is this a browser the person has confirmed? A new one is sent to the site for the code before anything opens.
   const ip = (request.headers.get("x-forwarded-for") ?? "").split(",").pop()?.trim() ?? ""; // the last entry: the one our proxy added
   const device = await checkDevice(session, await ensureDeviceToken(), request.headers.get("user-agent") ?? "", ip);

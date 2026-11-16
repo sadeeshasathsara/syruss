@@ -42,8 +42,8 @@ def _keys():
         return private, private.public_key()
     if settings.AGENT_TOKEN_PUBLIC_KEY:
         return None, serialization.load_pem_public_key(_pem(settings.AGENT_TOKEN_PUBLIC_KEY))
-    if settings.is_production:
-        raise RuntimeError("Set AGENT_TOKEN_PRIVATE_KEY (and give the agent AGENT_TOKEN_PUBLIC_KEY) in production.")
+    if settings.is_deployed:
+        raise RuntimeError("Set AGENT_TOKEN_PRIVATE_KEY (and give the agent AGENT_TOKEN_PUBLIC_KEY) on the test server and in production.")
     private = Ed25519PrivateKey.from_private_bytes(hashlib.sha256(settings.AGENT_TOKEN_SECRET.encode()).digest())
     return private, private.public_key()
 

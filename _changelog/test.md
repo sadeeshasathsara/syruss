@@ -14,11 +14,834 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.6.0-rc.1` | 2026-11-13 | [What changed](#admin-060-rc1) |
-| **agent** | `0.7.0-rc.1` | 2026-11-13 | [What changed](#agent-070-rc1) |
-| **server** | `0.13.1-rc.1` | 2026-11-14 | [What changed](#server-0131-rc1) |
-| **site** | `0.2.5-rc.1` | 2026-11-13 | [What changed](#site-025-rc1) |
-| **www** | `0.9.0-rc.1` | 2026-11-13 | [What changed](#www-090-rc1) |
+| **admin** | `1.0.0-rc.1` | 2026-11-16 | [What changed](#admin-100-rc1) |
+| **agent** | `1.0.0-rc.1` | 2026-11-16 | [What changed](#agent-100-rc1) |
+| **mail** | `1.0.0-rc.1` | 2026-11-16 | [What changed](#mail-100-rc1) |
+| **server** | `1.0.1-rc.1` | 2026-11-16 | [What changed](#server-101-rc1) |
+| **site** | `1.0.0-rc.1` | 2026-11-16 | [What changed](#site-100-rc1) |
+| **www** | `1.0.0-rc.1` | 2026-11-16 | [What changed](#www-100-rc1) |
+
+## [2026-11-16] - Release Candidate (test)
+
+### server (1.0.1-rc.1)
+- **The check on what the agent says can't be slowed down by text made of thousands of image starts.** Removing markdown and HTML images from the agent's replies, flags and conversations is now a single pass over the text instead of one regular expression that could work through the rest of the text from every `![` or `<img`. What is removed is unchanged.
+
+## [2026-11-16] - Release Candidate (test)
+
+### admin (1.0.0-rc.1)
+- First stable release: every service moves to 1.0.0.
+- **The key that passwords typed in the admin app are sealed to can't be swapped by someone writing to Kafka.** The mail service signs it; the server believes it only with the mail service's public key (`MAIL_SERVICE_PUBLIC_KEY`, from `python -m mail signer`). A real server now refuses to start without it.
+- **Adding a mail server on a real server only accepts public addresses** (not localhost, a private network, a link-local or cloud metadata address).
+- **A ticket by email can't be written into by a spoofed sender.** When the receiving mail server records no sender checks, only a message that answers one of ours continues a ticket; a number in the subject alone opens a separate ticket.
+- **New email channels get longer, unguessable addresses.**
+- Full findings and what was checked: `docs/SECURITY_AUDIT_2026-11.md`.
+- **What you were filling in is still there after you sign in again.** When a session ends, or an action asks for a fresh sign-in, and you come back to the page, the dialog you had open and what you had typed are restored: in the admin app the Email dialogs, staff policy and removal, billing (plan changes, add-ons, credits, limits, trials, new invoices) and platform notices and maintenance; in the customer app the new-channel, new-key, channel rules, API key, webhook, role, member removal, destination setup and the confirm-by-typing dialogs for closing an organization, deleting a workspace and deleting an account.
+- **The browser is never trusted with it.** The draft is sealed by the app's own server (AES-256-GCM) before it is kept, so the browser holds only an opaque blob it can't read or change. The blob is tied to the person who was signed in, to that page, and to the next 15 minutes; it is used once, and a different person signing in, another page or a changed blob gets nothing. It is kept in the tab only (not in local storage).
+- **Passwords, keys, secrets and tokens are never kept**, in the browser or on the server: forms leave them out, and the server drops anything that looks like one even if a form sends it. You retype those.
+- **A sealed draft can never be taken for a session.** Drafts are sealed with a key of their own (derived from the app's secret and the purpose), and only someone signed in can have anything sealed, so the route can't be used to produce session or sign-in values.
+- **Each part of Syruss that uses mail can be given its own job.** The Email › Jobs page has a new "Where mail is used" list: invitations and notices, outbound email destinations, the help desk and document inbound, each with a dropdown to choose which job it goes through (only jobs that can do what it does are offered; until you choose, it uses its default). So a job you add can now be put to work: for example a job of your own for email destinations, with its own mailbox.
+- **Outbound email destinations now name their own function** instead of always going out as a notification.
+- **Document inbound and the help desk follow the job you choose:** channel addresses are made from the chosen document job's mailbox, and mail read from the chosen help job becomes tickets.
+- **Developer wording is out of the Email pages** (sealing, fingerprints, where the setup lives); a saved Google or Microsoft app shows as hidden dots and can only be replaced.
+- New parts of the server declare their function in one place (`services/mail_uses.py`, with the steps in its header) and appear in the admin app on their own.
+- **Add a job** and **Connect a mailbox** are now popups, opened by a button at the top right of the Email page. A mailbox is connected for one job chosen from a dropdown (other jobs can be pointed at it from the Jobs tab); "another mail server" is a step inside the same popup.
+- **A Google or Microsoft app's client id and secret are never sent to the browser.** The Provider apps tab no longer shows the id, the API no longer returns it, and the directory no longer carries it. Leave the fields empty to keep what is set.
+- **A problem on a job shows only while it is still true.** An old failure through a mailbox that has since been replaced, or one a later message got past, no longer shows as "Problem".
+- **The mail service removes entries it published earlier and that no longer exist** (such as the old environment mailbox) from its directory when it starts.
+- **Microsoft can be set in the environment like Google:** `MICROSOFT_MAIL_CLIENT_ID`, `MICROSOFT_MAIL_CLIENT_SECRET` and `MICROSOFT_MAIL_TENANT` in `mail.env` (the admin app's Provider apps tab still works and takes precedence).
+- **No mail password or server comes from an environment file any more.** `MAIL_SMTP_*` and `MAIL_IMAP_*` are gone from the mail service. Until a mailbox is connected (`python -m mail connect`, or the admin app's Email page), mail simply waits, without using up its tries, and goes out once one is. `MAIL_BACKEND` is now `none` (default), `console` or `memory`; the old `smtp` value is read as `none`, so set up your mailbox again with `python -m mail connect` (the README shows the local Mailpit command). A real server refuses to start with anything but `none`.
+- **Which mailbox serves a job is now part of the job** (the separate routes table is copied over once, then dropped). Jobs with no mailbox show "No mailbox" in the admin app.
+- **Kafka can use TLS and SASL.** `KAFKA_SECURITY_PROTOCOL`, `KAFKA_SASL_MECHANISM`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` and `KAFKA_SSL_CA_FILE` apply to every Kafka connection in the mail service and the server; off by default.
+- **Docs:** the mail README now has first-install steps, a Kafka security guide with the exact ACLs for the mail and server users, key rotation, and backup and restore; the deploy guide follows.
+- **Every dropdown in the admin app now looks like the customer app's, not the browser's own.** The same trigger and menu everywhere (billing, support, runs, staff, email, platform notices), with keyboard support: arrow keys, Enter and Escape.
+- **Long lists have a search box.** A dropdown with more than seven choices, such as organizations or plans, filters as you type.
+- **Outlook and Microsoft 365 mailboxes can be connected with a button.** Email › Accounts has **Connect with Microsoft** beside Google: you sign in, approve only sending and, where a job reads, reading, and no app password is involved. The mail service sends through Microsoft Graph, reads new mail by delta query, and keeps the new refresh token Microsoft hands out after each refresh.
+- **Google and Microsoft apps are set in the admin app.** The new **Email › Provider apps** tab takes each app's client id (and Microsoft's tenant) and its secret, which is sealed in the browser to the mail service's key and never shown again. The redirect address to register is shown there. Google's environment settings still work until an app is saved.
+- **The Jobs list is cleaner:** one aligned table of job, mailbox and a one-word status, with the settings behind a row's arrow.
+- **Audit log:** connecting a Microsoft mailbox and setting or removing a provider app read in plain words.
+- **The admin app's Email section is organised around jobs, and its mailbox passwords are sealed in your browser.**
+- **Jobs** (`Email › Jobs`): the built-in jobs (notifications, help, document inbound, promotions, and Keycloak's account emails) each with the mailbox it uses (a mailbox that can't do the job isn't offered for it), when it last sent and read, its last error, and settings of its own (sender name, where replies go, how often it reads). **Add a job** of your own; remove it again when you no longer need it.
+- **Accounts** (`Email › Accounts`): the connected mailboxes, with Google, or any mail server. Pick which jobs a new mailbox serves as you add it.
+- **Delivery log** is unchanged.
+- **Passwords are sealed in the browser** to the mail service's key before they are sent, so neither this app's server nor Kafka ever holds one. The key's fingerprint is shown beside the form; it should match `python -m mail fingerprint` on the mail server. A browser without the needed support (older than Chrome 133, Firefox 130 or Safari 17) still works: the server seals the password instead, and the page says so.
+- **Live:** the Email pages are told the moment the mail service's state changes (a mailbox connected, a job's mailbox chosen, a problem found), so they are always what the mail service says. The new `mail` scope of the staff live stream carries it, owners only; it names what changed, never its content. A "Live" badge shows when it is connected.
+- **Audit log:** the mail actions (connecting or removing a mailbox, choosing a job's mailbox, adding, changing and removing jobs) read in plain words.
+- **Every object of a template has its own page, and so does every thing it has met.**
+- **An object's page:** its icon, its attributes (type, required, identity, what each points to), how many documents have it, documents per week, and each attribute in figures (how often it's filled; totals and averages for numbers; first and last for dates; the commonest values otherwise). It also lists what it has met so far (searchable), its documents, the objects connected to it, and the Analytics screens built on it.
+- **A thing's page** (one identified instance, such as one place or one person): its attributes as last read and other ways they were read, first and last seen, mentions per week, what it appears with, what the workspace's knowledge says about it (aliases), and its documents.
+- **Where to find them:** a new **Objects** section in the workspace sidebar (each object is a sub-tab). The template page links each object to its page, and names in Knowledge open their thing's page.
+- **Every object has an icon.** The agent picks it from a fixed list of about 180 icons by what the object is and does. The icon shows in template design, on the template, on the profiles and in search. Click an icon in template design to pick another; the list can be searched by meaning ("vehicle", "money"). The platform refuses a name that isn't in the list, and an object the agent leaves without one keeps the icon it has. Objects from before show a general icon until one is chosen.
+- **Search finds objects and things**, in the customer app and the admin app. Admin results carry the organization and the workspace as tags.
+- **Staff can open the same pages, read-only,** from search or from an organization's workspaces ("Objects"), with the organization and workspace shown.
+- **Behind it:** a new table, `record_objects`, which records what each committed record contains (migration 0039). Records are added as they are committed and removed when sent back to review. The scheduler fills it for records saved before, and refills a workspace when its template changes.
+- **One search for everything, in both apps.** Open it from the top bar, with Ctrl+K (⌘K on a Mac) or with `/`.
+- **As you type:** pages to go to match at once; everything else is asked of the server and comes back in groups, exact and prefix matches first, with the matched words marked.
+- **Keyboard:** arrow keys move, Enter opens, Ctrl/⌘+Enter opens in a new tab, Esc closes.
+- **Remembered in this browser:** your recent searches and what you opened, each with a Clear.
+- **On phones** it fills the screen, with a search button in the top bar.
+- **Admin app:** finds organizations, people, documents (file name, the sender's reference or the document's key), agent runs, support tickets (number, subject or requester), invoices, workspaces and staff. Any id finds its thing. Every page in the navigation you may open is a place to go to.
+- **Customer app (new):** finds, in the organization you're in, only what you may open:
+- workspaces you belong to (owners and admins also find the others);
+- documents, only in workspaces where your role can view documents;
+- people in the organization;
+- your own chats, which open in their workspace's chat panel;
+- your support requests (all of the organization's for owners and admins);
+- invoices, only for people who manage billing.
+- The organization's pages and every settings page are places to go to.
+- **Server:** `GET /api/v1/search` for the customer app; the staff search (`/api/v1/sysadmin/search`) answers in the same grouped shape.
+- **Live chats no longer crash when a chat opens.** Scrolling to the newest message ran in an effect that returned the browser's answer to React ("destroy is not a function").
+- **Changing your password from Settings asks for your current one plainly.** Keycloak first confirms it's you, but its page looked like a normal sign-in ("Welcome back", "Password", "Sign in"). People typed their new password there and got "Invalid username or password". It now says "Confirm it's you", asks for your **Current password**, says you'll choose the new one on the next page, and its button reads Continue. The same page shows when setting up or removing an authenticator.
+- **The admin app's sidebar is in sections with sub-tabs, like the customer app.**
+- **Three groups:** Watch (Overview, Operations), Customers (Accounts, Billing, Support) and Platform (Platform controls, Email, Staff, Security, Approvals, Audit log).
+- **Sub-tabs:** the section you're in opens to show them. Each sub-tab is its own address, and detail pages keep theirs lit: a ticket under Tickets, an invoice under Invoices.
+- **New sub-tabs:**
+- **Operations:** Live, Agent runs, Documents, Queues.
+- **Accounts:** Organizations, People.
+- **Billing:** Organizations, Invoices, Payments to check, Plans and packs, Settings.
+- **Support:** Tickets, Live chats, Saved replies, Settings.
+- **Platform controls:** Switches and maintenance, Announcements, How Syruss works.
+- **Email:** Accounts and purposes, Delivery log.
+- **Staff:** People, Roles, Invitations, Access review.
+- **Old addresses still work:** `/accounts` and `/billing?tab=…` lead to the new ones.
+- **Counts show where the work is:** tickets to take, live chats waiting, payments to check, approvals waiting. A closed section shows its total.
+- **Email** is shown only to staff who can change it.
+- **On phones and narrow windows** a menu button opens the sidebar as a slide-over: it closes when you go somewhere or press Escape, and Tab stays inside it while open.
+- **The admin app shows a document and its agent runs in full.**
+- **The document itself** on the document and run pages: page by page, with zoom and "open full size".
+- **Every journey step opens** to show everything recorded about it: the event that woke the agent, its tries and errors, each log line, review, question, delivery attempt (with status code, request and response) and change. Opening one closes the one open before.
+- **A run is one journey step** that opens to its agent steps.
+- **Each agent step shows:**
+- what was sent to the model: on step 1, the agent's instructions and the briefing; after that, the tool results that came back, plus "Show the full prompt";
+- what the model answered, and its thinking when the provider returns it;
+- each tool it ran, with what it sent and what came back;
+- its tokens.
+- **Tokens add up:** per step, per run, and per document (in, out and total).
+- **Each run links to the run of the same document before and after it.** Runs of one document form a linked list ("run 2 of 3"), with Previous and Next on the run page.
+- **The agent records** each step's tokens, the model's thinking, and what it added before a call (reminders, requested page images). It sends the run's prompt once. The system prompt is stored once per version; the briefing is cleared with old steps after `RUN_STEPS_RETENTION_DAYS`.
+- **Staff see documents and runs without opening anything.** The support-access grant (the "Open content" step, the customer's switch, its banner and email) is gone. The customer's Settings → Organization page "Support and privacy" says plainly what the Syruss team sees and why.
+- Migration `0038`. Existing runs are linked per document in the order they started.
+- **Mail accounts are set up in the admin app**, on a new **Email** page (owners only).
+- **Google mail:** "Set up Google mail" signs in to Google and asks only for what the chosen uses need. Sending needs `gmail.send`; Support also needs `gmail.readonly`. Syruss can't delete or change anything in the mailbox.
+- A Workspace account with an Internal OAuth app needs no review from Google.
+- A personal Gmail works while the app is in Testing, but Google ends its sign-in every 7 days. The account then shows "Needs reconnecting", and mail uses the fallback account until someone reconnects it.
+- **Any other mail server:** add a mailbox with SMTP to send and IMAP to read (read-only).
+- **Choose which account does what:** notifications, sign-in emails (Keycloak) or support. A choice the account can't serve is refused when it's made.
+- **Test** an account, and **remove** one (a Google sign-in is revoked).
+- **The delivery log:** what went to whom and how it went. Mail that was given up can be sent again.
+- Every change is in the platform audit log.
+- **The mail service reads the support mailbox**, whichever account is connected for Support, and hands each new message to the server, which turns it into a ticket reply.
+- It starts from when it was switched on, and nothing is read twice.
+- The server's own IMAP polling and `SUPPORT_IMAP_*` are gone. The fallback account can read too (`MAIL_IMAP_*` in `mail.env`).
+- **The server reaches the mail service's internal API** with `MAIL_SERVICE_URL` and `MAIL_SERVICE_TOKEN`, the same token as in `mail.env`. The test server and production refuse to start without a long one.
+- **Support settings** now say whether the support mailbox is read, and link to the Email page.
+- **Live support in the same chat.** When someone needs a person now, the assistant asks the Syruss team to join their chat (`request_live_support`).
+- **Only when someone on the staff is online.** Otherwise the assistant offers a ticket.
+- **For the customer:**
+- while waiting, the chat says it is connecting them;
+- once someone accepts, it says "Ana from the Syruss team joined" and that she can see the conversation;
+- both sides see each other typing;
+- the customer can end the chat, and rate it afterwards with a thumbs up or down.
+- **The assistant stays quiet while the team member is in the chat:** messages don't wake it, and a reply it was about to send is refused. When the chat ends, it answers again, with the whole exchange in its history.
+- **Fallbacks:** a chat nobody joins within 10 minutes goes back to the assistant, which offers a ticket. A chat whose team member goes offline goes back to the queue.
+- **Admin app: Support → Live chats.**
+- **Your status:** online, away or offline, kept by a heartbeat from any page.
+- **The queue:** each chat shows the assistant's handover note (the conversation itself opens only after you accept), with a sound when a chat starts waiting. The first to accept takes the chat.
+- **Your chats:**
+- the conversation and the customer's details;
+- saved replies (type `/`);
+- hand a chat to someone else who is online;
+- turn it into a ticket for follow-up;
+- end it.
+- Accepting and ending a chat show in the organization's activity and the platform audit log.
+- The Support badge counts chats waiting for someone.
+- **The ticket and live chat pages share one customer panel.**
+- **Support tickets.** Customers can ask the Syruss team for help, and staff answer from the admin app.
+- **Three ways in:**
+- the assistant in a workspace's chat opens one when it can't solve the problem itself;
+- the new Settings → Help & support page;
+- email to the support address.
+- **Who sees a request:** the person who made it, plus the organization's owners and admins.
+- **By email, both ways:**
+- every answer is emailed from the support address, with the ticket number in the subject;
+- replies to it are read from the support mailbox (`SUPPORT_IMAP_*`) and added to the ticket;
+- automatic replies, mail loops and floods from one sender are ignored;
+- mail from an unknown address becomes an "unverified" ticket that gets no email back.
+- **Admin app: a new Support section.**
+- **The inbox:** late tickets first, then the most urgent.
+- **Each ticket:** the conversation, internal notes, files, and who the customer is (organization, plan, bills, other requests).
+- **Handling:** assign, change priority or status, merge duplicates.
+- **Saved replies:** pick one from a menu, or type `/` and its shortcut.
+- **Service targets:** hours to the first answer and to a solution, by priority. Unanswered tickets are marked late and the team is told; tickets waiting on the customer are solved and later closed automatically.
+- **Who answers:** the new `support.respond` permission, given to the support and billing roles.
+- **Sign-in settings are managed inside Syruss.** Settings → Account and security shows:
+- whether you have a password and when it last changed;
+- your authenticator apps, and whether two-step verification is on;
+- whether Google is linked.
+- Changing the password, setting up two-step verification or removing an authenticator opens one Syruss-styled sign-in step (a Keycloak Application Initiated Action) that comes straight back with a confirmation. Keycloak's own account pages are turned off (`harden.py`).
+- **Every button on the sign-in pages shows that it's working** ("Signing in…", "Creating your account…") and can't be pressed twice.
+- **Clearer bank transfer slip form:** a drop area with a "Choose files" button, the chosen files listed and removable, and the "Transfer reference" explained.
+- **A card payment Stripe finished while its webhook never arrived is no longer lost.** Paying again, or opening the invoice, checks the open checkout with Stripe and records the payment, instead of reopening Stripe's finished page. An expired checkout is replaced by a new one.
+- **Containers are hardened.**
+- The server and the agent are now two-stage images with no compilers or curl, and run as an unprivileged user.
+- MinIO drops to its own user after taking ownership of its data.
+- Every base image is pinned by digest, and the web apps install exactly what their lockfiles list.
+- **In the production and test compose files:**
+- No container keeps Linux capabilities except the few the database images need to switch user, and none can gain privileges.
+- Process counts are limited.
+- Syruss's own services run with read-only filesystems.
+- The network is split so the web apps can't reach the databases, and the databases, Kafka and object storage have no internet access.
+- **Scanning and updates:**
+- A container scan (Trivy) runs on pull requests that change images and every week, and fails on critical fixable vulnerabilities in Syruss's own images.
+- Dependabot keeps the pinned base images current.
+- The web apps' lockfiles had fallen out of step with their package.json (the old `npm ci || npm install` fallback hid it in builds and in CI). They are regenerated with the build image's npm (only where `picomatch` sits changed), and installs are strict everywhere now.
+- **Security fixes found by the new scan:**
+- Next.js 16.3.7 → 16.4.6 in all three web apps (two critical remote-code-execution flaws, GHSA-2464-fhr4-w9xw and GHSA-673q-mjm6-r5xr).
+- `follow-redirects` and `source-map-js` updated in www.
+- The running images no longer carry package managers (npm, yarn, corepack, pip) or the flaws bundled with them.
+- Keycloak 26.0 → 26.7 (an unauthenticated flaw in keycloak-services, plus Netty, FreeMarker and BouncyCastle).
+- Kafka 3.7 → 3.9.2 (Netty, libexpat).
+- **Sign-in:**
+- Keycloak's account page works again: its frame headers allow its own pages (SAMEORIGIN) instead of none, which had broken setting up two-step sign-in.
+- Customers can tick "Keep me signed in" for 30 days, so their password and one-time code aren't asked again until then. Staff still sign in with a code each time.
+- **The local development stack** (`bridge/docker-compose.yml`):
+- Answers on this machine only.
+- Drops Linux capabilities, runs MinIO as its own user, and pins every image.
+- Platform staff are added only from the terminal: `syruss staff add EMAIL --role ROLE`, or `python -m app.invite_staff` on a server.
+- For an address with no sign-in, it creates one in Keycloak, and Keycloak emails a link to choose a password and set up the one-time code. That link leads to the invitation.
+- The Keycloak admin login comes only from the command's own environment, so the running server gets no Keycloak access.
+- The admin app no longer invites or resends invitations: its Staff page shows the command, and owners can still withdraw invitations. Its sign-in page still creates no accounts.
+- Full-page loads (sign-in, signing in again, onboarding, the signed-out pages) use an absolute address in admin and www.
+- Staff sign-ins must include a one-time code: the server checks the token's amr claim, and `bridge/keycloak/harden.py` makes Keycloak report it. Staff sessions last at most 8 hours, and the admin app signs out after 30 minutes without use, with a warning first.
+- A second owner's approval for risky actions, which owners turn on and scope in Platform controls. It covers suspending organizations, disabling accounts, adding or removing owners, credit notes, refunds and voids, and prepaid pages, plan changes and early switch-on. A held action waits on the new Approvals page and is carried out as the person who asked once another owner approves. While the rule is on, turning it off needs approval too. The server can turn it off with `python -m app.approvals off`.
+- Customers control support access. Owners and admins are emailed and told in the app when Syruss support opens their content, and everyone in the organization sees a banner while it's open. Owners and admins can end it at any time, or stop support opening content at all, under Settings > Organization > Support access.
+- Unused staff access is taken away: after 60 days without using the admin app, with a warning 7 days before. Owners are reminded to confirm who still needs access every 90 days. Both are adjustable on the Staff page.
+- The system admin console: business figures (recurring revenue, paying and active organizations, churn) with 30-day trends, customers worth a look, one page per organization and per person, staff notes, platform controls (maintenance, kill switches for sign-ups, the agent and intake, announcements shown in the app), one search box, and a security view.
+- Staff join by an emailed invitation: anyone can be invited, no account needed. Role changes, removals and withdrawn invitations are emailed too.
+- Staff accounts are kept apart from customer accounts: they only open the admin app, can't create or join an organization, and organizations can't invite them. Accepting a staff invitation with an address that has a customer account first lists what it deletes (organizations it alone owns are closed, other memberships removed, the customer profile cleared) and needs a confirmation.
+- Signing in to the site or the main app with a staff account goes to the admin dashboard, whatever address it was going to.
+- The first platform owner is invited from the server: python -m app.invite_staff you@company.com. Platform lessons for the agent are approved in the admin app.
+
+### agent (1.0.0-rc.1)
+- First stable release: every service moves to 1.0.0.
+- **Every object of a template has its own page, and so does every thing it has met.**
+- **An object's page:** its icon, its attributes (type, required, identity, what each points to), how many documents have it, documents per week, and each attribute in figures (how often it's filled; totals and averages for numbers; first and last for dates; the commonest values otherwise). It also lists what it has met so far (searchable), its documents, the objects connected to it, and the Analytics screens built on it.
+- **A thing's page** (one identified instance, such as one place or one person): its attributes as last read and other ways they were read, first and last seen, mentions per week, what it appears with, what the workspace's knowledge says about it (aliases), and its documents.
+- **Where to find them:** a new **Objects** section in the workspace sidebar (each object is a sub-tab). The template page links each object to its page, and names in Knowledge open their thing's page.
+- **Every object has an icon.** The agent picks it from a fixed list of about 180 icons by what the object is and does. The icon shows in template design, on the template, on the profiles and in search. Click an icon in template design to pick another; the list can be searched by meaning ("vehicle", "money"). The platform refuses a name that isn't in the list, and an object the agent leaves without one keeps the icon it has. Objects from before show a general icon until one is chosen.
+- **Search finds objects and things**, in the customer app and the admin app. Admin results carry the organization and the workspace as tags.
+- **Staff can open the same pages, read-only,** from search or from an organization's workspaces ("Objects"), with the organization and workspace shown.
+- **Behind it:** a new table, `record_objects`, which records what each committed record contains (migration 0039). Records are added as they are committed and removed when sent back to review. The scheduler fills it for records saved before, and refills a workspace when its template changes.
+- **The admin app shows a document and its agent runs in full.**
+- **The document itself** on the document and run pages: page by page, with zoom and "open full size".
+- **Every journey step opens** to show everything recorded about it: the event that woke the agent, its tries and errors, each log line, review, question, delivery attempt (with status code, request and response) and change. Opening one closes the one open before.
+- **A run is one journey step** that opens to its agent steps.
+- **Each agent step shows:**
+- what was sent to the model: on step 1, the agent's instructions and the briefing; after that, the tool results that came back, plus "Show the full prompt";
+- what the model answered, and its thinking when the provider returns it;
+- each tool it ran, with what it sent and what came back;
+- its tokens.
+- **Tokens add up:** per step, per run, and per document (in, out and total).
+- **Each run links to the run of the same document before and after it.** Runs of one document form a linked list ("run 2 of 3"), with Previous and Next on the run page.
+- **The agent records** each step's tokens, the model's thinking, and what it added before a call (reminders, requested page images). It sends the run's prompt once. The system prompt is stored once per version; the briefing is cleared with old steps after `RUN_STEPS_RETENTION_DAYS`.
+- **Staff see documents and runs without opening anything.** The support-access grant (the "Open content" step, the customer's switch, its banner and email) is gone. The customer's Settings → Organization page "Support and privacy" says plainly what the Syruss team sees and why.
+- Migration `0038`. Existing runs are linked per document in the order they started.
+- **The test server and production refuse to start with development values, and say which.**
+- **New `ENV` value `test`:** the test server's compose file sets it for the server and the agent. Production's compose file now also sets `ENV=production` for the agent, which it didn't before.
+- **Server:**
+- the development database, storage and token passwords;
+- no `SECRETS_ENCRYPTION_KEY`;
+- `OIDC_ISSUER`, `PUBLIC_SITE_URL`, `PUBLIC_APP_URL`, `PUBLIC_ADMIN_URL`, `PUBLIC_API_URL` or `CORS_ORIGINS` not https, or still localhost;
+- `MAIL_FROM` at a `.local` domain;
+- mail that would only be logged or sent to localhost;
+- no agent signing key.
+- **Agent:** the development database password, or no `AGENT_TOKEN_PUBLIC_KEY`.
+- **Production also refuses** weakened security switches (`REQUIRE_*`), as before.
+- **Typos:** an unknown `ENV` (for example `prod`) stops the start instead of quietly running as development.
+- **Live support in the same chat.** When someone needs a person now, the assistant asks the Syruss team to join their chat (`request_live_support`).
+- **Only when someone on the staff is online.** Otherwise the assistant offers a ticket.
+- **For the customer:**
+- while waiting, the chat says it is connecting them;
+- once someone accepts, it says "Ana from the Syruss team joined" and that she can see the conversation;
+- both sides see each other typing;
+- the customer can end the chat, and rate it afterwards with a thumbs up or down.
+- **The assistant stays quiet while the team member is in the chat:** messages don't wake it, and a reply it was about to send is refused. When the chat ends, it answers again, with the whole exchange in its history.
+- **Fallbacks:** a chat nobody joins within 10 minutes goes back to the assistant, which offers a ticket. A chat whose team member goes offline goes back to the queue.
+- **Admin app: Support → Live chats.**
+- **Your status:** online, away or offline, kept by a heartbeat from any page.
+- **The queue:** each chat shows the assistant's handover note (the conversation itself opens only after you accept), with a sound when a chat starts waiting. The first to accept takes the chat.
+- **Your chats:**
+- the conversation and the customer's details;
+- saved replies (type `/`);
+- hand a chat to someone else who is online;
+- turn it into a ticket for follow-up;
+- end it.
+- Accepting and ending a chat show in the organization's activity and the platform audit log.
+- The Support badge counts chats waiting for someone.
+- **The ticket and live chat pages share one customer panel.**
+- **Support tickets.** Customers can ask the Syruss team for help, and staff answer from the admin app.
+- **Three ways in:**
+- the assistant in a workspace's chat opens one when it can't solve the problem itself;
+- the new Settings → Help & support page;
+- email to the support address.
+- **Who sees a request:** the person who made it, plus the organization's owners and admins.
+- **By email, both ways:**
+- every answer is emailed from the support address, with the ticket number in the subject;
+- replies to it are read from the support mailbox (`SUPPORT_IMAP_*`) and added to the ticket;
+- automatic replies, mail loops and floods from one sender are ignored;
+- mail from an unknown address becomes an "unverified" ticket that gets no email back.
+- **Admin app: a new Support section.**
+- **The inbox:** late tickets first, then the most urgent.
+- **Each ticket:** the conversation, internal notes, files, and who the customer is (organization, plan, bills, other requests).
+- **Handling:** assign, change priority or status, merge duplicates.
+- **Saved replies:** pick one from a menu, or type `/` and its shortcut.
+- **Service targets:** hours to the first answer and to a solution, by priority. Unanswered tickets are marked late and the team is told; tickets waiting on the customer are solved and later closed automatically.
+- **Who answers:** the new `support.respond` permission, given to the support and billing roles.
+- **Syruss answers questions about Syruss itself from facts.** Seven help guides the chat reads before it answers "how do I…" or "why can't I…": getting started, documents and review, billing, team and roles, account security, connections, and analytics. They name the pages and buttons as the app shows them (Settings → Billing → Invoices, Settings → Account and security → Sign-in, Settings → Organization → Support access).
+- **Billing** covers plans and credits, invoice statuses, paying by card on Stripe's page, paying by bank transfer (the slip, its transfer reference, "Being checked" and "Not confirmed", and sending again), renewals, reminders, the grace period and the move to Free, and billing details.
+- **Account security** covers password and two-step changes, "Keep me signed in" (30 days), trusted browsers and their emailed codes, and Google sign-in.
+- **A "Helping with Syruss" section in the chat charter**, before the shared boundaries: read the matching guide first, point to the exact page, never invent a feature or setting, and say plainly when only Syruss support can help.
+- **`get_billing_status`, a read-only chat tool**: the organization's plan, invoices waiting for payment, and the latest bank slip sent (with why it wasn't confirmed). The server answers only during a person's own chat, and only when their organization role manages billing (its owners); work runs and everyone else are refused.
+- **A new red-team case**: a document that tells the agent to say the person's invoice is paid.
+- **Defenses against prompt injection, in four layers:**
+- **Data is marked as data.** Every tool result reaches the model between markers carrying a random value per run, which a document can't fake or close. Every charter says nothing inside them is an instruction, and that such text is described, never passed on word for word (no images, links or code copied from data).
+- **What the agent never shares:** its instructions and setup, anything about other workspaces, other people's chats or Syruss staff, secrets, internal IDs. It doesn't assess the platform's security, list its weak points, or help probe it, whoever asks: security questions go to Syruss support.
+- **A server-side guard on everything the agent says to people** (chat replies, flags, the conversations it opens and closes):
+- a reply that repeats its instructions is refused;
+- keys, tokens, private keys, connection strings, internal IDs and images are cut out;
+- each catch is written to the workspace's activity, as the kinds removed, never the text.
+- **The chat never loads images from agent text** (the description is shown instead), and links to other sites show which site.
+- **Injection tests:**
+- `python -m agentic_framework.redteam` attacks the real model with seven cases: asking for its instructions, claiming authority, probing security, asking for other people's data, and documents that try to command it, smuggle data out through an image, or carry a secret.
+- It runs from `.github/workflows/agent-redteam.yml` on pull requests that change the agent, weekly and by hand, once the `GEMINI_API_KEY` secret is set.
+- **Containers are hardened.**
+- The server and the agent are now two-stage images with no compilers or curl, and run as an unprivileged user.
+- MinIO drops to its own user after taking ownership of its data.
+- Every base image is pinned by digest, and the web apps install exactly what their lockfiles list.
+- **In the production and test compose files:**
+- No container keeps Linux capabilities except the few the database images need to switch user, and none can gain privileges.
+- Process counts are limited.
+- Syruss's own services run with read-only filesystems.
+- The network is split so the web apps can't reach the databases, and the databases, Kafka and object storage have no internet access.
+- **Scanning and updates:**
+- A container scan (Trivy) runs on pull requests that change images and every week, and fails on critical fixable vulnerabilities in Syruss's own images.
+- Dependabot keeps the pinned base images current.
+- The web apps' lockfiles had fallen out of step with their package.json (the old `npm ci || npm install` fallback hid it in builds and in CI). They are regenerated with the build image's npm (only where `picomatch` sits changed), and installs are strict everywhere now.
+- **Security fixes found by the new scan:**
+- Next.js 16.3.7 → 16.4.6 in all three web apps (two critical remote-code-execution flaws, GHSA-2464-fhr4-w9xw and GHSA-673q-mjm6-r5xr).
+- `follow-redirects` and `source-map-js` updated in www.
+- The running images no longer carry package managers (npm, yarn, corepack, pip) or the flaws bundled with them.
+- Keycloak 26.0 → 26.7 (an unauthenticated flaw in keycloak-services, plus Netty, FreeMarker and BouncyCastle).
+- Kafka 3.7 → 3.9.2 (Netty, libexpat).
+- **Sign-in:**
+- Keycloak's account page works again: its frame headers allow its own pages (SAMEORIGIN) instead of none, which had broken setting up two-step sign-in.
+- Customers can tick "Keep me signed in" for 30 days, so their password and one-time code aren't asked again until then. Staff still sign in with a code each time.
+- **The local development stack** (`bridge/docker-compose.yml`):
+- Answers on this machine only.
+- Drops Linux capabilities, runs MinIO as its own user, and pins every image.
+
+### mail (1.0.0-rc.1)
+- First stable release: every service moves to 1.0.0.
+- **The key that passwords typed in the admin app are sealed to can't be swapped by someone writing to Kafka.** The mail service signs it; the server believes it only with the mail service's public key (`MAIL_SERVICE_PUBLIC_KEY`, from `python -m mail signer`). A real server now refuses to start without it.
+- **Adding a mail server on a real server only accepts public addresses** (not localhost, a private network, a link-local or cloud metadata address).
+- **A ticket by email can't be written into by a spoofed sender.** When the receiving mail server records no sender checks, only a message that answers one of ours continues a ticket; a number in the subject alone opens a separate ticket.
+- **New email channels get longer, unguessable addresses.**
+- Full findings and what was checked: `docs/SECURITY_AUDIT_2026-11.md`.
+- **Each part of Syruss that uses mail can be given its own job.** The Email › Jobs page has a new "Where mail is used" list: invitations and notices, outbound email destinations, the help desk and document inbound, each with a dropdown to choose which job it goes through (only jobs that can do what it does are offered; until you choose, it uses its default). So a job you add can now be put to work: for example a job of your own for email destinations, with its own mailbox.
+- **Outbound email destinations now name their own function** instead of always going out as a notification.
+- **Document inbound and the help desk follow the job you choose:** channel addresses are made from the chosen document job's mailbox, and mail read from the chosen help job becomes tickets.
+- **Developer wording is out of the Email pages** (sealing, fingerprints, where the setup lives); a saved Google or Microsoft app shows as hidden dots and can only be replaced.
+- New parts of the server declare their function in one place (`services/mail_uses.py`, with the steps in its header) and appear in the admin app on their own.
+- **Add a job** and **Connect a mailbox** are now popups, opened by a button at the top right of the Email page. A mailbox is connected for one job chosen from a dropdown (other jobs can be pointed at it from the Jobs tab); "another mail server" is a step inside the same popup.
+- **A Google or Microsoft app's client id and secret are never sent to the browser.** The Provider apps tab no longer shows the id, the API no longer returns it, and the directory no longer carries it. Leave the fields empty to keep what is set.
+- **A problem on a job shows only while it is still true.** An old failure through a mailbox that has since been replaced, or one a later message got past, no longer shows as "Problem".
+- **The mail service removes entries it published earlier and that no longer exist** (such as the old environment mailbox) from its directory when it starts.
+- **Microsoft can be set in the environment like Google:** `MICROSOFT_MAIL_CLIENT_ID`, `MICROSOFT_MAIL_CLIENT_SECRET` and `MICROSOFT_MAIL_TENANT` in `mail.env` (the admin app's Provider apps tab still works and takes precedence).
+- **No mail password or server comes from an environment file any more.** `MAIL_SMTP_*` and `MAIL_IMAP_*` are gone from the mail service. Until a mailbox is connected (`python -m mail connect`, or the admin app's Email page), mail simply waits, without using up its tries, and goes out once one is. `MAIL_BACKEND` is now `none` (default), `console` or `memory`; the old `smtp` value is read as `none`, so set up your mailbox again with `python -m mail connect` (the README shows the local Mailpit command). A real server refuses to start with anything but `none`.
+- **Which mailbox serves a job is now part of the job** (the separate routes table is copied over once, then dropped). Jobs with no mailbox show "No mailbox" in the admin app.
+- **Kafka can use TLS and SASL.** `KAFKA_SECURITY_PROTOCOL`, `KAFKA_SASL_MECHANISM`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` and `KAFKA_SSL_CA_FILE` apply to every Kafka connection in the mail service and the server; off by default.
+- **Docs:** the mail README now has first-install steps, a Kafka security guide with the exact ACLs for the mail and server users, key rotation, and backup and restore; the deploy guide follows.
+- **Outlook and Microsoft 365 mailboxes can be connected with a button.** Email › Accounts has **Connect with Microsoft** beside Google: you sign in, approve only sending and, where a job reads, reading, and no app password is involved. The mail service sends through Microsoft Graph, reads new mail by delta query, and keeps the new refresh token Microsoft hands out after each refresh.
+- **Google and Microsoft apps are set in the admin app.** The new **Email › Provider apps** tab takes each app's client id (and Microsoft's tenant) and its secret, which is sealed in the browser to the mail service's key and never shown again. The redirect address to register is shown there. Google's environment settings still work until an app is saved.
+- **The Jobs list is cleaner:** one aligned table of job, mailbox and a one-word status, with the settings behind a row's arrow.
+- **Audit log:** connecting a Microsoft mailbox and setting or removing a provider app read in plain words.
+- **The server and the mail service talk only over Kafka; the mail service's HTTP API is gone.**
+- **Setting up mail from the admin app:** each change (connect or remove a mailbox, choose which account serves a job, add your own jobs, connect Google, send a given-up message again, read the delivery log) is a command the server signs and puts on `mail.commands`; the mail service carries out only what is signed, recent and new, and answers on `mail.replies`. The Email page shows the mail service's own directory (`mail.directory`), so it is always what the mail service says. New admin API for jobs: `POST /sysadmin/mail/purposes`, `PUT` and `DELETE /sysadmin/mail/purposes/{key}`.
+- **Passwords:** a mailbox password is sealed to the mail service's public key before it leaves the server, so it never crosses Kafka in the clear; the admin app can seal it in the browser (the API takes a ready `sealed` value).
+- **Incoming mail:** emails the mail service reads are published whole on `mail.inbound`; the server turns support mail into tickets and acknowledges each one (`mail.inbound.acks`), and only then does the mail service delete it. One that is never acknowledged is published again, and one over 25 MB is reported instead of lost. Mail for a job nothing here handles yet (document inbound) waits at the mail service.
+- **Addresses:** the server no longer asks for them over HTTP. It reads the sender's and the help mailbox's addresses from the directory, and recognises mail from any of our own mailboxes (so a reply loop never opens a ticket).
+- **Removed:** `MAIL_SERVICE_URL` and `MAIL_SERVICE_TOKEN` (server), `MAIL_API_HOST`, `MAIL_API_PORT` and `MAIL_SERVICE_TOKEN` (mail), the mail service's web server, and the scheduler's inbound sweep.
+- **Deploying:** run `python -m app.mail_signing_key` once. Put the first line (`MAIL_COMMAND_SIGNING_KEY`) in `server.env` and the second (`MAIL_TRUSTED_SERVER_KEY`) in `mail.env`; both services refuse to start without their half. Deploy the mail service first, then the server.
+- **Mail has jobs, and the mail service takes signed commands over Kafka** (the first step of moving all mail setup out of the server).
+- **Jobs:** notifications, document inbound, promotions, help and Keycloak's account emails are jobs, and more can be added. Each is served by its own mailbox and has settings of its own (sender name, reply-to, how often it is read). Each job that reads has its own poller, so one slow mailbox doesn't hold up another.
+- **Commands on Kafka:** `mail.commands` (signed by the server, recent, never repeated; anything else is refused), answers on `mail.replies`, and the public state (jobs, accounts' addresses and status, the key secrets are sealed to) on the compacted topic `mail.directory`. The mail service makes these topics itself. The HTTP API stays for now.
+- **Secrets:** `MAIL_MASTER_KEYS` (newest first) can be rotated; mail read from mailboxes is sealed at rest too (`MAIL_SECRETS_KEY` still works). A mailbox password can arrive sealed to the service's public key, so Kafka and the server never hold it.
+- **Command line:** `python -m mail connect` connects the first mailbox (the password is asked for and sealed straight into the database), with `keygen`, `fingerprint` and `jobs`.
+- **Setting up:** add `MAIL_MASTER_KEYS` (`python -m mail keygen`); `MAIL_TRUSTED_SERVER_KEY` isn't needed until the server sends commands (the next step).
+- **The mail service owns who mail is from; the server's environment no longer has those settings.**
+- **Moved to `mail.env`:** `MAIL_FROM_NAME`, `MAIL_REPLY_TO`, `SUPPORT_EMAIL_ADDRESS` and `SUPPORT_FROM_NAME` (`MAIL_FROM` was already there). The server no longer reads any of the five; old lines in `server.env` are ignored.
+- **How the server gets what it needs:** it asks the mail service for the From address and the support address (`GET /identity`) when it starts and every few minutes, and keeps the last answer. Mail jobs no longer carry a sender name or reply address of the server's choosing: the mail service fills in its own (support mail goes out as the support name and is answered at the support address).
+- **If the mail service can't be reached** before it has ever answered, a ticket email isn't sent and mail from the support mailbox waits to be taken in, rather than using a development address. After the first answer, the last one stands.
+- **Deploying:** put `SUPPORT_EMAIL_ADDRESS` (and `MAIL_REPLY_TO`, `MAIL_FROM_NAME`, `SUPPORT_FROM_NAME` if you changed them) in `mail.env` before the server is updated. The "`MAIL_FROM` at a real domain" start-up check is the mail service's now.
+- **A mail service: every email Syruss sends goes through one place** (the new `mail/` service). It holds the only mail credentials.
+- **The server never talks to a mail server again.** Sending an email queues it in the database (`mail_outbox`, sealed while it waits). A relay publishes it on Kafka (`mail.outbound`), and the mail service sends it and reports back (`mail.events`). Mail waits safely while Kafka or the mail service is down.
+- **Keycloak's emails** (verify an address, reset a password, a new staff member's set-up link) go to the mail service's SMTP door on the internal network, with their own login. `harden.py --smtp` points Keycloak there.
+- **One mail interface with permissions:** a mail account says what it was given (send, read), and each use opens it for only what it needs.
+- **Purposes route to accounts:** `notifications`, `accounts` (Keycloak) and `support`. Until an account is connected for a purpose, the mail service's own account (`MAIL_SMTP_*` in `mail.env`) sends.
+- **Delivery:** each email is sent once, even if handed over twice. Failures are retried with growing waits and given up after a while; an address the server refuses is given up at once. The text isn't kept once an email is done.
+- **Admin overview:** a new Email health check shows mail that couldn't be sent or is waiting too long.
+- **Settings moved:** `SMTP_*` and `SUPPORT_SMTP_*` leave the server; the mail server is set in `mail.env` (`MAIL_SMTP_*`). The server's `MAIL_BACKEND` is now `service` (or `console`, `memory`).
+- **Mail accounts are set up in the admin app**, on a new **Email** page (owners only).
+- **Google mail:** "Set up Google mail" signs in to Google and asks only for what the chosen uses need. Sending needs `gmail.send`; Support also needs `gmail.readonly`. Syruss can't delete or change anything in the mailbox.
+- A Workspace account with an Internal OAuth app needs no review from Google.
+- A personal Gmail works while the app is in Testing, but Google ends its sign-in every 7 days. The account then shows "Needs reconnecting", and mail uses the fallback account until someone reconnects it.
+- **Any other mail server:** add a mailbox with SMTP to send and IMAP to read (read-only).
+- **Choose which account does what:** notifications, sign-in emails (Keycloak) or support. A choice the account can't serve is refused when it's made.
+- **Test** an account, and **remove** one (a Google sign-in is revoked).
+- **The delivery log:** what went to whom and how it went. Mail that was given up can be sent again.
+- Every change is in the platform audit log.
+- **The mail service reads the support mailbox**, whichever account is connected for Support, and hands each new message to the server, which turns it into a ticket reply.
+- It starts from when it was switched on, and nothing is read twice.
+- The server's own IMAP polling and `SUPPORT_IMAP_*` are gone. The fallback account can read too (`MAIL_IMAP_*` in `mail.env`).
+- **The server reaches the mail service's internal API** with `MAIL_SERVICE_URL` and `MAIL_SERVICE_TOKEN`, the same token as in `mail.env`. The test server and production refuse to start without a long one.
+- **Support settings** now say whether the support mailbox is read, and link to the Email page.
+
+### server (1.0.0-rc.1)
+- First stable release: every service moves to 1.0.0.
+- **Objects shows only the objects that have an identity** (an employee, a location): the people, places and things your documents name. Objects without one no longer crowd the list.
+- **An object's page now leads with "met so far"**, then its weekly figures and attributes, and ends with a table of its **records** in place of the document list: one row for each time a document read one of them, with the attributes it read. You can search it (names, values, document names), narrow it by date and by the attributes that have a few values (such as a location or a shift), and sort any column. Clicking a row opens the document it came from, and clicking a name opens that thing.
+- **A thing's page has the same table of its own rows** across documents, instead of the document list.
+- **On a document, the identity values are links.** An employee's id or name opens that employee's page, and a field that points to another object (an employee's location) opens that thing too, so you can move from a document to the things in it and on to their other documents.
+- **The record cards on a document now stand out from the page.** Each object sits on a raised card, as on the overview, instead of a thin outline on the same background.
+- **The key that passwords typed in the admin app are sealed to can't be swapped by someone writing to Kafka.** The mail service signs it; the server believes it only with the mail service's public key (`MAIL_SERVICE_PUBLIC_KEY`, from `python -m mail signer`). A real server now refuses to start without it.
+- **Adding a mail server on a real server only accepts public addresses** (not localhost, a private network, a link-local or cloud metadata address).
+- **A ticket by email can't be written into by a spoofed sender.** When the receiving mail server records no sender checks, only a message that answers one of ours continues a ticket; a number in the subject alone opens a separate ticket.
+- **New email channels get longer, unguessable addresses.**
+- Full findings and what was checked: `docs/SECURITY_AUDIT_2026-11.md`.
+- **Each part of Syruss that uses mail can be given its own job.** The Email › Jobs page has a new "Where mail is used" list: invitations and notices, outbound email destinations, the help desk and document inbound, each with a dropdown to choose which job it goes through (only jobs that can do what it does are offered; until you choose, it uses its default). So a job you add can now be put to work: for example a job of your own for email destinations, with its own mailbox.
+- **Outbound email destinations now name their own function** instead of always going out as a notification.
+- **Document inbound and the help desk follow the job you choose:** channel addresses are made from the chosen document job's mailbox, and mail read from the chosen help job becomes tickets.
+- **Developer wording is out of the Email pages** (sealing, fingerprints, where the setup lives); a saved Google or Microsoft app shows as hidden dots and can only be replaced.
+- New parts of the server declare their function in one place (`services/mail_uses.py`, with the steps in its header) and appear in the admin app on their own.
+- **Add a job** and **Connect a mailbox** are now popups, opened by a button at the top right of the Email page. A mailbox is connected for one job chosen from a dropdown (other jobs can be pointed at it from the Jobs tab); "another mail server" is a step inside the same popup.
+- **A Google or Microsoft app's client id and secret are never sent to the browser.** The Provider apps tab no longer shows the id, the API no longer returns it, and the directory no longer carries it. Leave the fields empty to keep what is set.
+- **A problem on a job shows only while it is still true.** An old failure through a mailbox that has since been replaced, or one a later message got past, no longer shows as "Problem".
+- **The mail service removes entries it published earlier and that no longer exist** (such as the old environment mailbox) from its directory when it starts.
+- **Microsoft can be set in the environment like Google:** `MICROSOFT_MAIL_CLIENT_ID`, `MICROSOFT_MAIL_CLIENT_SECRET` and `MICROSOFT_MAIL_TENANT` in `mail.env` (the admin app's Provider apps tab still works and takes precedence).
+- **No mail password or server comes from an environment file any more.** `MAIL_SMTP_*` and `MAIL_IMAP_*` are gone from the mail service. Until a mailbox is connected (`python -m mail connect`, or the admin app's Email page), mail simply waits, without using up its tries, and goes out once one is. `MAIL_BACKEND` is now `none` (default), `console` or `memory`; the old `smtp` value is read as `none`, so set up your mailbox again with `python -m mail connect` (the README shows the local Mailpit command). A real server refuses to start with anything but `none`.
+- **Which mailbox serves a job is now part of the job** (the separate routes table is copied over once, then dropped). Jobs with no mailbox show "No mailbox" in the admin app.
+- **Kafka can use TLS and SASL.** `KAFKA_SECURITY_PROTOCOL`, `KAFKA_SASL_MECHANISM`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` and `KAFKA_SSL_CA_FILE` apply to every Kafka connection in the mail service and the server; off by default.
+- **Docs:** the mail README now has first-install steps, a Kafka security guide with the exact ACLs for the mail and server users, key rotation, and backup and restore; the deploy guide follows.
+- **Documents sent by email now arrive through the mail service.** An owner gives the **Document inbound** job a mailbox that can read (Google, Microsoft or any IMAP server) in the admin app, and each email channel's address becomes that mailbox with a tag, like `docs+<token>@yourdomain`. The mail service reads the mailbox and hands each message over on Kafka; every attached file becomes a document of the channel it was addressed to, under the same rules as any other document (allowed senders, the SPF/DKIM requirement, file checks, duplicate protection).
+- **The server's own mail receiver is gone**, with `INTAKE_SMTP_PORT`, `INTAKE_SMTP_HOST` and `INTAKE_EMAIL_DOMAIN`: the server runs no mail listener and holds no mail setting. Email channels made before show their new address on their page; the old `token@intake-domain` addresses stop working.
+- Refused mail is written to the channel's activity with the reason. Nothing is mailed back to the sender, since the From address of unwanted mail is often forged.
+- **Outlook and Microsoft 365 mailboxes can be connected with a button.** Email › Accounts has **Connect with Microsoft** beside Google: you sign in, approve only sending and, where a job reads, reading, and no app password is involved. The mail service sends through Microsoft Graph, reads new mail by delta query, and keeps the new refresh token Microsoft hands out after each refresh.
+- **Google and Microsoft apps are set in the admin app.** The new **Email › Provider apps** tab takes each app's client id (and Microsoft's tenant) and its secret, which is sealed in the browser to the mail service's key and never shown again. The redirect address to register is shown there. Google's environment settings still work until an app is saved.
+- **The Jobs list is cleaner:** one aligned table of job, mailbox and a one-word status, with the settings behind a row's arrow.
+- **Audit log:** connecting a Microsoft mailbox and setting or removing a provider app read in plain words.
+- **The admin app's Email section is organised around jobs, and its mailbox passwords are sealed in your browser.**
+- **Jobs** (`Email › Jobs`): the built-in jobs (notifications, help, document inbound, promotions, and Keycloak's account emails) each with the mailbox it uses (a mailbox that can't do the job isn't offered for it), when it last sent and read, its last error, and settings of its own (sender name, where replies go, how often it reads). **Add a job** of your own; remove it again when you no longer need it.
+- **Accounts** (`Email › Accounts`): the connected mailboxes, with Google, or any mail server. Pick which jobs a new mailbox serves as you add it.
+- **Delivery log** is unchanged.
+- **Passwords are sealed in the browser** to the mail service's key before they are sent, so neither this app's server nor Kafka ever holds one. The key's fingerprint is shown beside the form; it should match `python -m mail fingerprint` on the mail server. A browser without the needed support (older than Chrome 133, Firefox 130 or Safari 17) still works: the server seals the password instead, and the page says so.
+- **Live:** the Email pages are told the moment the mail service's state changes (a mailbox connected, a job's mailbox chosen, a problem found), so they are always what the mail service says. The new `mail` scope of the staff live stream carries it, owners only; it names what changed, never its content. A "Live" badge shows when it is connected.
+- **Audit log:** the mail actions (connecting or removing a mailbox, choosing a job's mailbox, adding, changing and removing jobs) read in plain words.
+- **The server and the mail service talk only over Kafka; the mail service's HTTP API is gone.**
+- **Setting up mail from the admin app:** each change (connect or remove a mailbox, choose which account serves a job, add your own jobs, connect Google, send a given-up message again, read the delivery log) is a command the server signs and puts on `mail.commands`; the mail service carries out only what is signed, recent and new, and answers on `mail.replies`. The Email page shows the mail service's own directory (`mail.directory`), so it is always what the mail service says. New admin API for jobs: `POST /sysadmin/mail/purposes`, `PUT` and `DELETE /sysadmin/mail/purposes/{key}`.
+- **Passwords:** a mailbox password is sealed to the mail service's public key before it leaves the server, so it never crosses Kafka in the clear; the admin app can seal it in the browser (the API takes a ready `sealed` value).
+- **Incoming mail:** emails the mail service reads are published whole on `mail.inbound`; the server turns support mail into tickets and acknowledges each one (`mail.inbound.acks`), and only then does the mail service delete it. One that is never acknowledged is published again, and one over 25 MB is reported instead of lost. Mail for a job nothing here handles yet (document inbound) waits at the mail service.
+- **Addresses:** the server no longer asks for them over HTTP. It reads the sender's and the help mailbox's addresses from the directory, and recognises mail from any of our own mailboxes (so a reply loop never opens a ticket).
+- **Removed:** `MAIL_SERVICE_URL` and `MAIL_SERVICE_TOKEN` (server), `MAIL_API_HOST`, `MAIL_API_PORT` and `MAIL_SERVICE_TOKEN` (mail), the mail service's web server, and the scheduler's inbound sweep.
+- **Deploying:** run `python -m app.mail_signing_key` once. Put the first line (`MAIL_COMMAND_SIGNING_KEY`) in `server.env` and the second (`MAIL_TRUSTED_SERVER_KEY`) in `mail.env`; both services refuse to start without their half. Deploy the mail service first, then the server.
+- **The mail service owns who mail is from; the server's environment no longer has those settings.**
+- **Moved to `mail.env`:** `MAIL_FROM_NAME`, `MAIL_REPLY_TO`, `SUPPORT_EMAIL_ADDRESS` and `SUPPORT_FROM_NAME` (`MAIL_FROM` was already there). The server no longer reads any of the five; old lines in `server.env` are ignored.
+- **How the server gets what it needs:** it asks the mail service for the From address and the support address (`GET /identity`) when it starts and every few minutes, and keeps the last answer. Mail jobs no longer carry a sender name or reply address of the server's choosing: the mail service fills in its own (support mail goes out as the support name and is answered at the support address).
+- **If the mail service can't be reached** before it has ever answered, a ticket email isn't sent and mail from the support mailbox waits to be taken in, rather than using a development address. After the first answer, the last one stands.
+- **Deploying:** put `SUPPORT_EMAIL_ADDRESS` (and `MAIL_REPLY_TO`, `MAIL_FROM_NAME`, `SUPPORT_FROM_NAME` if you changed them) in `mail.env` before the server is updated. The "`MAIL_FROM` at a real domain" start-up check is the mail service's now.
+- **Every object of a template has its own page, and so does every thing it has met.**
+- **An object's page:** its icon, its attributes (type, required, identity, what each points to), how many documents have it, documents per week, and each attribute in figures (how often it's filled; totals and averages for numbers; first and last for dates; the commonest values otherwise). It also lists what it has met so far (searchable), its documents, the objects connected to it, and the Analytics screens built on it.
+- **A thing's page** (one identified instance, such as one place or one person): its attributes as last read and other ways they were read, first and last seen, mentions per week, what it appears with, what the workspace's knowledge says about it (aliases), and its documents.
+- **Where to find them:** a new **Objects** section in the workspace sidebar (each object is a sub-tab). The template page links each object to its page, and names in Knowledge open their thing's page.
+- **Every object has an icon.** The agent picks it from a fixed list of about 180 icons by what the object is and does. The icon shows in template design, on the template, on the profiles and in search. Click an icon in template design to pick another; the list can be searched by meaning ("vehicle", "money"). The platform refuses a name that isn't in the list, and an object the agent leaves without one keeps the icon it has. Objects from before show a general icon until one is chosen.
+- **Search finds objects and things**, in the customer app and the admin app. Admin results carry the organization and the workspace as tags.
+- **Staff can open the same pages, read-only,** from search or from an organization's workspaces ("Objects"), with the organization and workspace shown.
+- **Behind it:** a new table, `record_objects`, which records what each committed record contains (migration 0039). Records are added as they are committed and removed when sent back to review. The scheduler fills it for records saved before, and refills a workspace when its template changes.
+- **One search for everything, in both apps.** Open it from the top bar, with Ctrl+K (⌘K on a Mac) or with `/`.
+- **As you type:** pages to go to match at once; everything else is asked of the server and comes back in groups, exact and prefix matches first, with the matched words marked.
+- **Keyboard:** arrow keys move, Enter opens, Ctrl/⌘+Enter opens in a new tab, Esc closes.
+- **Remembered in this browser:** your recent searches and what you opened, each with a Clear.
+- **On phones** it fills the screen, with a search button in the top bar.
+- **Admin app:** finds organizations, people, documents (file name, the sender's reference or the document's key), agent runs, support tickets (number, subject or requester), invoices, workspaces and staff. Any id finds its thing. Every page in the navigation you may open is a place to go to.
+- **Customer app (new):** finds, in the organization you're in, only what you may open:
+- workspaces you belong to (owners and admins also find the others);
+- documents, only in workspaces where your role can view documents;
+- people in the organization;
+- your own chats, which open in their workspace's chat panel;
+- your support requests (all of the organization's for owners and admins);
+- invoices, only for people who manage billing.
+- The organization's pages and every settings page are places to go to.
+- **Server:** `GET /api/v1/search` for the customer app; the staff search (`/api/v1/sysadmin/search`) answers in the same grouped shape.
+- **The admin app shows a document and its agent runs in full.**
+- **The document itself** on the document and run pages: page by page, with zoom and "open full size".
+- **Every journey step opens** to show everything recorded about it: the event that woke the agent, its tries and errors, each log line, review, question, delivery attempt (with status code, request and response) and change. Opening one closes the one open before.
+- **A run is one journey step** that opens to its agent steps.
+- **Each agent step shows:**
+- what was sent to the model: on step 1, the agent's instructions and the briefing; after that, the tool results that came back, plus "Show the full prompt";
+- what the model answered, and its thinking when the provider returns it;
+- each tool it ran, with what it sent and what came back;
+- its tokens.
+- **Tokens add up:** per step, per run, and per document (in, out and total).
+- **Each run links to the run of the same document before and after it.** Runs of one document form a linked list ("run 2 of 3"), with Previous and Next on the run page.
+- **The agent records** each step's tokens, the model's thinking, and what it added before a call (reminders, requested page images). It sends the run's prompt once. The system prompt is stored once per version; the briefing is cleared with old steps after `RUN_STEPS_RETENTION_DAYS`.
+- **Staff see documents and runs without opening anything.** The support-access grant (the "Open content" step, the customer's switch, its banner and email) is gone. The customer's Settings → Organization page "Support and privacy" says plainly what the Syruss team sees and why.
+- Migration `0038`. Existing runs are linked per document in the order they started.
+- **A mail service: every email Syruss sends goes through one place** (the new `mail/` service). It holds the only mail credentials.
+- **The server never talks to a mail server again.** Sending an email queues it in the database (`mail_outbox`, sealed while it waits). A relay publishes it on Kafka (`mail.outbound`), and the mail service sends it and reports back (`mail.events`). Mail waits safely while Kafka or the mail service is down.
+- **Keycloak's emails** (verify an address, reset a password, a new staff member's set-up link) go to the mail service's SMTP door on the internal network, with their own login. `harden.py --smtp` points Keycloak there.
+- **One mail interface with permissions:** a mail account says what it was given (send, read), and each use opens it for only what it needs.
+- **Purposes route to accounts:** `notifications`, `accounts` (Keycloak) and `support`. Until an account is connected for a purpose, the mail service's own account (`MAIL_SMTP_*` in `mail.env`) sends.
+- **Delivery:** each email is sent once, even if handed over twice. Failures are retried with growing waits and given up after a while; an address the server refuses is given up at once. The text isn't kept once an email is done.
+- **Admin overview:** a new Email health check shows mail that couldn't be sent or is waiting too long.
+- **Settings moved:** `SMTP_*` and `SUPPORT_SMTP_*` leave the server; the mail server is set in `mail.env` (`MAIL_SMTP_*`). The server's `MAIL_BACKEND` is now `service` (or `console`, `memory`).
+- **Mail accounts are set up in the admin app**, on a new **Email** page (owners only).
+- **Google mail:** "Set up Google mail" signs in to Google and asks only for what the chosen uses need. Sending needs `gmail.send`; Support also needs `gmail.readonly`. Syruss can't delete or change anything in the mailbox.
+- A Workspace account with an Internal OAuth app needs no review from Google.
+- A personal Gmail works while the app is in Testing, but Google ends its sign-in every 7 days. The account then shows "Needs reconnecting", and mail uses the fallback account until someone reconnects it.
+- **Any other mail server:** add a mailbox with SMTP to send and IMAP to read (read-only).
+- **Choose which account does what:** notifications, sign-in emails (Keycloak) or support. A choice the account can't serve is refused when it's made.
+- **Test** an account, and **remove** one (a Google sign-in is revoked).
+- **The delivery log:** what went to whom and how it went. Mail that was given up can be sent again.
+- Every change is in the platform audit log.
+- **The mail service reads the support mailbox**, whichever account is connected for Support, and hands each new message to the server, which turns it into a ticket reply.
+- It starts from when it was switched on, and nothing is read twice.
+- The server's own IMAP polling and `SUPPORT_IMAP_*` are gone. The fallback account can read too (`MAIL_IMAP_*` in `mail.env`).
+- **The server reaches the mail service's internal API** with `MAIL_SERVICE_URL` and `MAIL_SERVICE_TOKEN`, the same token as in `mail.env`. The test server and production refuse to start without a long one.
+- **Support settings** now say whether the support mailbox is read, and link to the Email page.
+- **`get_db_session` is typed as what it is**, an async iterator of sessions. Pylance reported it as invalid (`reportInvalidTypeForm`). Behaviour doesn't change.
+- **The test server and production refuse to start with development values, and say which.**
+- **New `ENV` value `test`:** the test server's compose file sets it for the server and the agent. Production's compose file now also sets `ENV=production` for the agent, which it didn't before.
+- **Server:**
+- the development database, storage and token passwords;
+- no `SECRETS_ENCRYPTION_KEY`;
+- `OIDC_ISSUER`, `PUBLIC_SITE_URL`, `PUBLIC_APP_URL`, `PUBLIC_ADMIN_URL`, `PUBLIC_API_URL` or `CORS_ORIGINS` not https, or still localhost;
+- `MAIL_FROM` at a `.local` domain;
+- mail that would only be logged or sent to localhost;
+- no agent signing key.
+- **Agent:** the development database password, or no `AGENT_TOKEN_PUBLIC_KEY`.
+- **Production also refuses** weakened security switches (`REQUIRE_*`), as before.
+- **Typos:** an unknown `ENV` (for example `prod`) stops the start instead of quietly running as development.
+- **Live support in the same chat.** When someone needs a person now, the assistant asks the Syruss team to join their chat (`request_live_support`).
+- **Only when someone on the staff is online.** Otherwise the assistant offers a ticket.
+- **For the customer:**
+- while waiting, the chat says it is connecting them;
+- once someone accepts, it says "Ana from the Syruss team joined" and that she can see the conversation;
+- both sides see each other typing;
+- the customer can end the chat, and rate it afterwards with a thumbs up or down.
+- **The assistant stays quiet while the team member is in the chat:** messages don't wake it, and a reply it was about to send is refused. When the chat ends, it answers again, with the whole exchange in its history.
+- **Fallbacks:** a chat nobody joins within 10 minutes goes back to the assistant, which offers a ticket. A chat whose team member goes offline goes back to the queue.
+- **Admin app: Support → Live chats.**
+- **Your status:** online, away or offline, kept by a heartbeat from any page.
+- **The queue:** each chat shows the assistant's handover note (the conversation itself opens only after you accept), with a sound when a chat starts waiting. The first to accept takes the chat.
+- **Your chats:**
+- the conversation and the customer's details;
+- saved replies (type `/`);
+- hand a chat to someone else who is online;
+- turn it into a ticket for follow-up;
+- end it.
+- Accepting and ending a chat show in the organization's activity and the platform audit log.
+- The Support badge counts chats waiting for someone.
+- **The ticket and live chat pages share one customer panel.**
+- **Support tickets.** Customers can ask the Syruss team for help, and staff answer from the admin app.
+- **Three ways in:**
+- the assistant in a workspace's chat opens one when it can't solve the problem itself;
+- the new Settings → Help & support page;
+- email to the support address.
+- **Who sees a request:** the person who made it, plus the organization's owners and admins.
+- **By email, both ways:**
+- every answer is emailed from the support address, with the ticket number in the subject;
+- replies to it are read from the support mailbox (`SUPPORT_IMAP_*`) and added to the ticket;
+- automatic replies, mail loops and floods from one sender are ignored;
+- mail from an unknown address becomes an "unverified" ticket that gets no email back.
+- **Admin app: a new Support section.**
+- **The inbox:** late tickets first, then the most urgent.
+- **Each ticket:** the conversation, internal notes, files, and who the customer is (organization, plan, bills, other requests).
+- **Handling:** assign, change priority or status, merge duplicates.
+- **Saved replies:** pick one from a menu, or type `/` and its shortcut.
+- **Service targets:** hours to the first answer and to a solution, by priority. Unanswered tickets are marked late and the team is told; tickets waiting on the customer are solved and later closed automatically.
+- **Who answers:** the new `support.respond` permission, given to the support and billing roles.
+- **Syruss answers questions about Syruss itself from facts.** Seven help guides the chat reads before it answers "how do I…" or "why can't I…": getting started, documents and review, billing, team and roles, account security, connections, and analytics. They name the pages and buttons as the app shows them (Settings → Billing → Invoices, Settings → Account and security → Sign-in, Settings → Organization → Support access).
+- **Billing** covers plans and credits, invoice statuses, paying by card on Stripe's page, paying by bank transfer (the slip, its transfer reference, "Being checked" and "Not confirmed", and sending again), renewals, reminders, the grace period and the move to Free, and billing details.
+- **Account security** covers password and two-step changes, "Keep me signed in" (30 days), trusted browsers and their emailed codes, and Google sign-in.
+- **A "Helping with Syruss" section in the chat charter**, before the shared boundaries: read the matching guide first, point to the exact page, never invent a feature or setting, and say plainly when only Syruss support can help.
+- **`get_billing_status`, a read-only chat tool**: the organization's plan, invoices waiting for payment, and the latest bank slip sent (with why it wasn't confirmed). The server answers only during a person's own chat, and only when their organization role manages billing (its owners); work runs and everyone else are refused.
+- **A new red-team case**: a document that tells the agent to say the person's invoice is paid.
+- **Defenses against prompt injection, in four layers:**
+- **Data is marked as data.** Every tool result reaches the model between markers carrying a random value per run, which a document can't fake or close. Every charter says nothing inside them is an instruction, and that such text is described, never passed on word for word (no images, links or code copied from data).
+- **What the agent never shares:** its instructions and setup, anything about other workspaces, other people's chats or Syruss staff, secrets, internal IDs. It doesn't assess the platform's security, list its weak points, or help probe it, whoever asks: security questions go to Syruss support.
+- **A server-side guard on everything the agent says to people** (chat replies, flags, the conversations it opens and closes):
+- a reply that repeats its instructions is refused;
+- keys, tokens, private keys, connection strings, internal IDs and images are cut out;
+- each catch is written to the workspace's activity, as the kinds removed, never the text.
+- **The chat never loads images from agent text** (the description is shown instead), and links to other sites show which site.
+- **Injection tests:**
+- `python -m agentic_framework.redteam` attacks the real model with seven cases: asking for its instructions, claiming authority, probing security, asking for other people's data, and documents that try to command it, smuggle data out through an image, or carry a secret.
+- It runs from `.github/workflows/agent-redteam.yml` on pull requests that change the agent, weekly and by hand, once the `GEMINI_API_KEY` secret is set.
+- **Card payments work with the installed Stripe library (16).** Its objects aren't dictionaries any more, and three calls still read them as if they were, so each failed:
+- **Finding a card payment whose webhook never arrived:** the check failed quietly, and Stripe's "You're all done here" page kept coming back.
+- **Keeping the card for renewals:** the payment webhook failed whenever "Keep the card" was ticked.
+- **Paying a renewal with the kept card:** the charge failed.
+- Stripe's answers are now converted to plain data once, and tested with the library's real objects.
+- **Sign-in settings are managed inside Syruss.** Settings → Account and security shows:
+- whether you have a password and when it last changed;
+- your authenticator apps, and whether two-step verification is on;
+- whether Google is linked.
+- Changing the password, setting up two-step verification or removing an authenticator opens one Syruss-styled sign-in step (a Keycloak Application Initiated Action) that comes straight back with a confirmation. Keycloak's own account pages are turned off (`harden.py`).
+- **Every button on the sign-in pages shows that it's working** ("Signing in…", "Creating your account…") and can't be pressed twice.
+- **Clearer bank transfer slip form:** a drop area with a "Choose files" button, the chosen files listed and removable, and the "Transfer reference" explained.
+- **A card payment Stripe finished while its webhook never arrived is no longer lost.** Paying again, or opening the invoice, checks the open checkout with Stripe and records the payment, instead of reopening Stripe's finished page. An expired checkout is replaced by a new one.
+- **Containers are hardened.**
+- The server and the agent are now two-stage images with no compilers or curl, and run as an unprivileged user.
+- MinIO drops to its own user after taking ownership of its data.
+- Every base image is pinned by digest, and the web apps install exactly what their lockfiles list.
+- **In the production and test compose files:**
+- No container keeps Linux capabilities except the few the database images need to switch user, and none can gain privileges.
+- Process counts are limited.
+- Syruss's own services run with read-only filesystems.
+- The network is split so the web apps can't reach the databases, and the databases, Kafka and object storage have no internet access.
+- **Scanning and updates:**
+- A container scan (Trivy) runs on pull requests that change images and every week, and fails on critical fixable vulnerabilities in Syruss's own images.
+- Dependabot keeps the pinned base images current.
+- The web apps' lockfiles had fallen out of step with their package.json (the old `npm ci || npm install` fallback hid it in builds and in CI). They are regenerated with the build image's npm (only where `picomatch` sits changed), and installs are strict everywhere now.
+- **Security fixes found by the new scan:**
+- Next.js 16.3.7 → 16.4.6 in all three web apps (two critical remote-code-execution flaws, GHSA-2464-fhr4-w9xw and GHSA-673q-mjm6-r5xr).
+- `follow-redirects` and `source-map-js` updated in www.
+- The running images no longer carry package managers (npm, yarn, corepack, pip) or the flaws bundled with them.
+- Keycloak 26.0 → 26.7 (an unauthenticated flaw in keycloak-services, plus Netty, FreeMarker and BouncyCastle).
+- Kafka 3.7 → 3.9.2 (Netty, libexpat).
+- **Sign-in:**
+- Keycloak's account page works again: its frame headers allow its own pages (SAMEORIGIN) instead of none, which had broken setting up two-step sign-in.
+- Customers can tick "Keep me signed in" for 30 days, so their password and one-time code aren't asked again until then. Staff still sign in with a code each time.
+- **The local development stack** (`bridge/docker-compose.yml`):
+- Answers on this machine only.
+- Drops Linux capabilities, runs MinIO as its own user, and pins every image.
+- Platform staff are added only from the terminal: `syruss staff add EMAIL --role ROLE`, or `python -m app.invite_staff` on a server.
+- For an address with no sign-in, it creates one in Keycloak, and Keycloak emails a link to choose a password and set up the one-time code. That link leads to the invitation.
+- The Keycloak admin login comes only from the command's own environment, so the running server gets no Keycloak access.
+- The admin app no longer invites or resends invitations: its Staff page shows the command, and owners can still withdraw invitations. Its sign-in page still creates no accounts.
+- Full-page loads (sign-in, signing in again, onboarding, the signed-out pages) use an absolute address in admin and www.
+- Staff sign-ins must include a one-time code: the server checks the token's amr claim, and `bridge/keycloak/harden.py` makes Keycloak report it. Staff sessions last at most 8 hours, and the admin app signs out after 30 minutes without use, with a warning first.
+- A second owner's approval for risky actions, which owners turn on and scope in Platform controls. It covers suspending organizations, disabling accounts, adding or removing owners, credit notes, refunds and voids, and prepaid pages, plan changes and early switch-on. A held action waits on the new Approvals page and is carried out as the person who asked once another owner approves. While the rule is on, turning it off needs approval too. The server can turn it off with `python -m app.approvals off`.
+- Customers control support access. Owners and admins are emailed and told in the app when Syruss support opens their content, and everyone in the organization sees a banner while it's open. Owners and admins can end it at any time, or stop support opening content at all, under Settings > Organization > Support access.
+- Unused staff access is taken away: after 60 days without using the admin app, with a warning 7 days before. Owners are reminded to confirm who still needs access every 90 days. Both are adjustable on the Staff page.
+- The system admin console: business figures (recurring revenue, paying and active organizations, churn) with 30-day trends, customers worth a look, one page per organization and per person, staff notes, platform controls (maintenance, kill switches for sign-ups, the agent and intake, announcements shown in the app), one search box, and a security view.
+- Staff join by an emailed invitation: anyone can be invited, no account needed. Role changes, removals and withdrawn invitations are emailed too.
+- Staff accounts are kept apart from customer accounts: they only open the admin app, can't create or join an organization, and organizations can't invite them. Accepting a staff invitation with an address that has a customer account first lists what it deletes (organizations it alone owns are closed, other memberships removed, the customer profile cleared) and needs a confirmation.
+- Signing in to the site or the main app with a staff account goes to the admin dashboard, whatever address it was going to.
+- The first platform owner is invited from the server: python -m app.invite_staff you@company.com. Platform lessons for the agent are approved in the admin app.
+
+### site (1.0.0-rc.1)
+- First stable release: every service moves to 1.0.0.
+- **What you were filling in is still there after you sign in again.** When a session ends, or an action asks for a fresh sign-in, and you come back to the page, the dialog you had open and what you had typed are restored: in the admin app the Email dialogs, staff policy and removal, billing (plan changes, add-ons, credits, limits, trials, new invoices) and platform notices and maintenance; in the customer app the new-channel, new-key, channel rules, API key, webhook, role, member removal, destination setup and the confirm-by-typing dialogs for closing an organization, deleting a workspace and deleting an account.
+- **The browser is never trusted with it.** The draft is sealed by the app's own server (AES-256-GCM) before it is kept, so the browser holds only an opaque blob it can't read or change. The blob is tied to the person who was signed in, to that page, and to the next 15 minutes; it is used once, and a different person signing in, another page or a changed blob gets nothing. It is kept in the tab only (not in local storage).
+- **Passwords, keys, secrets and tokens are never kept**, in the browser or on the server: forms leave them out, and the server drops anything that looks like one even if a form sends it. You retype those.
+- **A sealed draft can never be taken for a session.** Drafts are sealed with a key of their own (derived from the app's secret and the purpose), and only someone signed in can have anything sealed, so the route can't be used to produce session or sign-in values.
+- **Sign-in settings are managed inside Syruss.** Settings → Account and security shows:
+- whether you have a password and when it last changed;
+- your authenticator apps, and whether two-step verification is on;
+- whether Google is linked.
+- Changing the password, setting up two-step verification or removing an authenticator opens one Syruss-styled sign-in step (a Keycloak Application Initiated Action) that comes straight back with a confirmation. Keycloak's own account pages are turned off (`harden.py`).
+- **Every button on the sign-in pages shows that it's working** ("Signing in…", "Creating your account…") and can't be pressed twice.
+- **Clearer bank transfer slip form:** a drop area with a "Choose files" button, the chosen files listed and removable, and the "Transfer reference" explained.
+- **A card payment Stripe finished while its webhook never arrived is no longer lost.** Paying again, or opening the invoice, checks the open checkout with Stripe and records the payment, instead of reopening Stripe's finished page. An expired checkout is replaced by a new one.
+- **Containers are hardened.**
+- The server and the agent are now two-stage images with no compilers or curl, and run as an unprivileged user.
+- MinIO drops to its own user after taking ownership of its data.
+- Every base image is pinned by digest, and the web apps install exactly what their lockfiles list.
+- **In the production and test compose files:**
+- No container keeps Linux capabilities except the few the database images need to switch user, and none can gain privileges.
+- Process counts are limited.
+- Syruss's own services run with read-only filesystems.
+- The network is split so the web apps can't reach the databases, and the databases, Kafka and object storage have no internet access.
+- **Scanning and updates:**
+- A container scan (Trivy) runs on pull requests that change images and every week, and fails on critical fixable vulnerabilities in Syruss's own images.
+- Dependabot keeps the pinned base images current.
+- The web apps' lockfiles had fallen out of step with their package.json (the old `npm ci || npm install` fallback hid it in builds and in CI). They are regenerated with the build image's npm (only where `picomatch` sits changed), and installs are strict everywhere now.
+- **Security fixes found by the new scan:**
+- Next.js 16.3.7 → 16.4.6 in all three web apps (two critical remote-code-execution flaws, GHSA-2464-fhr4-w9xw and GHSA-673q-mjm6-r5xr).
+- `follow-redirects` and `source-map-js` updated in www.
+- The running images no longer carry package managers (npm, yarn, corepack, pip) or the flaws bundled with them.
+- Keycloak 26.0 → 26.7 (an unauthenticated flaw in keycloak-services, plus Netty, FreeMarker and BouncyCastle).
+- Kafka 3.7 → 3.9.2 (Netty, libexpat).
+- **Sign-in:**
+- Keycloak's account page works again: its frame headers allow its own pages (SAMEORIGIN) instead of none, which had broken setting up two-step sign-in.
+- Customers can tick "Keep me signed in" for 30 days, so their password and one-time code aren't asked again until then. Staff still sign in with a code each time.
+- **The local development stack** (`bridge/docker-compose.yml`):
+- Answers on this machine only.
+- Drops Linux capabilities, runs MinIO as its own user, and pins every image.
+- The system admin console: business figures (recurring revenue, paying and active organizations, churn) with 30-day trends, customers worth a look, one page per organization and per person, staff notes, platform controls (maintenance, kill switches for sign-ups, the agent and intake, announcements shown in the app), one search box, and a security view.
+- Staff join by an emailed invitation: anyone can be invited, no account needed. Role changes, removals and withdrawn invitations are emailed too.
+- Staff accounts are kept apart from customer accounts: they only open the admin app, can't create or join an organization, and organizations can't invite them. Accepting a staff invitation with an address that has a customer account first lists what it deletes (organizations it alone owns are closed, other memberships removed, the customer profile cleared) and needs a confirmation.
+- Signing in to the site or the main app with a staff account goes to the admin dashboard, whatever address it was going to.
+- The first platform owner is invited from the server: python -m app.invite_staff you@company.com. Platform lessons for the agent are approved in the admin app.
+
+### www (1.0.0-rc.1)
+- First stable release: every service moves to 1.0.0.
+- **Objects shows only the objects that have an identity** (an employee, a location): the people, places and things your documents name. Objects without one no longer crowd the list.
+- **An object's page now leads with "met so far"**, then its weekly figures and attributes, and ends with a table of its **records** in place of the document list: one row for each time a document read one of them, with the attributes it read. You can search it (names, values, document names), narrow it by date and by the attributes that have a few values (such as a location or a shift), and sort any column. Clicking a row opens the document it came from, and clicking a name opens that thing.
+- **A thing's page has the same table of its own rows** across documents, instead of the document list.
+- **On a document, the identity values are links.** An employee's id or name opens that employee's page, and a field that points to another object (an employee's location) opens that thing too, so you can move from a document to the things in it and on to their other documents.
+- **The record cards on a document now stand out from the page.** Each object sits on a raised card, as on the overview, instead of a thin outline on the same background.
+- **The key that passwords typed in the admin app are sealed to can't be swapped by someone writing to Kafka.** The mail service signs it; the server believes it only with the mail service's public key (`MAIL_SERVICE_PUBLIC_KEY`, from `python -m mail signer`). A real server now refuses to start without it.
+- **Adding a mail server on a real server only accepts public addresses** (not localhost, a private network, a link-local or cloud metadata address).
+- **A ticket by email can't be written into by a spoofed sender.** When the receiving mail server records no sender checks, only a message that answers one of ours continues a ticket; a number in the subject alone opens a separate ticket.
+- **New email channels get longer, unguessable addresses.**
+- Full findings and what was checked: `docs/SECURITY_AUDIT_2026-11.md`.
+- **What you were filling in is still there after you sign in again.** When a session ends, or an action asks for a fresh sign-in, and you come back to the page, the dialog you had open and what you had typed are restored: in the admin app the Email dialogs, staff policy and removal, billing (plan changes, add-ons, credits, limits, trials, new invoices) and platform notices and maintenance; in the customer app the new-channel, new-key, channel rules, API key, webhook, role, member removal, destination setup and the confirm-by-typing dialogs for closing an organization, deleting a workspace and deleting an account.
+- **The browser is never trusted with it.** The draft is sealed by the app's own server (AES-256-GCM) before it is kept, so the browser holds only an opaque blob it can't read or change. The blob is tied to the person who was signed in, to that page, and to the next 15 minutes; it is used once, and a different person signing in, another page or a changed blob gets nothing. It is kept in the tab only (not in local storage).
+- **Passwords, keys, secrets and tokens are never kept**, in the browser or on the server: forms leave them out, and the server drops anything that looks like one even if a form sends it. You retype those.
+- **A sealed draft can never be taken for a session.** Drafts are sealed with a key of their own (derived from the app's secret and the purpose), and only someone signed in can have anything sealed, so the route can't be used to produce session or sign-in values.
+- **An email channel's page is about email, not API keys.** It shows the channel's address with a copy button and a short note that anyone can send documents with an ordinary email (a person from their inbox, or a system that mails reports), with no key or sign-in. The "Keys" section, the API request example and the key dialog now appear only on API channels, so the "Keys are for API channels" error can no longer be reached from an email or SFTP channel.
+- **Who can email documents is now set on the page:** a list of allowed addresses or @domains (empty: anyone with the address), and an option to accept only mail that passes the sender's SPF or DKIM check. Both existed on the server but had no place in the app.
+- **Documents sent by email now arrive through the mail service.** An owner gives the **Document inbound** job a mailbox that can read (Google, Microsoft or any IMAP server) in the admin app, and each email channel's address becomes that mailbox with a tag, like `docs+<token>@yourdomain`. The mail service reads the mailbox and hands each message over on Kafka; every attached file becomes a document of the channel it was addressed to, under the same rules as any other document (allowed senders, the SPF/DKIM requirement, file checks, duplicate protection).
+- **The server's own mail receiver is gone**, with `INTAKE_SMTP_PORT`, `INTAKE_SMTP_HOST` and `INTAKE_EMAIL_DOMAIN`: the server runs no mail listener and holds no mail setting. Email channels made before show their new address on their page; the old `token@intake-domain` addresses stop working.
+- Refused mail is written to the channel's activity with the reason. Nothing is mailed back to the sender, since the From address of unwanted mail is often forged.
+- **`www/.env.example` lists `NEXT_PUBLIC_APP_VERSION`**, the setting behind the version shown under the sidebar (set by the release build; leave it unset locally).
+- **The app shows which version it is, under the sidebar** ("Syruss 0.9.0"). The release job gives each build its version from the changesets, so production shows its own release, the test environment its test release and dev its dev release (for example `0.16.0-dev.1`). Only the app's own number is shown: no list of services. A build made by hand shows nothing.
+- **Every object of a template has its own page, and so does every thing it has met.**
+- **An object's page:** its icon, its attributes (type, required, identity, what each points to), how many documents have it, documents per week, and each attribute in figures (how often it's filled; totals and averages for numbers; first and last for dates; the commonest values otherwise). It also lists what it has met so far (searchable), its documents, the objects connected to it, and the Analytics screens built on it.
+- **A thing's page** (one identified instance, such as one place or one person): its attributes as last read and other ways they were read, first and last seen, mentions per week, what it appears with, what the workspace's knowledge says about it (aliases), and its documents.
+- **Where to find them:** a new **Objects** section in the workspace sidebar (each object is a sub-tab). The template page links each object to its page, and names in Knowledge open their thing's page.
+- **Every object has an icon.** The agent picks it from a fixed list of about 180 icons by what the object is and does. The icon shows in template design, on the template, on the profiles and in search. Click an icon in template design to pick another; the list can be searched by meaning ("vehicle", "money"). The platform refuses a name that isn't in the list, and an object the agent leaves without one keeps the icon it has. Objects from before show a general icon until one is chosen.
+- **Search finds objects and things**, in the customer app and the admin app. Admin results carry the organization and the workspace as tags.
+- **Staff can open the same pages, read-only,** from search or from an organization's workspaces ("Objects"), with the organization and workspace shown.
+- **Behind it:** a new table, `record_objects`, which records what each committed record contains (migration 0039). Records are added as they are committed and removed when sent back to review. The scheduler fills it for records saved before, and refills a workspace when its template changes.
+- **One search for everything, in both apps.** Open it from the top bar, with Ctrl+K (⌘K on a Mac) or with `/`.
+- **As you type:** pages to go to match at once; everything else is asked of the server and comes back in groups, exact and prefix matches first, with the matched words marked.
+- **Keyboard:** arrow keys move, Enter opens, Ctrl/⌘+Enter opens in a new tab, Esc closes.
+- **Remembered in this browser:** your recent searches and what you opened, each with a Clear.
+- **On phones** it fills the screen, with a search button in the top bar.
+- **Admin app:** finds organizations, people, documents (file name, the sender's reference or the document's key), agent runs, support tickets (number, subject or requester), invoices, workspaces and staff. Any id finds its thing. Every page in the navigation you may open is a place to go to.
+- **Customer app (new):** finds, in the organization you're in, only what you may open:
+- workspaces you belong to (owners and admins also find the others);
+- documents, only in workspaces where your role can view documents;
+- people in the organization;
+- your own chats, which open in their workspace's chat panel;
+- your support requests (all of the organization's for owners and admins);
+- invoices, only for people who manage billing.
+- The organization's pages and every settings page are places to go to.
+- **Server:** `GET /api/v1/search` for the customer app; the staff search (`/api/v1/sysadmin/search`) answers in the same grouped shape.
+- **Live chats no longer crash when a chat opens.** Scrolling to the newest message ran in an effect that returned the browser's answer to React ("destroy is not a function").
+- **Changing your password from Settings asks for your current one plainly.** Keycloak first confirms it's you, but its page looked like a normal sign-in ("Welcome back", "Password", "Sign in"). People typed their new password there and got "Invalid username or password". It now says "Confirm it's you", asks for your **Current password**, says you'll choose the new one on the next page, and its button reads Continue. The same page shows when setting up or removing an authenticator.
+- **The admin app shows a document and its agent runs in full.**
+- **The document itself** on the document and run pages: page by page, with zoom and "open full size".
+- **Every journey step opens** to show everything recorded about it: the event that woke the agent, its tries and errors, each log line, review, question, delivery attempt (with status code, request and response) and change. Opening one closes the one open before.
+- **A run is one journey step** that opens to its agent steps.
+- **Each agent step shows:**
+- what was sent to the model: on step 1, the agent's instructions and the briefing; after that, the tool results that came back, plus "Show the full prompt";
+- what the model answered, and its thinking when the provider returns it;
+- each tool it ran, with what it sent and what came back;
+- its tokens.
+- **Tokens add up:** per step, per run, and per document (in, out and total).
+- **Each run links to the run of the same document before and after it.** Runs of one document form a linked list ("run 2 of 3"), with Previous and Next on the run page.
+- **The agent records** each step's tokens, the model's thinking, and what it added before a call (reminders, requested page images). It sends the run's prompt once. The system prompt is stored once per version; the briefing is cleared with old steps after `RUN_STEPS_RETENTION_DAYS`.
+- **Staff see documents and runs without opening anything.** The support-access grant (the "Open content" step, the customer's switch, its banner and email) is gone. The customer's Settings → Organization page "Support and privacy" says plainly what the Syruss team sees and why.
+- Migration `0038`. Existing runs are linked per document in the order they started.
+- **Live support in the same chat.** When someone needs a person now, the assistant asks the Syruss team to join their chat (`request_live_support`).
+- **Only when someone on the staff is online.** Otherwise the assistant offers a ticket.
+- **For the customer:**
+- while waiting, the chat says it is connecting them;
+- once someone accepts, it says "Ana from the Syruss team joined" and that she can see the conversation;
+- both sides see each other typing;
+- the customer can end the chat, and rate it afterwards with a thumbs up or down.
+- **The assistant stays quiet while the team member is in the chat:** messages don't wake it, and a reply it was about to send is refused. When the chat ends, it answers again, with the whole exchange in its history.
+- **Fallbacks:** a chat nobody joins within 10 minutes goes back to the assistant, which offers a ticket. A chat whose team member goes offline goes back to the queue.
+- **Admin app: Support → Live chats.**
+- **Your status:** online, away or offline, kept by a heartbeat from any page.
+- **The queue:** each chat shows the assistant's handover note (the conversation itself opens only after you accept), with a sound when a chat starts waiting. The first to accept takes the chat.
+- **Your chats:**
+- the conversation and the customer's details;
+- saved replies (type `/`);
+- hand a chat to someone else who is online;
+- turn it into a ticket for follow-up;
+- end it.
+- Accepting and ending a chat show in the organization's activity and the platform audit log.
+- The Support badge counts chats waiting for someone.
+- **The ticket and live chat pages share one customer panel.**
+- **Support tickets.** Customers can ask the Syruss team for help, and staff answer from the admin app.
+- **Three ways in:**
+- the assistant in a workspace's chat opens one when it can't solve the problem itself;
+- the new Settings → Help & support page;
+- email to the support address.
+- **Who sees a request:** the person who made it, plus the organization's owners and admins.
+- **By email, both ways:**
+- every answer is emailed from the support address, with the ticket number in the subject;
+- replies to it are read from the support mailbox (`SUPPORT_IMAP_*`) and added to the ticket;
+- automatic replies, mail loops and floods from one sender are ignored;
+- mail from an unknown address becomes an "unverified" ticket that gets no email back.
+- **Admin app: a new Support section.**
+- **The inbox:** late tickets first, then the most urgent.
+- **Each ticket:** the conversation, internal notes, files, and who the customer is (organization, plan, bills, other requests).
+- **Handling:** assign, change priority or status, merge duplicates.
+- **Saved replies:** pick one from a menu, or type `/` and its shortcut.
+- **Service targets:** hours to the first answer and to a solution, by priority. Unanswered tickets are marked late and the team is told; tickets waiting on the customer are solved and later closed automatically.
+- **Who answers:** the new `support.respond` permission, given to the support and billing roles.
+- **Defenses against prompt injection, in four layers:**
+- **Data is marked as data.** Every tool result reaches the model between markers carrying a random value per run, which a document can't fake or close. Every charter says nothing inside them is an instruction, and that such text is described, never passed on word for word (no images, links or code copied from data).
+- **What the agent never shares:** its instructions and setup, anything about other workspaces, other people's chats or Syruss staff, secrets, internal IDs. It doesn't assess the platform's security, list its weak points, or help probe it, whoever asks: security questions go to Syruss support.
+- **A server-side guard on everything the agent says to people** (chat replies, flags, the conversations it opens and closes):
+- a reply that repeats its instructions is refused;
+- keys, tokens, private keys, connection strings, internal IDs and images are cut out;
+- each catch is written to the workspace's activity, as the kinds removed, never the text.
+- **The chat never loads images from agent text** (the description is shown instead), and links to other sites show which site.
+- **Injection tests:**
+- `python -m agentic_framework.redteam` attacks the real model with seven cases: asking for its instructions, claiming authority, probing security, asking for other people's data, and documents that try to command it, smuggle data out through an image, or carry a secret.
+- It runs from `.github/workflows/agent-redteam.yml` on pull requests that change the agent, weekly and by hand, once the `GEMINI_API_KEY` secret is set.
+- **Sign-in settings are managed inside Syruss.** Settings → Account and security shows:
+- whether you have a password and when it last changed;
+- your authenticator apps, and whether two-step verification is on;
+- whether Google is linked.
+- Changing the password, setting up two-step verification or removing an authenticator opens one Syruss-styled sign-in step (a Keycloak Application Initiated Action) that comes straight back with a confirmation. Keycloak's own account pages are turned off (`harden.py`).
+- **Every button on the sign-in pages shows that it's working** ("Signing in…", "Creating your account…") and can't be pressed twice.
+- **Clearer bank transfer slip form:** a drop area with a "Choose files" button, the chosen files listed and removable, and the "Transfer reference" explained.
+- **A card payment Stripe finished while its webhook never arrived is no longer lost.** Paying again, or opening the invoice, checks the open checkout with Stripe and records the payment, instead of reopening Stripe's finished page. An expired checkout is replaced by a new one.
+- **Containers are hardened.**
+- The server and the agent are now two-stage images with no compilers or curl, and run as an unprivileged user.
+- MinIO drops to its own user after taking ownership of its data.
+- Every base image is pinned by digest, and the web apps install exactly what their lockfiles list.
+- **In the production and test compose files:**
+- No container keeps Linux capabilities except the few the database images need to switch user, and none can gain privileges.
+- Process counts are limited.
+- Syruss's own services run with read-only filesystems.
+- The network is split so the web apps can't reach the databases, and the databases, Kafka and object storage have no internet access.
+- **Scanning and updates:**
+- A container scan (Trivy) runs on pull requests that change images and every week, and fails on critical fixable vulnerabilities in Syruss's own images.
+- Dependabot keeps the pinned base images current.
+- The web apps' lockfiles had fallen out of step with their package.json (the old `npm ci || npm install` fallback hid it in builds and in CI). They are regenerated with the build image's npm (only where `picomatch` sits changed), and installs are strict everywhere now.
+- **Security fixes found by the new scan:**
+- Next.js 16.3.7 → 16.4.6 in all three web apps (two critical remote-code-execution flaws, GHSA-2464-fhr4-w9xw and GHSA-673q-mjm6-r5xr).
+- `follow-redirects` and `source-map-js` updated in www.
+- The running images no longer carry package managers (npm, yarn, corepack, pip) or the flaws bundled with them.
+- Keycloak 26.0 → 26.7 (an unauthenticated flaw in keycloak-services, plus Netty, FreeMarker and BouncyCastle).
+- Kafka 3.7 → 3.9.2 (Netty, libexpat).
+- **Sign-in:**
+- Keycloak's account page works again: its frame headers allow its own pages (SAMEORIGIN) instead of none, which had broken setting up two-step sign-in.
+- Customers can tick "Keep me signed in" for 30 days, so their password and one-time code aren't asked again until then. Staff still sign in with a code each time.
+- **The local development stack** (`bridge/docker-compose.yml`):
+- Answers on this machine only.
+- Drops Linux capabilities, runs MinIO as its own user, and pins every image.
+- Platform staff are added only from the terminal: `syruss staff add EMAIL --role ROLE`, or `python -m app.invite_staff` on a server.
+- For an address with no sign-in, it creates one in Keycloak, and Keycloak emails a link to choose a password and set up the one-time code. That link leads to the invitation.
+- The Keycloak admin login comes only from the command's own environment, so the running server gets no Keycloak access.
+- The admin app no longer invites or resends invitations: its Staff page shows the command, and owners can still withdraw invitations. Its sign-in page still creates no accounts.
+- Full-page loads (sign-in, signing in again, onboarding, the signed-out pages) use an absolute address in admin and www.
+- Staff sign-ins must include a one-time code: the server checks the token's amr claim, and `bridge/keycloak/harden.py` makes Keycloak report it. Staff sessions last at most 8 hours, and the admin app signs out after 30 minutes without use, with a warning first.
+- A second owner's approval for risky actions, which owners turn on and scope in Platform controls. It covers suspending organizations, disabling accounts, adding or removing owners, credit notes, refunds and voids, and prepaid pages, plan changes and early switch-on. A held action waits on the new Approvals page and is carried out as the person who asked once another owner approves. While the rule is on, turning it off needs approval too. The server can turn it off with `python -m app.approvals off`.
+- Customers control support access. Owners and admins are emailed and told in the app when Syruss support opens their content, and everyone in the organization sees a banner while it's open. Owners and admins can end it at any time, or stop support opening content at all, under Settings > Organization > Support access.
+- Unused staff access is taken away: after 60 days without using the admin app, with a warning 7 days before. Owners are reminded to confirm who still needs access every 90 days. Both are adjustable on the Staff page.
+- The system admin console: business figures (recurring revenue, paying and active organizations, churn) with 30-day trends, customers worth a look, one page per organization and per person, staff notes, platform controls (maintenance, kill switches for sign-ups, the agent and intake, announcements shown in the app), one search box, and a security view.
+- Staff join by an emailed invitation: anyone can be invited, no account needed. Role changes, removals and withdrawn invitations are emailed too.
+- Staff accounts are kept apart from customer accounts: they only open the admin app, can't create or join an organization, and organizations can't invite them. Accepting a staff invitation with an address that has a customer account first lists what it deletes (organizations it alone owns are closed, other memberships removed, the customer profile cleared) and needs a confirmation.
+- Signing in to the site or the main app with a staff account goes to the admin dashboard, whatever address it was going to.
+- The first platform owner is invited from the server: python -m app.invite_staff you@company.com. Platform lessons for the agent are approved in the admin app.
 
 ## [2026-11-14] - Release Candidate (test)
 

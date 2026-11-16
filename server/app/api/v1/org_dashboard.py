@@ -24,7 +24,7 @@ router = APIRouter(tags=["Organization"])
 ORG_EVENTS = (
     "ORG_ROLE_CHANGED", "ORG_MEMBER_REMOVED", "ORG_INVITATION_SENT", "ORG_INVITATION_REVOKED", "ORG_INVITATION_ACCEPTED",
     "ORG_RENAMED", "ORG_DELETED", "WORKSPACE_CREATED", "WORKSPACE_DELETED", "ORG_ADMIN_JOINED_WORKSPACE",
-    "PLATFORM_ACCESS_OPENED", "PLATFORM_ACCESS_ENDED", "PLATFORM_ACTION", "BILLING_REQUESTED", "BILLING_INVOICED",
+    "PLATFORM_ACCESS_OPENED", "PLATFORM_ACCESS_ENDED", "PLATFORM_ACTION", "SUPPORT_ACCESS_ALLOWED", "SUPPORT_ACCESS_STOPPED", "SUPPORT_ACCESS_ENDED", "BILLING_REQUESTED", "BILLING_INVOICED",
     "BILLING_DETAILS_CHANGED", "BILLING_PAYMENT_SENT", "BILLING_CARD_PAID", "BILLING_CARD_FORGOTTEN",
 )
 
@@ -58,6 +58,10 @@ def describe(event: str, who: str, d: Dict[str, Any], names: Dict[str, str]) -> 
         "PLATFORM_ACCESS_OPENED": lambda: f"{d.get('staff', 'Syruss support')} of Syruss support opened the organization's content "
                                           f"until {d.get('until', 'later')}, because: {d.get('reason', '')}",
         "PLATFORM_ACCESS_ENDED": lambda: f"{d.get('staff', 'Syruss support')} of Syruss support closed their access to the organization's content.",
+        "SUPPORT_ACCESS_ALLOWED": lambda: f"{who} allowed Syruss support to open the organization's content when it asks, for a reason and a while.",
+        "SUPPORT_ACCESS_STOPPED": lambda: f"{who} stopped Syruss support opening the organization's content"
+                                          + (" and ended the access that was open." if d.get("ended") else "."),
+        "SUPPORT_ACCESS_ENDED": lambda: f"{who} ended {d.get('staff', 'Syruss support')}'s access to the organization's content.",
         "PLATFORM_ACTION": lambda: f"{d.get('staff', 'Syruss support')} of Syruss support {d.get('text', 'acted on the organization')}, because: {d.get('reason', '')}",
     }.get(event, lambda: f"{who}: {event.replace('_', ' ').lower()}")()
 

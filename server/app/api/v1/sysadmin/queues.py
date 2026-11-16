@@ -22,6 +22,7 @@ from app.models.outbox import AgentEventOutbox as Event
 from app.models.trace import AgentExecutionTrace as Run
 from app.services import budget_service
 from app.services.agent_events import agent_event_relay
+from app.core.kafka_security import kafka_security
 
 try:
     from aiokafka import AIOKafkaConsumer, TopicPartition
@@ -41,8 +42,8 @@ async def consumer_lag() -> Dict[str, Any]:
     """How many agent events each partition holds that the agent service hasn't handled yet."""
     if AIOKafkaAdminClient is None:
         return {"status": "unknown", "detail": "aiokafka isn't installed"}
-    admin = AIOKafkaAdminClient(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, request_timeout_ms=4000)
-    consumer = AIOKafkaConsumer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, request_timeout_ms=4000)
+    admin = AIOKafkaAdminClient(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(), request_timeout_ms=4000)
+    consumer = AIOKafkaConsumer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, **kafka_security(), request_timeout_ms=4000)
     try:
         await asyncio.wait_for(admin.start(), 5)
         await asyncio.wait_for(consumer.start(), 5)
