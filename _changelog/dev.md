@@ -14,12 +14,32 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.22.1-dev.1` | 2026-11-16 | [What changed](#admin-0221-dev1) |
-| **agent** | `0.13.0-dev.1` | 2026-11-15 | [What changed](#agent-0130-dev1) |
-| **mail** | `0.9.0-dev.1` | 2026-11-16 | [What changed](#mail-090-dev1) |
-| **server** | `0.31.0-dev.1` | 2026-11-16 | [What changed](#server-0310-dev1) |
-| **site** | `0.2.9-dev.1` | 2026-11-16 | [What changed](#site-029-dev1) |
-| **www** | `0.20.0-dev.1` | 2026-11-16 | [What changed](#www-0200-dev1) |
+| **admin** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#admin-100-dev1) |
+| **agent** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#agent-100-dev1) |
+| **mail** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#mail-100-dev1) |
+| **server** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#server-100-dev1) |
+| **site** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#site-100-dev1) |
+| **www** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#www-100-dev1) |
+
+## [2026-11-16] - Release via dev
+
+### admin (1.0.0-dev.1)
+- First stable release: every service moves to 1.0.0.
+
+### agent (1.0.0-dev.1)
+- First stable release: every service moves to 1.0.0.
+
+### mail (1.0.0-dev.1)
+- First stable release: every service moves to 1.0.0.
+
+### server (1.0.0-dev.1)
+- First stable release: every service moves to 1.0.0.
+
+### site (1.0.0-dev.1)
+- First stable release: every service moves to 1.0.0.
+
+### www (1.0.0-dev.1)
+- First stable release: every service moves to 1.0.0.
 
 ## [2026-11-16] - Release via dev
 
