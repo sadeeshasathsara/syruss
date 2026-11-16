@@ -14,12 +14,52 @@
 
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
-| **admin** | `0.22.0-dev.1` | 2026-11-16 | [What changed](#admin-0220-dev1) |
+| **admin** | `0.22.1-dev.1` | 2026-11-16 | [What changed](#admin-0221-dev1) |
 | **agent** | `0.13.0-dev.1` | 2026-11-15 | [What changed](#agent-0130-dev1) |
-| **mail** | `0.8.0-dev.1` | 2026-11-15 | [What changed](#mail-080-dev1) |
-| **server** | `0.30.0-dev.1` | 2026-11-15 | [What changed](#server-0300-dev1) |
+| **mail** | `0.9.0-dev.1` | 2026-11-16 | [What changed](#mail-090-dev1) |
+| **server** | `0.31.0-dev.1` | 2026-11-16 | [What changed](#server-0310-dev1) |
 | **site** | `0.2.9-dev.1` | 2026-11-16 | [What changed](#site-029-dev1) |
-| **www** | `0.19.0-dev.1` | 2026-11-16 | [What changed](#www-0190-dev1) |
+| **www** | `0.20.0-dev.1` | 2026-11-16 | [What changed](#www-0200-dev1) |
+
+## [2026-11-16] - Release via dev
+
+### admin (0.22.1-dev.1)
+- **The key that passwords typed in the admin app are sealed to can't be swapped by someone writing to Kafka.** The mail service signs it; the server believes it only with the mail service's public key (`MAIL_SERVICE_PUBLIC_KEY`, from `python -m mail signer`). A real server now refuses to start without it.
+- **Adding a mail server on a real server only accepts public addresses** (not localhost, a private network, a link-local or cloud metadata address).
+- **A ticket by email can't be written into by a spoofed sender.** When the receiving mail server records no sender checks, only a message that answers one of ours continues a ticket; a number in the subject alone opens a separate ticket.
+- **New email channels get longer, unguessable addresses.**
+- Full findings and what was checked: `docs/SECURITY_AUDIT_2026-11.md`.
+
+### mail (0.9.0-dev.1)
+- **The key that passwords typed in the admin app are sealed to can't be swapped by someone writing to Kafka.** The mail service signs it; the server believes it only with the mail service's public key (`MAIL_SERVICE_PUBLIC_KEY`, from `python -m mail signer`). A real server now refuses to start without it.
+- **Adding a mail server on a real server only accepts public addresses** (not localhost, a private network, a link-local or cloud metadata address).
+- **A ticket by email can't be written into by a spoofed sender.** When the receiving mail server records no sender checks, only a message that answers one of ours continues a ticket; a number in the subject alone opens a separate ticket.
+- **New email channels get longer, unguessable addresses.**
+- Full findings and what was checked: `docs/SECURITY_AUDIT_2026-11.md`.
+
+### server (0.31.0-dev.1)
+- **Objects shows only the objects that have an identity** (an employee, a location): the people, places and things your documents name. Objects without one no longer crowd the list.
+- **An object's page now leads with "met so far"**, then its weekly figures and attributes, and ends with a table of its **records** in place of the document list: one row for each time a document read one of them, with the attributes it read. You can search it (names, values, document names), narrow it by date and by the attributes that have a few values (such as a location or a shift), and sort any column. Clicking a row opens the document it came from, and clicking a name opens that thing.
+- **A thing's page has the same table of its own rows** across documents, instead of the document list.
+- **On a document, the identity values are links.** An employee's id or name opens that employee's page, and a field that points to another object (an employee's location) opens that thing too, so you can move from a document to the things in it and on to their other documents.
+- **The record cards on a document now stand out from the page.** Each object sits on a raised card, as on the overview, instead of a thin outline on the same background.
+- **The key that passwords typed in the admin app are sealed to can't be swapped by someone writing to Kafka.** The mail service signs it; the server believes it only with the mail service's public key (`MAIL_SERVICE_PUBLIC_KEY`, from `python -m mail signer`). A real server now refuses to start without it.
+- **Adding a mail server on a real server only accepts public addresses** (not localhost, a private network, a link-local or cloud metadata address).
+- **A ticket by email can't be written into by a spoofed sender.** When the receiving mail server records no sender checks, only a message that answers one of ours continues a ticket; a number in the subject alone opens a separate ticket.
+- **New email channels get longer, unguessable addresses.**
+- Full findings and what was checked: `docs/SECURITY_AUDIT_2026-11.md`.
+
+### www (0.20.0-dev.1)
+- **Objects shows only the objects that have an identity** (an employee, a location): the people, places and things your documents name. Objects without one no longer crowd the list.
+- **An object's page now leads with "met so far"**, then its weekly figures and attributes, and ends with a table of its **records** in place of the document list: one row for each time a document read one of them, with the attributes it read. You can search it (names, values, document names), narrow it by date and by the attributes that have a few values (such as a location or a shift), and sort any column. Clicking a row opens the document it came from, and clicking a name opens that thing.
+- **A thing's page has the same table of its own rows** across documents, instead of the document list.
+- **On a document, the identity values are links.** An employee's id or name opens that employee's page, and a field that points to another object (an employee's location) opens that thing too, so you can move from a document to the things in it and on to their other documents.
+- **The record cards on a document now stand out from the page.** Each object sits on a raised card, as on the overview, instead of a thin outline on the same background.
+- **The key that passwords typed in the admin app are sealed to can't be swapped by someone writing to Kafka.** The mail service signs it; the server believes it only with the mail service's public key (`MAIL_SERVICE_PUBLIC_KEY`, from `python -m mail signer`). A real server now refuses to start without it.
+- **Adding a mail server on a real server only accepts public addresses** (not localhost, a private network, a link-local or cloud metadata address).
+- **A ticket by email can't be written into by a spoofed sender.** When the receiving mail server records no sender checks, only a message that answers one of ours continues a ticket; a number in the subject alone opens a separate ticket.
+- **New email channels get longer, unguessable addresses.**
+- Full findings and what was checked: `docs/SECURITY_AUDIT_2026-11.md`.
 
 ## [2026-11-16] - Release via dev
 
