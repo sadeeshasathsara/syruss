@@ -7,6 +7,8 @@ name = "syruss"
 version = "0.1.0"
 description = "Syruss Monorepo CLI and Developer Toolkit"
 readme = "README.md"
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = []
 
