@@ -128,3 +128,8 @@ desktop.ini
 # The testing dataset is kept out of the repository: put it at bridge/testing-dataset on your own machine
 # (bridge/e2e_live.py and the admin tools read it from there)
 /bridge/testing-dataset/
+
+# Prevent accidental literal tilde or unexpanded home paths
+~/
+~*
+AppData/
