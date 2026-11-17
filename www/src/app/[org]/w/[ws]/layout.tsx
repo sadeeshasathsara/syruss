@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, BookUser, Boxes, Cable, ClipboardCheck, FileText, Gauge, LayoutTemplate, MessagesSquare, ScrollText, Settings, Table2 } from "lucide-react";
+import { ArrowLeft, BookUser, Cable, ClipboardCheck, FileText, Gauge, LayoutTemplate, MessagesSquare, ScrollText, Settings, Table2 } from "lucide-react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -17,7 +17,7 @@ import { ErrorNote } from "@/components/ui/Blocks";
 import { ApiError, api } from "@/lib/api";
 import { useAccess } from "@/lib/access";
 import { LiveProvider } from "@/lib/live";
-import type { ObjectSummary, Permission, ScreenSummary, Workspace } from "@/lib/types";
+import type { Permission, ScreenSummary, Workspace } from "@/lib/types";
 import { WorkspaceProvider } from "@/lib/workspace";
 
 /** Pages a draft workspace can open; everything else waits for a published template. */
@@ -67,18 +67,8 @@ function connectionsItem(base: string, failing: number): NavItem {
   };
 }
 
-/** Objects: every object of the template has its own page (its attributes, figures, documents and things); each is a sub tab. */
-function objectsItem(base: string, objects: ObjectSummary[]): NavItem {
-  return {
-    href: `${base}/objects`, label: "Objects", icon: Boxes,
-    children: [
-      { href: `${base}/objects`, label: "All objects" },
-      ...objects.map((o) => ({ href: `${base}/objects/${encodeURIComponent(o.type)}`, label: o.type })),
-    ],
-  };
-}
 
-function navFor(org: string, w: Workspace, sees: (p?: Permission) => boolean, screens: ScreenSummary[], failing: number, objects: ObjectSummary[]): NavItem[] {
+function navFor(org: string, w: Workspace, sees: (p?: Permission) => boolean, screens: ScreenSummary[], failing: number): NavItem[] {
   const base = `/${org}/w/${w.slug}`;
   if (w.status === "draft") {
     return [...(sees("template.publish") ? [{ href: `${base}/setup`, label: "Design the template", icon: LayoutTemplate }] : []), settingsItem(base)];
@@ -98,7 +88,6 @@ function navFor(org: string, w: Workspace, sees: (p?: Permission) => boolean, sc
       { href: `${base}/review`, label: "To review", count: w.needs_review + w.open_questions },
       { href: `${base}/review?tab=history`, label: "Reviewed" },
     ] }],
-    ["documents.view", objectsItem(base, objects)],
     ["documents.view", screensItem(base, screens)],
     ["integrations.manage", connectionsItem(base, failing)],
     ["agent.chat", { href: `${base}/agent`, label: "Agent inbox", icon: MessagesSquare, count: (w.open_conversations ?? 0) + w.pending_proposals, children: [
@@ -152,12 +141,6 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     enabled: !!workspace.data?.id && workspace.data.status !== "draft",
   });
 
-  // The template's objects are sub tabs of Objects
-  const objects = useQuery({
-    queryKey: ["objects", workspace.data?.id],
-    queryFn: () => api.objects.list(workspace.data!.id),
-    enabled: !!workspace.data?.id && workspace.data.status !== "draft" && ready && sees("documents.view"),
-  });
 
   // Deliveries that could not be sent, for the badge on Connections: asked only of people who manage connections.
   const connections = useQuery({
@@ -237,7 +220,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
       <Brand href={`/${org}`} />
       <OrgSwitcher org={org} />
       <WorkspaceSwitcher org={org} current={w} />
-      <NavList label={w.name} items={navFor(org, w, sees, screens.data ?? [], connections.data?.failing ?? 0, objects.data ?? [])} />
+      <NavList label={w.name} items={navFor(org, w, sees, screens.data ?? [], connections.data?.failing ?? 0)} />
     </>
   );
 
