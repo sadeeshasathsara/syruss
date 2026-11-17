@@ -147,23 +147,18 @@ export function RecordsTable({ type, thing, title = "Records" }: { type: string;
   );
 }
 
-
 /**
- * Rows of a referencing object (e.g. DutyRow, AttendanceEntry) that link to this specific thing (e.g. Employee 68631).
+ * Unified flat table for a specific thing's profile page.
+ *
+ * Shows ONE merged table driven entirely by the workspace template:
+ *  - Own fields: the identity object's own attributes (employee_no, name, etc.)
+ *  - Referencing fields: every field from every object type that resolves_to this
+ *    identity object (attendance entries, duty rows, invoice lines, trip logs…)
+ *
+ * Column headers are grouped by source type (a thin label above each group).
+ * Works for ANY template domain — no hardcoding.
  */
-export function ReferencedRecordsTable({
-  objType,
-  thingId,
-  refType,
-  refField,
-  title,
-}: {
-  objType: string;
-  thingId: string;
-  refType: string;
-  refField: string;
-  title?: string;
-}) {
+export function ThingRecordsTable({ type, thingId, title = "Records" }: { type: string; thingId: string; title?: string }) {
   const { workspace, href } = useWorkspace();
   const router = useRouter();
   const [text, setText] = useState("");
@@ -178,9 +173,9 @@ export function ReferencedRecordsTable({
   }, [text]);
 
   const records = useQuery({
-    queryKey: ["referenced-records", workspace.id, objType, thingId, refType, refField, q, since, sort, page],
+    queryKey: ["thing-full-records", workspace.id, type, thingId, q, since, sort, page],
     queryFn: () =>
-      api.objects.referencedRecords(workspace.id, objType, thingId, refType, refField, {
+      api.objects.thingFullRecords(workspace.id, type, thingId, {
         q,
         sinceDays: since === "all" ? null : Number(since),
         sort: sort.by,
@@ -192,34 +187,44 @@ export function ReferencedRecordsTable({
 
   const filtered = !!q.trim() || since !== "all";
   const clear = () => { setText(""); setQ(""); setSince("all"); setPage(0); };
-  const sortBy = (by: string) => { setSort((s) => (s.by === by ? { by, dir: s.dir === "asc" ? "desc" : "asc" } : { by, dir: by === "seen" ? "desc" : "asc" })); setPage(0); };
+  const sortBy = (by: string) => {
+    setSort((s) => (s.by === by ? { by, dir: s.dir === "asc" ? "desc" : "asc" } : { by, dir: by === "seen" ? "desc" : "asc" }));
+    setPage(0);
+  };
   const d = records.data;
 
   const head = (by: string, label: React.ReactNode) => (
-    <th key={by} scope="col" aria-sort={sort.by === by ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} className="whitespace-nowrap px-3 py-2 text-left font-normal">
-      <button type="button" onClick={() => sortBy(by)} className="inline-flex items-center gap-1 text-meta text-muted hover:text-ink">
+    <th key={by} scope="col" aria-sort={sort.by === by ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+      className="whitespace-nowrap px-3 py-2 text-left font-normal">
+      <button type="button" onClick={() => sortBy(by)}
+        className="inline-flex items-center gap-1 text-meta text-muted hover:text-ink">
         {label}
         {sort.by === by && (sort.dir === "asc" ? <ArrowUp className="size-3.5" aria-hidden /> : <ArrowDown className="size-3.5" aria-hidden />)}
       </button>
     </th>
   );
 
+  // Group columns by source_type for the sub-header row
+  const cols = d?.columns ?? [];
+  const ownCols = cols.filter((c) => c.source === "own");
+  const refCols = cols.filter((c) => c.source === "referencing");
+
+  // Collect distinct referencing source types in order
+  const refTypes: string[] = [];
+  for (const c of refCols) {
+    if (c.source_type && !refTypes.includes(c.source_type)) refTypes.push(c.source_type);
+  }
+
+  const hasGroupHeaders = refTypes.length > 0;
+
   return (
-    <Panel
-      title={title ?? `${humanize(refType)} records`}
-      aside={d ? <span className="num">{d.total}</span> : undefined}
-      bodyClassName="flex flex-col gap-3"
-    >
+    <Panel title={title} aside={d ? <span className="num">{d.total}</span> : undefined} bodyClassName="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex h-9 min-w-48 flex-1 items-center gap-2 rounded-control border border-control bg-sheet px-2.5 focus-within:border-ink">
           <Search className="size-4 flex-none text-muted" aria-hidden />
-          <input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Search names, values and documents"
-            aria-label={`Search ${refType} records`}
-            className="min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-faint"
-          />
+          <input value={text} onChange={(e) => setText(e.target.value)}
+            placeholder="Search names, values and documents" aria-label="Search records"
+            className="min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-faint" />
         </label>
         <Select label="When" value={since} onChange={(v) => { setSince(v); setPage(0); }} options={SINCE} className="w-40" />
         {filtered && <Button variant="ghost" size="sm" onClick={clear}><X /> Clear</Button>}
@@ -231,46 +236,97 @@ export function ReferencedRecordsTable({
         <Bar className="h-48 w-full" />
       ) : d.items.length === 0 ? (
         <p className="py-6 text-center text-body text-muted">
-          {filtered ? "No record matches. Try fewer filters." : `No ${humanize(refType).toLowerCase()} records found for this ${humanize(objType).toLowerCase()}.`}
+          {filtered ? "No record matches. Try fewer filters." : "No records found in any document yet."}
         </p>
       ) : (
         <div className={cn("overflow-x-auto scrollbar-thin rounded-control border border-rule", records.isPlaceholderData && "opacity-60")}>
           <table className="w-full border-collapse text-body">
             <thead className="bg-raised">
+              {/* Group header row — only shown when referencing types exist */}
+              {hasGroupHeaders && (
+                <tr>
+                  {/* Received + Document span */}
+                  <th colSpan={2} className="px-3 py-1" />
+                  {/* Own fields group */}
+                  {ownCols.length > 0 && (
+                    <th colSpan={ownCols.length}
+                      className="border-l border-rule px-3 py-1 text-left text-[10px] uppercase tracking-wide text-muted">
+                      {humanize(type)}
+                    </th>
+                  )}
+                  {/* One group header per referencing type */}
+                  {refTypes.map((rt) => {
+                    const count = refCols.filter((c) => c.source_type === rt).length;
+                    return (
+                      <th key={rt} colSpan={count}
+                        className="border-l border-rule px-3 py-1 text-left text-[10px] uppercase tracking-wide text-muted">
+                        {humanize(rt)}
+                      </th>
+                    );
+                  })}
+                  {/* Status */}
+                  <th className="px-3 py-1" />
+                </tr>
+              )}
+
+              {/* Column header row */}
               <tr>
                 {head("seen", "Received")}
                 {head("doc", "Document")}
-                {d.columns.map((c) => head(`f:${c.name}`, humanize(c.name)))}
+                {ownCols.map((c) => (
+                  <th key={c.name} scope="col"
+                    className={cn("whitespace-nowrap px-3 py-2 text-left font-normal", hasGroupHeaders && "border-l border-rule first-of-type:border-l-0 [&:first-of-type]:border-l")}>
+                    <button type="button" onClick={() => sortBy(`f:${c.name}`)}
+                      className="inline-flex items-center gap-1 text-meta text-muted hover:text-ink">
+                      {humanize(c.name)}
+                      {sort.by === `f:${c.name}` && (sort.dir === "asc" ? <ArrowUp className="size-3.5" aria-hidden /> : <ArrowDown className="size-3.5" aria-hidden />)}
+                    </button>
+                  </th>
+                ))}
+                {refCols.map((c, i) => {
+                  const prevType = i > 0 ? refCols[i - 1].source_type : null;
+                  const isFirstOfType = c.source_type !== prevType;
+                  return (
+                    <th key={c.name} scope="col"
+                      className={cn("whitespace-nowrap px-3 py-2 text-left font-normal", hasGroupHeaders && isFirstOfType && "border-l border-rule")}>
+                      <button type="button" onClick={() => sortBy(`f:${c.name}`)}
+                        className="inline-flex items-center gap-1 text-meta text-muted hover:text-ink">
+                        {humanize(c.name.includes(".") ? c.name.split(".").pop()! : c.name)}
+                        {sort.by === `f:${c.name}` && (sort.dir === "asc" ? <ArrowUp className="size-3.5" aria-hidden /> : <ArrowDown className="size-3.5" aria-hidden />)}
+                      </button>
+                    </th>
+                  );
+                })}
                 <th scope="col" className="px-3 py-2 text-left text-meta font-normal text-muted">Status</th>
               </tr>
             </thead>
             <tbody>
               {d.items.map((r) => (
-                <tr
-                  key={r.id}
+                <tr key={r.id}
                   onClick={() => router.push(href(`documents/${r.document_id}`))}
-                  className="cursor-pointer border-t border-rule align-top hover:bg-raised"
-                >
+                  className="cursor-pointer border-t border-rule align-top hover:bg-raised">
                   <td className="whitespace-nowrap px-3 py-2 text-muted" title={dateTime(r.seen_at)}>{ago(r.seen_at)}</td>
                   <td className="max-w-64 px-3 py-2">
-                    <Link
-                      href={href(`documents/${r.document_id}`)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="block truncate text-ink underline-offset-2 hover:underline"
-                      title={r.file_name}
-                    >
+                    <Link href={href(`documents/${r.document_id}`)} onClick={(e) => e.stopPropagation()}
+                      className="block truncate text-ink underline-offset-2 hover:underline" title={r.file_name}>
                       {r.document_name}
                     </Link>
                   </td>
-                  {d.columns.map((c) => (
+                  {ownCols.map((c) => (
                     <td key={c.name} className="max-w-56 px-3 py-2 text-ink [overflow-wrap:anywhere]">
-                      {r.values[c.name] == null || r.values[c.name] === "" ? (
-                        <span className="text-faint">—</span>
-                      ) : (
-                        display(r.values[c.name])
-                      )}
+                      {r.values[c.name] == null || r.values[c.name] === "" ? <span className="text-faint">—</span> : display(r.values[c.name])}
                     </td>
                   ))}
+                  {refCols.map((c, i) => {
+                    const prevType = i > 0 ? refCols[i - 1].source_type : null;
+                    const isFirstOfType = c.source_type !== prevType;
+                    return (
+                      <td key={c.name}
+                        className={cn("max-w-56 px-3 py-2 text-ink [overflow-wrap:anywhere]", hasGroupHeaders && isFirstOfType && "border-l border-rule")}>
+                        {r.values[c.name] == null || r.values[c.name] === "" ? <span className="text-faint">—</span> : display(r.values[c.name])}
+                      </td>
+                    );
+                  })}
                   <td className="px-3 py-2"><StatusPill status={r.status} /></td>
                 </tr>
               ))}

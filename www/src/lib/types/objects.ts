@@ -115,6 +115,10 @@ export interface RecordColumn {
   connected_type?: string;
   /** Whether this is the display label column of the connected object */
   connected_label?: boolean;
+  /** For unified thing records: "own" = the identity object's field, "referencing" = from a linked object */
+  source?: "own" | "referencing";
+  /** The object type this column's data comes from (own type or referencing type) */
+  source_type?: string;
 }
 
 /** The records table: rows of an object (or of one thing) across documents, and the filters it can offer. */

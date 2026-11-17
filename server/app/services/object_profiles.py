@@ -256,6 +256,196 @@ async def thing_profile(db: AsyncSession, template: DocumentTemplate, obj_type: 
     }
 
 
+
+async def thing_full_records(
+    db: AsyncSession, template: DocumentTemplate, obj_type: str, thing_raw_id: str, *,
+    q: str = "", since_days: Optional[int] = None,
+    sort: str = "seen", direction: str = "desc", page: int = 0,
+) -> Dict[str, Any]:
+    """
+    One unified flat table of everything a template knows about a specific thing.
+
+    For every document that mentions this thing, the rows of *every* object type
+    whose field resolves_to this object type (attendance entries, duty rows, invoice
+    lines, trip logs — whatever the template defines) are returned as individual
+    rows.  All fields from all referencing types are merged into one flat column
+    set (cells are empty when a row comes from a different referencing type).
+
+    The thing's own identity fields are also included as columns (they repeat on
+    every row, but that makes the table self-contained and sortable).
+
+    Generalised: works for any template domain — rosters, invoices, logistics, HR.
+    The template schema is the only configuration source.
+    """
+    spec = _object(template, obj_type)
+    if not spec.get("identity"):
+        raise HTTPException(status_code=400, detail={
+            "code": "no_identity",
+            "message": f'"{obj_type}" has no identity so it has no thing profiles.',
+        })
+
+    key = thing_key(obj_type, thing_raw_id)
+    if not key:
+        raise HTTPException(status_code=404, detail={"code": "no_such_thing", "message": "No such thing."})
+    nid     = thing_id(key)
+    norm_nid = normalize_id(nid)
+
+    # ── Discover referencing types from the template ────────────────────────
+    # A referencing type is any object (with or without identity) that has at
+    # least one field whose resolves_to == obj_type.
+    all_objects = _objects(template)
+    ref_types: List[Dict[str, Any]] = []          # [{type, field, fields_spec}]
+    for t_name, t_spec in all_objects.items():
+        if t_name == obj_type:
+            continue
+        for fname, fspec in t_spec.get("fields", {}).items():
+            if fspec.get("resolves_to") == obj_type:
+                ref_types.append({"type": t_name, "field": fname, "fields": t_spec["fields"]})
+                break  # one entry per referencing type (even if multiple link fields)
+
+    # ── Build column list ───────────────────────────────────────────────────
+    # Own identity fields first, then referencing-type fields (excluding the
+    # link field that always equals this thing's id).
+    own_ident = spec.get("identity", {})
+    own_id_field    = own_ident.get("id_field", "")
+    own_label_field = own_ident.get("label_field", "")
+    own_field_names = [own_id_field, own_label_field] + [
+        n for n in spec.get("fields", {}) if n not in (own_id_field, own_label_field)
+    ]
+
+    columns: List[Dict[str, Any]] = []
+    for n in own_field_names:
+        if not n:
+            continue
+        fspec = spec.get("fields", {}).get(n, {})
+        columns.append({
+            "name": n,
+            "type": fspec.get("type") or "string",
+            "identity": n in (own_id_field, own_label_field),
+            "source": "own",
+            "source_type": obj_type,
+        })
+    for rt in ref_types:
+        for n, fspec in rt["fields"].items():
+            if n == rt["field"]:
+                continue          # skip the back-link field (always = this thing's id)
+            # Avoid duplicate column names across referencing types
+            if any(c["name"] == n for c in columns):
+                col_name = f"{rt['type']}.{n}"
+            else:
+                col_name = n
+            columns.append({
+                "name": col_name,
+                "type": fspec.get("type") or "string",
+                "identity": False,
+                "source": "referencing",
+                "source_type": rt["type"],
+            })
+
+    # ── Fetch documents that mention this thing ─────────────────────────────
+    matching_doc_ids_sq = select(RecordObject.document_id).where(
+        RecordObject.template_id == template.id,
+        RecordObject.thing_key   == key,
+    )
+    doc_where = [
+        Document.template_id == template.id,
+        Document.id.in_(matching_doc_ids_sq),
+    ]
+    if since_days in SINCE_DAYS:
+        doc_where.append(
+            Document.created_at >= datetime.now(timezone.utc) - timedelta(days=since_days)
+        )
+
+    doc_rows = (await db.execute(
+        select(Document.id, Document.original_filename, Document.identified_key,
+               Document.status, Document.created_at, ExtractionResult.extracted_data)
+        .join(ExtractionResult, ExtractionResult.document_id == Document.id)
+        .where(*doc_where)
+    )).all()
+
+    # ── Build rows ──────────────────────────────────────────────────────────
+    text_q = q.strip().lower()[:120]
+
+    def _own_row(data: Dict) -> Dict:
+        """The thing's own attribute values from the extracted data."""
+        for row in rows_of(data, obj_type):
+            id_val = row.get(own_id_field)
+            if id_val is not None and normalize_id(id_val) == norm_nid:
+                return dict(row)
+        return {}
+
+    matched_items: List[Dict[str, Any]] = []
+
+    for doc_id, filename, ikey, status, created_at, data in doc_rows:
+        doc_name   = ikey or filename
+        status_str = status.value if hasattr(status, "value") else str(status)
+        own_vals   = _own_row(data or {})
+
+        # Collect rows from every referencing type
+        ref_rows: List[Dict[str, Any]] = []
+        for rt in ref_types:
+            for ref_row in rows_of(data or {}, rt["type"]):
+                ref_val = ref_row.get(rt["field"])
+                if ref_val is None or normalize_id(ref_val) != norm_nid:
+                    continue
+                # Remap duplicate column names (prefix with type name)
+                remapped: Dict[str, Any] = {}
+                for col in columns:
+                    if col["source"] == "referencing" and col["source_type"] == rt["type"]:
+                        # Reverse the col_name mangling: strip "Type." prefix if present
+                        orig_field = col["name"].split(".", 1)[-1] if "." in col["name"] else col["name"]
+                        remapped[col["name"]] = ref_row.get(orig_field)
+                ref_rows.append(remapped)
+
+        if not ref_rows:
+            # Document mentions this thing but has no referencing rows — emit
+            # one row with own values and empty referencing fields.
+            ref_rows = [{}]
+
+        for ridx, ref_vals in enumerate(ref_rows):
+            merged: Dict[str, Any] = {**own_vals, **ref_vals}
+
+            # Text search
+            if text_q:
+                haystack = " ".join(str(v) for v in merged.values() if v is not None).lower()
+                haystack += f" {doc_name} {filename}".lower()
+                if text_q not in haystack:
+                    continue
+
+            matched_items.append({
+                "id"            : f"{doc_id}_{ridx}",
+                "document_id"   : doc_id,
+                "document_name" : doc_name,
+                "file_name"     : filename,
+                "status"        : status_str,
+                "seen_at"       : created_at,
+                "thing"         : None,
+                "values"        : merged,
+            })
+
+    # ── Sort ────────────────────────────────────────────────────────────────
+    rev = direction == "desc"
+    _epoch = datetime.min.replace(tzinfo=timezone.utc)
+    if sort == "seen":
+        matched_items.sort(key=lambda x: x["seen_at"] or _epoch, reverse=rev)
+    elif sort == "doc":
+        matched_items.sort(key=lambda x: (x["document_name"] or "").lower(), reverse=rev)
+    elif sort.startswith("f:"):
+        field = sort[2:]
+        matched_items.sort(key=lambda x: str(x["values"].get(field) or "").lower(), reverse=rev)
+
+    total       = len(matched_items)
+    paged_items = matched_items[page * RECORD_PAGE : (page + 1) * RECORD_PAGE]
+
+    return {
+        "columns"  : columns,
+        "items"    : paged_items,
+        "total"    : total,
+        "page"     : page,
+        "page_size": RECORD_PAGE,
+        "facets"   : [],
+    }
+
 async def referenced_records(db: AsyncSession, template: DocumentTemplate, obj_type: str, thing_raw_id: str,
                              ref_type: str, ref_field: str, *, q: str = "", since_days: Optional[int] = None,
                              sort: str = "seen", direction: str = "desc", page: int = 0) -> Dict[str, Any]:
