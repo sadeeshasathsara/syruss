@@ -58,6 +58,27 @@ const resolvedVersion = getAppVersion();
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  experimental: {
+    // Tree-shake large packages so only the icons/components actually imported are
+    // included in each page's compile graph. Cuts first-load compile time noticeably
+    // for pages that use Lucide icons or Radix UI primitives.
+    optimizePackageImports: [
+      "lucide-react",
+      "recharts",
+      "@radix-ui/react-avatar",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-dropdown-menu",
+      "@radix-ui/react-progress",
+      "@radix-ui/react-scroll-area",
+      "@radix-ui/react-select",
+      "@radix-ui/react-separator",
+      "@radix-ui/react-slot",
+      "@radix-ui/react-tabs",
+      "@radix-ui/react-tooltip",
+      "@assistant-ui/react",
+      "@assistant-ui/react-markdown",
+    ],
+  },
   env: {
     ...(resolvedVersion ? { NEXT_PUBLIC_APP_VERSION: resolvedVersion } : {}),
   },
