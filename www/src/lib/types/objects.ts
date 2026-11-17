@@ -108,6 +108,12 @@ export interface RecordColumn {
   type: string;
   /** Part of what names the thing (its id or name field) */
   identity: boolean;
+  /** Whether this column belongs to a connected (resolved) object type */
+  connected?: boolean;
+  /** The object type this column comes from (only set when connected=true) */
+  connected_type?: string;
+  /** Whether this is the display label column of the connected object */
+  connected_label?: boolean;
 }
 
 /** The records table: rows of an object (or of one thing) across documents, and the filters it can offer. */

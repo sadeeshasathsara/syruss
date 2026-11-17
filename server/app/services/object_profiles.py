@@ -259,6 +259,9 @@ async def records(db: AsyncSession, template: DocumentTemplate, obj_type: str, *
     The rows of an object with an identity as the documents read them: one for each (document, thing) with the thing's attributes in
     that document. For the whole object, or for one `thing`. Searched (its name, id, attributes and document), narrowed by a date and by
     values of its attributes, and sorted. `facets` (first page only) offers the attributes that have a few different values as filters.
+
+    When viewing one thing's records, also enriches each row with the attributes of connected objects (fields with
+    `resolves_to`) from the same document, keyed as ``connected.<LinkedObjectType>.<field>``.
     """
     spec = _object(template, obj_type)
     if not spec["identity"]:
@@ -295,7 +298,68 @@ async def records(db: AsyncSession, template: DocumentTemplate, obj_type: str, *
     items = [{"id": r.id, "document_id": d.id, "document_name": d.identified_key or d.original_filename, "file_name": d.original_filename,
               "status": d.status.value if hasattr(d.status, "value") else str(d.status), "seen_at": r.seen_at,
               "thing": {"key": r.thing_key, "id": thing_id(r.thing_key), "label": r.label or thing_id(r.thing_key), "path": thing_path(obj_type, r.thing_key)}
-              if r.thing_key else None, "values": r.values or {}} for r, d in rows]
+              if r.thing_key else None, "values": dict(r.values or {})} for r, d in rows]
+
+    # --- Connected-object enrichment (only when viewing one thing's records) ----------------------------
+    # For each field that resolves_to another object type, look up co-document RecordObject rows of that
+    # linked type whose thing_key matches the value in the row, and merge their attributes into `values`
+    # as "connected.<LinkedType>.<field>" keys.  Also surface those fields as extra columns.
+    all_objects = _objects(template)
+    linked_fields: Dict[str, str] = {name: f["resolves_to"] for name, f in spec["fields"].items() if f.get("resolves_to")}
+    connected_columns: List[Dict[str, Any]] = []
+    if thing and linked_fields and items:
+        doc_ids = list({item["document_id"] for item in items})
+        for field_name, linked_type in linked_fields.items():
+            linked_spec = all_objects.get(linked_type)
+            if linked_spec is None or not linked_spec.get("identity"):
+                continue
+            # Fetch ALL RecordObject rows for the linked type in those docs (rows>0 = has own data,
+            # rows=0 = only referenced).  Prefer rows>0 entries so we get attribute values, but
+            # fall back to rows=0 entries which still carry the label.
+            linked_rows = (await db.execute(
+                select(RecordObject.document_id, RecordObject.thing_key, RecordObject.label, RecordObject.values, RecordObject.rows)
+                .where(RecordObject.template_id == template.id, RecordObject.object_type == linked_type,
+                       RecordObject.document_id.in_(doc_ids))
+            )).all()
+            # Index: prefer the row with actual data (rows>0) when both exist
+            linked_index: Dict[tuple, tuple] = {}
+            for lr in linked_rows:
+                k = (lr.document_id, lr.thing_key)
+                existing = linked_index.get(k)
+                if existing is None or (lr.rows > 0 and existing[2] == 0):
+                    linked_index[k] = (lr.label, lr.values or {}, lr.rows)
+            linked_fields_spec = linked_spec["fields"]
+            linked_identity = linked_spec.get("identity") or {}
+            id_field = linked_identity.get("id_field")
+            label_field = linked_identity.get("label_field")
+            # Label column for the connected object
+            col_key_label = f"connected.{linked_type}.__label__"
+            if not any(c["name"] == col_key_label for c in connected_columns):
+                connected_columns.append({"name": col_key_label, "type": "string", "identity": False,
+                                          "connected": True, "connected_type": linked_type, "connected_label": True})
+            for lf_name, lf in linked_fields_spec.items():
+                if lf_name in (id_field, label_field):
+                    continue
+                col_key = f"connected.{linked_type}.{lf_name}"
+                if not any(c["name"] == col_key for c in connected_columns):
+                    connected_columns.append({"name": col_key, "type": lf.get("type") or "string",
+                                              "identity": False, "connected": True, "connected_type": linked_type})
+            for item in items:
+                raw_id_val = (item["values"] or {}).get(field_name)
+                if raw_id_val is None:
+                    continue
+                linked_key = thing_key(linked_type, str(raw_id_val))
+                match = linked_index.get((item["document_id"], linked_key))
+                if match:
+                    link_label, link_values, _link_rows = match
+                    item["values"][col_key_label] = link_label or thing_id(linked_key)
+                    for lf_name in linked_fields_spec:
+                        if lf_name in (id_field, label_field):
+                            continue
+                        val = link_values.get(lf_name)
+                        if val is not None:
+                            item["values"][f"connected.{linked_type}.{lf_name}"] = val
+    # --------------------------------------------------------------------------------------------------------
 
     facets: List[Dict[str, Any]] = []
     if page == 0:
@@ -306,8 +370,10 @@ async def records(db: AsyncSession, template: DocumentTemplate, obj_type: str, *
             counts = Counter(str(v)[:80] for v in ((s or {}).get(name) for s in sample) if v not in (None, "") and not isinstance(v, (dict, list)))
             if 2 <= len(counts) <= FACET_MAX:
                 facets.append({"field": name, "values": [{"value": v, "count": n} for v, n in counts.most_common()]})
-    return {"columns": [{"name": n, "type": spec["fields"][n].get("type") or "string",
-                         "identity": n in (spec["identity"].get("id_field"), spec["identity"].get("label_field"))} for n in fields],
+    own_columns = [{"name": n, "type": spec["fields"][n].get("type") or "string",
+                    "identity": n in (spec["identity"].get("id_field"), spec["identity"].get("label_field"))}
+                   for n in fields]
+    return {"columns": own_columns + connected_columns,
             "items": items, "total": int(total), "page": page, "page_size": RECORD_PAGE, "facets": facets}
 
 

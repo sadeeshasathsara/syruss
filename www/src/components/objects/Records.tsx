@@ -20,7 +20,7 @@ const SINCE = [
 
 /**
  * The rows of an object (or of one thing) as the documents read them, in a table you can search, filter and sort. A row opens the
- * document it came from; a name opens the thing.
+ * document it came from; a name opens the thing. When viewing one thing's records, connected object attributes are also shown.
  */
 export function RecordsTable({ type, thing, title = "Records" }: { type: string; thing?: string; title?: string }) {
   const { workspace, href } = useWorkspace();
@@ -60,6 +60,10 @@ export function RecordsTable({ type, thing, title = "Records" }: { type: string;
     </th>
   );
 
+  // Split columns into own and connected
+  const ownCols = d?.columns.filter((c) => !c.connected) ?? [];
+  const connectedCols = d?.columns.filter((c) => c.connected) ?? [];
+
   return (
     <Panel title={title} aside={d ? <span className="num">{d.total}</span> : undefined} bodyClassName="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -89,7 +93,15 @@ export function RecordsTable({ type, thing, title = "Records" }: { type: string;
                   {head("seen", "Received")}
                   {head("doc", "Document")}
                   {!thing && head("label", "Name")}
-                  {d.columns.filter((c) => thing || !c.identity).map((c) => head(`f:${c.name}`, humanize(c.name)))}
+                  {ownCols.filter((c) => thing || !c.identity).map((c) => head(`f:${c.name}`, humanize(c.name)))}
+                  {connectedCols.map((c) => (
+                    <th key={c.name} scope="col" className="whitespace-nowrap px-3 py-2 text-left font-normal">
+                      <span className="flex flex-col gap-0.5">
+                        <span className="text-[10px] uppercase tracking-wide text-muted leading-none">{c.connected_type}</span>
+                        <span className="text-meta text-muted">{c.connected_label ? "Name" : humanize(c.name.split(".").pop()!)}</span>
+                      </span>
+                    </th>
+                  ))}
                   <th scope="col" className="px-3 py-2 text-left text-meta font-normal text-muted">Status</th>
                 </tr>
               </thead>
@@ -106,8 +118,13 @@ export function RecordsTable({ type, thing, title = "Records" }: { type: string;
                         {r.thing ? <Link href={href(r.thing.path)} onClick={(e) => e.stopPropagation()} className="block truncate font-medium text-ink underline-offset-2 hover:underline">{r.thing.label}</Link> : "—"}
                       </td>
                     )}
-                    {d.columns.filter((c) => thing || !c.identity).map((c) => (
+                    {ownCols.filter((c) => thing || !c.identity).map((c) => (
                       <td key={c.name} className="max-w-56 px-3 py-2 text-ink [overflow-wrap:anywhere]">{r.values[c.name] == null || r.values[c.name] === "" ? <span className="text-faint">—</span> : display(r.values[c.name])}</td>
+                    ))}
+                    {connectedCols.map((c) => (
+                      <td key={c.name} className="max-w-56 px-3 py-2 text-muted [overflow-wrap:anywhere]">
+                        {r.values[c.name] == null || r.values[c.name] === "" ? <span className="text-faint">—</span> : display(r.values[c.name])}
+                      </td>
                     ))}
                     <td className="px-3 py-2"><StatusPill status={r.status} /></td>
                   </tr>
