@@ -14,13 +14,15 @@ def get_chat_model(purpose: str = "work") -> BaseChatModel:
     name = model_name(purpose)
     temperature = settings.ANALYTICS_TEMPERATURE if purpose == "analytics" else settings.LLM_TEMPERATURE
     if provider in ("gemini", "google"):
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        api_key = settings.GEMINI_API_KEY or settings.GOOGLE_API_KEY
-        if not api_key:
-            raise RuntimeError("GEMINI_API_KEY (or GOOGLE_API_KEY) is not set for the agent service.")
-        return ChatGoogleGenerativeAI(
-            model=name, google_api_key=api_key,
-            temperature=temperature, max_retries=3,
+        from agentic_framework.gemini_keys import create_chat_gemini, get_gemini_key_pool
+        pool = get_gemini_key_pool()
+        if not pool or not pool.keys:
+            raise RuntimeError("GEMINI_API_KEY (or GOOGLE_API_KEY / GEMINI_API_KEYS) is not set for the agent service.")
+        return create_chat_gemini(
+            model=name,
+            temperature=temperature,
+            pool=pool,
+            max_retries=3,
         )
     if provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
