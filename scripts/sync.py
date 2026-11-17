@@ -1,24 +1,43 @@
 #!/usr/bin/env python3
 """
 Syruss Monorepo Dependency Synchronization Tool.
-Installs dependencies across all Python and Node.js projects.
+Installs dependencies simultaneously in parallel across all Python and Node.js projects.
 Automatically provisions a root .venv if one does not exist,
 using uv if available or standard pip/venv.
 """
 
 import argparse
+import concurrent.futures
 import os
 import shutil
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from scripts.registry import REPO_ROOT, SERVICES, get_service_names
 
 NODE_SERVICES = ["admin", "site", "www"]
 PYTHON_SERVICES = ["server", "agent", "mail"]
+
+
+@dataclass
+class SyncTask:
+    name: str
+    category: str           # "Python" or "Node"
+    cmd: List[str]
+    cwd: Path
+    shell: bool = False
+
+
+@dataclass
+class TaskResult:
+    task: SyncTask
+    returncode: int
+    elapsed: float
+    output: str
 
 
 def get_venv_dir() -> Path:
@@ -28,10 +47,8 @@ def get_venv_dir() -> Path:
 def get_venv_python() -> Path:
     venv = get_venv_dir()
     if sys.platform == "win32":
-        candidate = venv / "Scripts" / "python.exe"
-    else:
-        candidate = venv / "bin" / "python"
-    return candidate
+        return venv / "Scripts" / "python.exe"
+    return venv / "bin" / "python"
 
 
 def is_uv_available() -> bool:
@@ -68,12 +85,11 @@ def ensure_virtualenv(force_pip: bool = False) -> Path:
     return venv_py
 
 
-def sync_python(service: Optional[str] = None, force_pip: bool = False, dry_run: bool = False) -> int:
-    """Installs Python dependencies using uv (if available) or pip."""
-    venv_py = get_venv_python() if dry_run else ensure_virtualenv(force_pip)
+def build_python_tasks(service: Optional[str] = None, force_pip: bool = False) -> List[SyncTask]:
+    """Prepares Python sync task(s)."""
+    venv_py = get_venv_python()
     use_uv = is_uv_available() and not force_pip
 
-    # Determine target requirements files
     if service:
         if service == "server":
             req_file = REPO_ROOT / "server" / "requirements.txt"
@@ -87,79 +103,137 @@ def sync_python(service: Optional[str] = None, force_pip: bool = False, dry_run:
     else:
         targets = [REPO_ROOT / "requirements.txt"]
 
-    print(f"\n[SYNC: PYTHON] Using {'uv pip' if use_uv else 'pip'} (venv: {venv_py})")
+    tasks: List[SyncTask] = []
     for req in targets:
         if not req.exists():
-            print(f"[ERROR] Requirements file not found: {req}")
-            return 1
-
-        rel_path = req.relative_to(REPO_ROOT)
-        print(f"  * Installing dependencies from {rel_path}...")
-
+            continue
+        rel = req.relative_to(REPO_ROOT)
+        name = f"python ({rel})"
         if use_uv:
             cmd = ["uv", "pip", "install", "-r", str(req), "--python", str(venv_py)]
         else:
             cmd = [str(venv_py), "-m", "pip", "install", "-r", str(req)]
+        tasks.append(SyncTask(name=name, category="Python", cmd=cmd, cwd=REPO_ROOT, shell=False))
 
-        if dry_run:
-            print(f"    [DRY-RUN] Would execute: {' '.join(cmd)}")
-            continue
+    return tasks
 
-        t0 = time.perf_counter()
-        res = subprocess.run(cmd, cwd=REPO_ROOT)
-        if res.returncode != 0:
-            print(f"[ERROR] Failed to install Python dependencies from {rel_path}")
-            return res.returncode
 
-        # If installing root requirements with uv, also install -e . (editable syruss CLI)
-        if req == REPO_ROOT / "requirements.txt":
-            print("  * Installing syruss monorepo CLI in editable mode...")
-            if use_uv:
-                e_cmd = ["uv", "pip", "install", "-e", ".", "--python", str(venv_py)]
+def build_node_tasks(service: Optional[str] = None) -> List[SyncTask]:
+    """Prepares Node.js npm sync tasks for frontends."""
+    npm_path = shutil.which("npm")
+    if not npm_path:
+        return []
+
+    targets = [service] if service else NODE_SERVICES
+    tasks: List[SyncTask] = []
+    for svc in targets:
+        svc_dir = REPO_ROOT / svc
+        if (svc_dir / "package.json").exists():
+            cmd = [npm_path, "install"]
+            tasks.append(SyncTask(
+                name=f"node ({svc})",
+                category="Node",
+                cmd=cmd,
+                cwd=svc_dir,
+                shell=(sys.platform == "win32"),
+            ))
+    return tasks
+
+
+def execute_task(task: SyncTask, dry_run: bool = False) -> TaskResult:
+    """Executes a single sync task and captures its timing and output."""
+    if dry_run:
+        return TaskResult(
+            task=task,
+            returncode=0,
+            elapsed=0.0,
+            output=f"[DRY-RUN] Would run: {' '.join(task.cmd)} in {task.cwd}",
+        )
+
+    t0 = time.perf_counter()
+    proc = subprocess.run(
+        task.cmd,
+        cwd=task.cwd,
+        shell=task.shell,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    elapsed = time.perf_counter() - t0
+    return TaskResult(
+        task=task,
+        returncode=proc.returncode,
+        elapsed=elapsed,
+        output=proc.stdout or "",
+    )
+
+
+def run_tasks_parallel(tasks: List[SyncTask], dry_run: bool = False) -> int:
+    """Executes all tasks simultaneously in parallel with live status reporting."""
+    if not tasks:
+        print("[INFO] No tasks to execute.")
+        return 0
+
+    print(f"\n[PARALLEL SYNC] Running {len(tasks)} tasks simultaneously:")
+    for t in tasks:
+        print(f"  * [START] {t.name:<18} -> {' '.join(t.cmd[:4])}...")
+
+    t0 = time.perf_counter()
+    failed = False
+    results: List[TaskResult] = []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+        future_map = {executor.submit(execute_task, t, dry_run): t for t in tasks}
+        for future in concurrent.futures.as_completed(future_map):
+            res = future.result()
+            results.append(res)
+            if res.returncode == 0:
+                print(f"  * [OK]    {res.task.name:<18} finished in {res.elapsed:.1f}s")
             else:
-                e_cmd = [str(venv_py), "-m", "pip", "install", "-e", "."]
-            res_e = subprocess.run(e_cmd, cwd=REPO_ROOT)
-            if res_e.returncode != 0:
-                print("[WARNING] Editable syruss CLI install returned non-zero code.")
+                failed = True
+                print(f"  * [FAIL]  {res.task.name:<18} failed in {res.elapsed:.1f}s (code {res.returncode})")
 
-        elapsed = time.perf_counter() - t0
-        print(f"  [OK] Completed {rel_path} in {elapsed:.1f}s")
+    # If any task failed, display the captured output for debugging
+    if failed:
+        print("\n------------------------------------------------------------")
+        print(" Error Details for Failed Tasks:")
+        print("------------------------------------------------------------")
+        for res in results:
+            if res.returncode != 0:
+                print(f"\n--- Output from {res.task.name} ---")
+                print(res.output.strip() or "(no output)")
+                print("------------------------------------")
+        return 1
+
+    total_time = time.perf_counter() - t0
+    sum_individual = sum(r.elapsed for r in results)
+    saved = max(0.0, sum_individual - total_time)
+
+    if not dry_run and len(tasks) > 1 and sum_individual > 0:
+        print(f"\n[SPEEDUP] Finished in {total_time:.1f}s (sequential would have taken ~{sum_individual:.1f}s, saved ~{saved:.1f}s)")
 
     return 0
 
 
-def sync_node(service: Optional[str] = None, dry_run: bool = False) -> int:
-    """Installs Node dependencies across www, site, and admin via npm."""
-    npm_path = shutil.which("npm")
-    if not npm_path:
-        print("[ERROR] 'npm' was not found in PATH. Please install Node.js (v22+).")
-        return 1
-
-    targets = [service] if service else NODE_SERVICES
-    print(f"\n[SYNC: NODE] Installing packages via npm...")
-
-    for svc in targets:
-        svc_dir = REPO_ROOT / svc
-        pkg_json = svc_dir / "package.json"
-        if not pkg_json.exists():
-            print(f"[SKIP] No package.json found in {svc}/")
-            continue
-
-        print(f"  * Syncing Node service: {svc} ({svc}/)...")
-        # On Windows, npm is a cmd script: npm.cmd
-        cmd = [npm_path, "install"]
+def run_tasks_sequential(tasks: List[SyncTask], dry_run: bool = False) -> int:
+    """Executes tasks sequentially one after another."""
+    for t in tasks:
+        print(f"\n* Running: {t.name}...")
         if dry_run:
-            print(f"    [DRY-RUN] Would execute: {' '.join(cmd)} in {svc_dir}")
+            print(f"  [DRY-RUN] Would run: {' '.join(t.cmd)} in {t.cwd}")
             continue
 
-        t0 = time.perf_counter()
-        # shell=True required for npm on Windows
-        res = subprocess.run(cmd, cwd=svc_dir, shell=(sys.platform == "win32"))
+        res = execute_task(t, dry_run=dry_run)
         if res.returncode != 0:
-            print(f"[ERROR] npm install failed for {svc}")
+            print(f"[ERROR] {t.name} failed ({res.elapsed:.1f}s):")
+            print(res.output)
             return res.returncode
-        elapsed = time.perf_counter() - t0
-        print(f"  [OK] Completed {svc} in {elapsed:.1f}s")
+        print(f"[OK] {t.name} finished in {res.elapsed:.1f}s")
+        if res.output.strip():
+            # Print brief summary of output
+            lines = res.output.strip().splitlines()
+            for line in lines[-5:]:
+                print(f"  | {line}")
 
     return 0
 
@@ -171,9 +245,10 @@ def cmd_sync(args: argparse.Namespace) -> int:
     node_only = getattr(args, "node", False)
     force_pip = getattr(args, "force_pip", False)
     dry_run = getattr(args, "dry_run", False)
+    sequential = getattr(args, "sequential", False)
 
     print("------------------------------------------------------------")
-    print(" Syruss Monorepo Dependency Sync")
+    print(" Syruss Monorepo Dependency Sync [Mode: SIMULTANEOUS]")
     print("------------------------------------------------------------")
 
     has_uv = is_uv_available()
@@ -181,38 +256,46 @@ def cmd_sync(args: argparse.Namespace) -> int:
     print(f" * Virtual environment: {get_venv_dir()}")
     print("------------------------------------------------------------")
 
-    overall_t0 = time.perf_counter()
+    # Ensure venv exists before scheduling python tasks
+    if not dry_run and (not node_only or service in PYTHON_SERVICES):
+        ensure_virtualenv(force_pip)
+
+    tasks: List[SyncTask] = []
 
     # If a specific service was targeted:
     if service:
         if service in PYTHON_SERVICES:
-            rc = sync_python(service=service, force_pip=force_pip, dry_run=dry_run)
-            return rc
+            tasks.extend(build_python_tasks(service=service, force_pip=force_pip))
         elif service in NODE_SERVICES:
-            rc = sync_node(service=service, dry_run=dry_run)
-            return rc
+            tasks.extend(build_node_tasks(service=service))
         else:
             print(f"[ERROR] Unknown service '{service}'. Choose from: {', '.join(get_service_names())}")
             return 2
-
-    # If flags filter to python or node:
-    if python_only and not node_only:
-        rc = sync_python(force_pip=force_pip, dry_run=dry_run)
-    elif node_only and not python_only:
-        rc = sync_node(dry_run=dry_run)
     else:
-        # Sync both
-        rc_py = sync_python(force_pip=force_pip, dry_run=dry_run)
-        if rc_py != 0:
-            return rc_py
-        rc_node = sync_node(dry_run=dry_run)
-        if rc_node != 0:
-            return rc_node
-        rc = 0
+        # Include python unless node_only
+        if not node_only:
+            tasks.extend(build_python_tasks(force_pip=force_pip))
+        # Include node unless python_only
+        if not python_only:
+            tasks.extend(build_node_tasks())
+
+    if not tasks:
+        print("[INFO] No tasks to sync.")
+        return 0
+
+    overall_t0 = time.perf_counter()
+
+    if sequential or len(tasks) == 1:
+        rc = run_tasks_sequential(tasks, dry_run=dry_run)
+    else:
+        rc = run_tasks_parallel(tasks, dry_run=dry_run)
 
     overall_elapsed = time.perf_counter() - overall_t0
     print("------------------------------------------------------------")
-    print(f"[SUCCESS] All dependencies synchronized in {overall_elapsed:.1f}s")
+    if rc == 0:
+        print(f"[SUCCESS] All dependencies synchronized in {overall_elapsed:.1f}s")
+    else:
+        print(f"[FAILURE] Dependency synchronization failed in {overall_elapsed:.1f}s")
     print("------------------------------------------------------------")
     return rc
 
@@ -240,6 +323,11 @@ def build_sync_parser(subparser: argparse.ArgumentParser) -> None:
         dest="force_pip",
         action="store_true",
         help="Force using pip even if uv is available",
+    )
+    subparser.add_argument(
+        "--sequential",
+        action="store_true",
+        help="Run sync tasks sequentially instead of simultaneously in parallel",
     )
     subparser.add_argument(
         "--dry-run",
