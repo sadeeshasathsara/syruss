@@ -26,6 +26,7 @@ from app.models.template import DocumentTemplate
 from app.services import delivery_service, duplicate_check, graph_service, object_index
 from app.services.rules import service as rule_service
 from app.services.identity_check import find_identity_conflicts, find_unsupported_identities
+from app.services.confidence_service import evaluate_confidence
 from app.services.rules.engine import validate_record
 
 
@@ -108,10 +109,30 @@ class RecordService:
             db.add(result)
         result.extracted_data = data
         result.template_version_id = template.active_version_id
-        result.overall_confidence = max(0.0, min(1.0, float(confidence)))
         result.evidence_records = evidence or []
-        result.validation = validation
         result.agent_notes = notes
+
+        # --- Authoritative confidence scoring (Phase 2 engine) ---
+        # Build entity_match_result from known identity conflicts detected above
+        identity_conflict_list = await find_identity_conflicts(
+            db, template_id=template.id, schema=template.schema_definition,
+            data=data, document_id=document.id,
+        ) if check_identities else []
+        entity_match_result = {
+            "sources_connected": False,  # Phase 4 will wire real entity counts from source_service
+        }
+        confidence_report = evaluate_confidence(
+            schema=template.schema_definition,
+            data=data,
+            raw_model_confidence=float(confidence),
+            active_workspace_rules=rules,
+            entity_match_result=entity_match_result,
+            identity_conflicts=identity_conflict_list if identity_conflict_list else None,
+        )
+        # Authoritative score overrides agent-reported confidence if a veto applies
+        authoritative_confidence = confidence_report.total_confidence
+        result.overall_confidence = authoritative_confidence
+        result.validation = {**validation, "confidence_details": confidence_report.to_dict()}
         document.template_version_id = template.active_version_id
         document.error_message = None
 

@@ -19,6 +19,8 @@ from app.services.identity_check import normalize_id
 from app.services.record_service import record_service
 from app.services.rules import service as rule_service
 from app.services.rules.engine import normalize_schema, validate_record
+from app.services.confidence_service import evaluate_confidence
+from app.services.identity_check import find_identity_conflicts
 from app.services.live.ui_events import publish_ui_event
 from app.api.internal.agent_tools.scope import Workspace, get_workspace
 from app.api.internal.agent_tools.common import document_in
@@ -220,17 +222,71 @@ class RecordDraft(BaseModel):
 @router.post("/records/validate")
 async def validate_draft_record(body: RecordDraft, ws: Workspace = Depends(get_workspace)):
     """Dry run: checks a draft against the active (or a proposed) template without storing anything.
-    Against the active template it also returns the workspace graph's identity signals."""
+    Against the active template it also returns the workspace graph's identity signals and the
+    full 100-point confidence scorecard so the agent can detect and self-correct discrepancies
+    before calling submit_record."""
+    schema = body.schema_definition or ws.template.schema_definition
     rules = [] if body.schema_definition else await rule_service.active_rules(ws.db, ws.template_id)
-    result = validate_record(body.schema_definition or ws.template.schema_definition, body.data, rules)
+    result = validate_record(schema, body.data, rules)
+
     if not body.schema_definition:
         document = await document_in(ws, body.document_id) if body.document_id else None
-        result["signals"] = await graph_service.identity_signals(
-            ws.db, template_id=ws.template_id, schema=ws.template.schema_definition, data=body.data,
+        signals = await graph_service.identity_signals(
+            ws.db, template_id=ws.template_id, schema=schema, data=body.data,
             document_id=body.document_id or "",
         ) + await duplicate_check.duplicate_signals(
-            ws.db, template_id=ws.template_id, schema=ws.template.schema_definition, data=body.data, document=document,
+            ws.db, template_id=ws.template_id, schema=schema, data=body.data, document=document,
         )
+        result["signals"] = signals
+
+        # --- Confidence scorecard (Phase 2 engine) ---
+        # Resolve identity conflicts against master data for the data sources dimension
+        identity_conflicts = []
+        if body.document_id:
+            identity_conflicts = await find_identity_conflicts(
+                ws.db, template_id=ws.template_id, schema=schema,
+                data=body.data, document_id=body.document_id,
+            )
+
+        # Map identity signals to entity_match_result shape
+        collision_count = len(identity_conflicts)
+        # Signals that are blocking but not collisions count as unknown entities
+        # (we don't have source counts here — conservative: treat non-collision signals as unknown)
+        blocking_signals = [s for s in signals if s.get("blocking")]
+        has_sources = False  # validate endpoint doesn't load sources; submit_record does
+        entity_match_result = {
+            "sources_connected": False,  # conserved; submit_record re-evaluates with real entity data
+        }
+
+        confidence_report = evaluate_confidence(
+            schema=schema,
+            data=body.data,
+            raw_model_confidence=0.85,  # agent hasn't declared confidence yet; use baseline
+            active_workspace_rules=rules,
+            entity_match_result=entity_match_result,
+            identity_conflicts=identity_conflicts if identity_conflicts else None,
+        )
+        result["confidence_report"] = confidence_report.to_dict()
+
+        # Agent-readable plain-text summary to trigger self-correction
+        lines = []
+        if confidence_report.veto_messages:
+            lines.append("⚠️  CONFIDENCE VETOES DETECTED — confidence capped at 50%:")
+            for msg in confidence_report.veto_messages:
+                lines.append(f"  • {msg}")
+        if confidence_report.math_format.has_arithmetic_discrepancy:
+            lines.append(
+                "📐 ARITHMETIC DISCREPANCY: re-read the document carefully. "
+                "Check line items × unit prices = line totals, and that "
+                "line totals sum to subtotal, and subtotal + tax = grand total."
+            )
+        if confidence_report.visual.missing_critical_fields:
+            fields = ", ".join(confidence_report.visual.missing_critical_fields[:5])
+            lines.append(f"🔴 CRITICAL FIELDS MISSING: {fields}. These must be extracted before commit.")
+        if lines:
+            result["confidence_guidance"] = "\n".join(lines)
+        result["suggested_confidence"] = confidence_report.total_confidence
+
     return result
 
 
