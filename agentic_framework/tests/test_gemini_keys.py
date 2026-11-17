@@ -9,6 +9,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from agentic_framework.config import AgentSettings
 from agentic_framework.gemini_keys import (
+    AllKeysExhaustedError,
     GeminiKeyPool,
     GeminiKeyStatus,
     RotatingChatGoogleGenerativeAI,
@@ -143,3 +144,45 @@ async def test_rotating_chat_gemini_failover():
         k2 = next(k for k in pool.keys if k.key == "key2")
         assert k1.total_rate_limits == 1
         assert k2.total_successes == 1
+
+def test_is_rate_limit_error_includes_403_permission_denied():
+    """403 PERMISSION_DENIED (billing not enabled) must be treated as a rotation trigger."""
+    pool = GeminiKeyPool(["key1"])
+
+    # HTTP 403 string in message
+    is_rl, _ = pool.is_rate_limit_error(RuntimeError("403 PERMISSION_DENIED: billing not enabled"))
+    assert is_rl is True
+
+    # status_code attribute == 403
+    exc = RuntimeError("some error")
+    exc.status_code = 403  # type: ignore[attr-defined]
+    is_rl2, _ = pool.is_rate_limit_error(exc)
+    assert is_rl2 is True
+
+    # code attribute == 403
+    exc2 = RuntimeError("some error")
+    exc2.code = 403  # type: ignore[attr-defined]
+    is_rl3, _ = pool.is_rate_limit_error(exc2)
+    assert is_rl3 is True
+
+    # Plain 400 / other non-rl errors must still return False
+    is_rl4, _ = pool.is_rate_limit_error(RuntimeError("400 Bad Request: invalid argument"))
+    assert is_rl4 is False
+
+
+@pytest.mark.asyncio
+async def test_rotating_chat_gemini_raises_all_keys_exhausted():
+    """When every key in the pool fails with PERMISSION_DENIED, AllKeysExhaustedError is raised."""
+    pool = GeminiKeyPool(["key1", "key2"])
+    model = RotatingChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key="key1", pool=pool)
+
+    perm_err = Exception("403 PERMISSION_DENIED: billing not enabled")
+    mock_del = MagicMock()
+    mock_del._agenerate = AsyncMock(side_effect=perm_err)
+
+    with patch.object(model, "_get_delegate", return_value=mock_del):
+        with pytest.raises(AllKeysExhaustedError):
+            await model._agenerate([HumanMessage(content="Hi")])
+
+    # Both keys should have been put into cooldown
+    assert all(k.total_rate_limits == 1 for k in pool.keys)
