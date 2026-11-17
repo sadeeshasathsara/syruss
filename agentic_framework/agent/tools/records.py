@@ -75,6 +75,8 @@ class SubmitArgs(BaseModel):
     uncertain_fields_json: str = Field("[]", description='For REVIEW: JSON list of {"field", "value", "why"}')
     acknowledged_signals_json: str = Field("[]", description='JSON list of {"id", "reason"}: identity signals you looked '
                                            "into on the page and stand by, with what you saw")
+    dual_pass_verified: bool = Field(
+        False, description="Set to true if you performed a targeted second-pass re-read of critical fields and confirmed them identical")
 
 
 @tool("submit_record", "Store the document's record and its outcome: COMMIT (complete and certain, must pass the "
@@ -86,6 +88,7 @@ async def submit_record(ctx: RunContext, a: SubmitArgs) -> ToolOutcome:
         "review_reason": a.review_reason or None,
         "uncertain_fields": json_arg(a.uncertain_fields_json, "uncertain_fields_json", []),
         "acknowledged_signals": json_arg(a.acknowledged_signals_json, "acknowledged_signals_json", []),
+        "dual_pass_verified": a.dual_pass_verified if a.dual_pass_verified else None,
     }
     result = await ctx.api.post(f"/documents/{a.document_id}/record", body)
     if result.get("new_identities"):

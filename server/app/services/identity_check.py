@@ -14,7 +14,7 @@ only that a person must confirm, so the record cannot be committed silently.
 import difflib
 import re
 from collections import defaultdict
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.document import Document, DocumentStatus
@@ -161,3 +161,114 @@ async def find_unsupported_identities(
                              f"'{value}' is not what is written ('{ev['raw_text']}') and no known entity independently "
                              "confirms it. Record what is written, or send the document to review."})
     return problems
+
+
+async def resolve_entity_matches(
+    db: AsyncSession,
+    *,
+    template_id: str,
+    schema: Optional[Dict[str, Any]],
+    data: Dict[str, Any],
+    document_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Evaluates extracted records against known Entities / Data Sources for the Data Sources dimension.
+
+    Returns dict matching ConfidenceReport entity_match_result format:
+    {
+        "sources_connected": bool,
+        "exact_matches": int,
+        "alias_matches": int,
+        "unknown_entities": int,
+        "identity_collisions": int,
+        "total_identity_fields": int,
+    }
+    """
+    from app.models.knowledge_source import KnowledgeSource
+
+    # Check if template has any knowledge sources or entities
+    has_source = (await db.execute(
+        select(KnowledgeSource.id).where(KnowledgeSource.template_id == template_id).limit(1)
+    )).scalar_one_or_none() is not None
+
+    has_entity = (await db.execute(
+        select(Entity.id).where(Entity.template_id == template_id).limit(1)
+    )).scalar_one_or_none() is not None
+
+    sources_connected = has_source or has_entity
+    if not sources_connected:
+        return {
+            "sources_connected": False,
+            "exact_matches": 0,
+            "alias_matches": 0,
+            "unknown_entities": 0,
+            "identity_collisions": 0,
+            "total_identity_fields": 0,
+        }
+
+    entities = (await db.execute(
+        select(Entity).where(Entity.template_id == template_id)
+    )).scalars().all()
+
+    conflicts = await find_identity_conflicts(
+        db, template_id=template_id, schema=schema or {}, data=data, document_id=document_id or "",
+    )
+    conflict_paths = {c.get("path") for c in conflicts}
+    identity_collisions = len(conflicts)
+
+    identities = {t: i for t, i in _identities(schema or {}).items() if t in data}
+    exact_matches = 0
+    alias_matches = 0
+    unknown_entities = 0
+    total_identity_fields = 0
+
+    for obj_type, ident in identities.items():
+        for i, row in enumerate(_rows(data, obj_type)):
+            raw_id = row.get(ident["id_field"])
+            raw_label = row.get(ident["label_field"])
+            nid, nlabel = normalize_id(raw_id), normalize_label(raw_label)
+            if not nid and not nlabel:
+                continue
+
+            total_identity_fields += 1
+            row_path = f"{obj_type}[{i}]"
+            if row_path in conflict_paths:
+                # Already counted in identity_collisions
+                continue
+
+            matched = False
+            for e in entities:
+                eid = normalize_id(e.identifier_value)
+                ename = normalize_label(e.name)
+                if eid and nid and eid == nid:
+                    if not nlabel or _similar(nlabel, ename):
+                        exact_matches += 1
+                        matched = True
+                        break
+                    elif any(_similar(nlabel, normalize_label(a.alias)) for a in e.aliases if a.alias):
+                        alias_matches += 1
+                        matched = True
+                        break
+                elif not eid and nlabel and _similar(nlabel, ename):
+                    exact_matches += 1
+                    matched = True
+                    break
+
+            if not matched:
+                for e in entities:
+                    if any(_similar(nlabel, normalize_label(a.alias)) for a in e.aliases if a.alias):
+                        alias_matches += 1
+                        matched = True
+                        break
+
+            if not matched:
+                unknown_entities += 1
+
+    return {
+        "sources_connected": True,
+        "exact_matches": exact_matches,
+        "alias_matches": alias_matches,
+        "unknown_entities": unknown_entities,
+        "identity_collisions": identity_collisions,
+        "total_identity_fields": total_identity_fields,
+    }

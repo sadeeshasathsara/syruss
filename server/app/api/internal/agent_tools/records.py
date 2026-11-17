@@ -20,7 +20,7 @@ from app.services.record_service import record_service
 from app.services.rules import service as rule_service
 from app.services.rules.engine import normalize_schema, validate_record
 from app.services.confidence_service import evaluate_confidence
-from app.services.identity_check import find_identity_conflicts
+from app.services.identity_check import find_identity_conflicts, resolve_entity_matches
 from app.services.live.ui_events import publish_ui_event
 from app.api.internal.agent_tools.scope import Workspace, get_workspace
 from app.api.internal.agent_tools.common import document_in
@@ -39,6 +39,8 @@ class RecordSubmission(BaseModel):
     uncertain_fields: List[Dict[str, Any]] = Field(default_factory=list)
     acknowledged_signals: List[Dict[str, Any]] = Field(
         default_factory=list, description="[{id, reason}]: identity signals you checked on the page and stand by")
+    dual_pass_verified: Optional[bool] = Field(
+        None, description="True if second-pass re-read confirmed critical fields match identically")
 
 
 async def _questions_text(ws: Workspace, status: AgentQuestionStatus) -> str:
@@ -125,6 +127,7 @@ async def submit_record(document_id: str, body: RecordSubmission, ws: Workspace 
         confidence=body.confidence, evidence=body.evidence, notes=body.notes,
         review_reason=body.review_reason, uncertain_fields=body.uncertain_fields,
         acknowledged_signals=body.acknowledged_signals,
+        dual_pass_verified=body.dual_pass_verified,
     )
     name = label_for(doc, ws.template.schema_definition, body.data)
     if outcome["status"] == "NEEDS_REVIEW":
@@ -239,8 +242,7 @@ async def validate_draft_record(body: RecordDraft, ws: Workspace = Depends(get_w
         )
         result["signals"] = signals
 
-        # --- Confidence scorecard (Phase 2 engine) ---
-        # Resolve identity conflicts against master data for the data sources dimension
+        # --- Confidence scorecard (Phase 2 & 5 engine) ---
         identity_conflicts = []
         if body.document_id:
             identity_conflicts = await find_identity_conflicts(
@@ -248,15 +250,10 @@ async def validate_draft_record(body: RecordDraft, ws: Workspace = Depends(get_w
                 data=body.data, document_id=body.document_id,
             )
 
-        # Map identity signals to entity_match_result shape
-        collision_count = len(identity_conflicts)
-        # Signals that are blocking but not collisions count as unknown entities
-        # (we don't have source counts here — conservative: treat non-collision signals as unknown)
-        blocking_signals = [s for s in signals if s.get("blocking")]
-        has_sources = False  # validate endpoint doesn't load sources; submit_record does
-        entity_match_result = {
-            "sources_connected": False,  # conserved; submit_record re-evaluates with real entity data
-        }
+        entity_match_result = await resolve_entity_matches(
+            ws.db, template_id=ws.template_id, schema=schema,
+            data=body.data, document_id=body.document_id,
+        )
 
         confidence_report = evaluate_confidence(
             schema=schema,
@@ -283,6 +280,19 @@ async def validate_draft_record(body: RecordDraft, ws: Workspace = Depends(get_w
         if confidence_report.visual.missing_critical_fields:
             fields = ", ".join(confidence_report.visual.missing_critical_fields[:5])
             lines.append(f"🔴 CRITICAL FIELDS MISSING: {fields}. These must be extracted before commit.")
+        if 0.75 <= confidence_report.total_confidence <= 0.85:
+            critical_names = [
+                f["name"]
+                for o in (schema or {}).get("objects", [])
+                for f in o.get("fields", [])
+                if f.get("critical")
+            ]
+            crit_str = ", ".join(critical_names) if critical_names else "key fields"
+            lines.append(
+                f"🔍 THRESHOLD BOUNDARY ({confidence_report.total_confidence:.0%}): score is near decision threshold. "
+                f"Perform a targeted second-pass reading of critical fields ({crit_str}). "
+                "If verified identical, submit with dual_pass_verified=True for +5 visual bonus points."
+            )
         if lines:
             result["confidence_guidance"] = "\n".join(lines)
         result["suggested_confidence"] = confidence_report.total_confidence

@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional
 
 from app.services.rules.engine import normalize_schema, run_rule, schema_rules, _check_rule
 from app.services.validation import check_format_rule, reconciler
+from app.services.identity_check import resolve_entity_matches
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +65,8 @@ class VisualScore:
     critical_field_penalties: float = 0.0  # deductions for missing critical fields
     final_pts: float = 0.0
     missing_critical_fields: List[str] = field(default_factory=list)
+    dual_pass_verified: Optional[bool] = None
+    dual_pass_bonus: float = 0.0
 
 
 @dataclass
@@ -140,6 +143,8 @@ class ConfidenceReport:
                     "max": MAX_VISUAL,
                     "raw_model_confidence": round(self.visual.raw_score, 4),
                     "missing_critical_fields": self.visual.missing_critical_fields,
+                    "dual_pass_verified": self.visual.dual_pass_verified,
+                    "dual_pass_bonus": self.visual.dual_pass_bonus,
                 },
                 "math_format": {
                     "score": round(self.math_format.final_pts, 2),
@@ -180,13 +185,16 @@ def _score_visual(
     schema: Optional[Dict[str, Any]],
     data: Dict[str, Any],
     raw_model_confidence: float,
+    dual_pass_verified: Optional[bool] = None,
 ) -> VisualScore:
     """
     Scale LLM raw confidence to 40 pts.
     Deduct 5 pts per missing critical field (floor 0).
+    Award +5 pts dual-pass bonus if dual_pass_verified is True (clamped at 40 pts).
     """
     raw = max(0.0, min(1.0, raw_model_confidence))
     base_pts = round(raw * MAX_VISUAL, 4)
+    dual_pass_bonus = 5.0 if dual_pass_verified is True else 0.0
 
     missing_critical: List[str] = []
     objects = normalize_schema(schema)
@@ -211,7 +219,7 @@ def _score_visual(
                     missing_critical.append(path)
 
     penalty_pts = len(missing_critical) * 5.0
-    final_pts = max(0.0, base_pts - penalty_pts)
+    final_pts = max(0.0, min(MAX_VISUAL, base_pts + dual_pass_bonus - penalty_pts))
 
     return VisualScore(
         raw_score=raw,
@@ -219,6 +227,8 @@ def _score_visual(
         critical_field_penalties=penalty_pts,
         final_pts=final_pts,
         missing_critical_fields=missing_critical,
+        dual_pass_verified=dual_pass_verified,
+        dual_pass_bonus=dual_pass_bonus,
     )
 
 
@@ -431,6 +441,7 @@ def evaluate_confidence(
     entity_match_result: Optional[Dict[str, Any]] = None,
     field_confidences: Optional[Dict[str, float]] = None,
     identity_conflicts: Optional[List[Dict[str, Any]]] = None,
+    dual_pass_verified: Optional[bool] = None,
 ) -> ConfidenceReport:
     """
     Compute the full 100-point audited confidence score for a document extraction.
@@ -448,7 +459,7 @@ def evaluate_confidence(
         ConfidenceReport with full breakdown and final confidence (0.0–1.0).
     """
     # --- Score each dimension ---
-    v_score = _score_visual(schema, data, raw_model_confidence)
+    v_score = _score_visual(schema, data, raw_model_confidence, dual_pass_verified=dual_pass_verified)
     mf_score = _score_math_format(schema, data)
     r_score = _score_rules(schema, data, active_workspace_rules)
     ds_score = _score_data_sources(entity_match_result)

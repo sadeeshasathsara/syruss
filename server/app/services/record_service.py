@@ -25,7 +25,7 @@ from app.models.review import ReviewTask, ReviewStatus
 from app.models.template import DocumentTemplate
 from app.services import delivery_service, duplicate_check, graph_service, object_index
 from app.services.rules import service as rule_service
-from app.services.identity_check import find_identity_conflicts, find_unsupported_identities
+from app.services.identity_check import find_identity_conflicts, find_unsupported_identities, resolve_entity_matches
 from app.services.confidence_service import evaluate_confidence
 from app.services.rules.engine import validate_record
 
@@ -48,6 +48,7 @@ class RecordService:
         discard_pending_review: bool = True,
         check_identities: bool = True,
         acknowledged_signals: Optional[List[Dict[str, Any]]] = None,
+        dual_pass_verified: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         `discard_pending_review`: when the agent commits a document it had sent to review
@@ -112,14 +113,21 @@ class RecordService:
         result.evidence_records = evidence or []
         result.agent_notes = notes
 
-        # --- Authoritative confidence scoring (Phase 2 engine) ---
-        # Build entity_match_result from known identity conflicts detected above
+        # --- Authoritative confidence scoring (Phase 2 & 5 engine) ---
         identity_conflict_list = await find_identity_conflicts(
             db, template_id=template.id, schema=template.schema_definition,
             data=data, document_id=document.id,
         ) if check_identities else []
-        entity_match_result = {
-            "sources_connected": False,  # Phase 4 will wire real entity counts from source_service
+        entity_match_result = await resolve_entity_matches(
+            db, template_id=template.id, schema=template.schema_definition,
+            data=data, document_id=document.id,
+        ) if check_identities else {
+            "sources_connected": False,
+            "exact_matches": 0,
+            "alias_matches": 0,
+            "unknown_entities": 0,
+            "identity_collisions": 0,
+            "total_identity_fields": 0,
         }
         confidence_report = evaluate_confidence(
             schema=template.schema_definition,
@@ -128,6 +136,7 @@ class RecordService:
             active_workspace_rules=rules,
             entity_match_result=entity_match_result,
             identity_conflicts=identity_conflict_list if identity_conflict_list else None,
+            dual_pass_verified=dual_pass_verified,
         )
         # Authoritative score overrides agent-reported confidence if a veto applies
         authoritative_confidence = confidence_report.total_confidence
