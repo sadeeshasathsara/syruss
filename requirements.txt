@@ -16,3 +16,6 @@
 
 # -- AI Agent Worker (LangGraph / LangChain) -----------------
 -r agentic_framework/requirements.txt
+
+# -- Mail Service (aiokafka / aiosmtpd) ----------------------
+-r mail/requirements.txt

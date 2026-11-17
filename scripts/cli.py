@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Syruss Monorepo Command Center CLI
-Unified entry point for service orchestration, lifecycle management, and changelog versioning.
+Unified entry point for service orchestration, lifecycle management, changelog versioning, and dependency syncing.
 """
 
 import argparse
@@ -13,6 +13,7 @@ from scripts.changeset import build_changeset_parser, cmd_add, cmd_apply, cmd_ch
 from scripts.registry import get_all_services, get_service_names
 from scripts.runner import run_services
 from scripts.staff import build_staff_parser, cmd_add as staff_add
+from scripts.sync import build_sync_parser, cmd_sync
 
 
 def suggest_correction(word: str, candidates: List[str], entity_type: str = "command") -> str:
@@ -68,6 +69,10 @@ def build_cli_parser() -> SyrussArgumentParser:
             "Registered Services:\n"
             + "\n".join([f"  * {s:<8} - {get_all_services()[s].description}" for s in all_service_names])
             + "\n\nExamples:\n"
+            f"  syruss sync                  Sync all dependencies across Python and Node projects\n"
+            f"  syruss sync --python         Sync only Python venv and requirements\n"
+            f"  syruss sync --node           Sync only Node (npm) dependencies\n"
+            f"  syruss sync www              Sync dependencies for a single service\n"
             f"  syruss run dev               Start all services with live reload\n"
             f"  syruss run dev --console     Start all services in separate terminal windows\n"
             f"  syruss run dev server        Start only the FastAPI server in dev mode\n"
@@ -80,24 +85,28 @@ def build_cli_parser() -> SyrussArgumentParser:
 
     top_sub = parser.add_subparsers(dest="top_command")
 
-    # 1. start [service] [--console]
+    # 1. sync [service] [--python] [--node] [--pip] [--dry-run]
+    p_sync = top_sub.add_parser("sync", help="Synchronize dependencies across all Python and Node.js projects")
+    build_sync_parser(p_sync)
+
+    # 2. start [service] [--console]
     p_start = top_sub.add_parser("start", help="Start service(s) in production mode")
     p_start.add_argument("service", nargs="?", choices=all_service_names, help=f"Optional specific service: {services_doc}")
     p_start.add_argument("--console", action="store_true", help="Launch in independent console windows per service")
 
-    # 2. run dev [service] [--console]
+    # 3. run dev [service] [--console]
     p_run = top_sub.add_parser("run", help="Run workflows (e.g. 'run dev')")
     run_sub = p_run.add_subparsers(dest="run_action")
     p_dev = run_sub.add_parser("dev", help="Start service(s) in development mode with live reload")
     p_dev.add_argument("service", nargs="?", choices=all_service_names, help=f"Optional specific service: {services_doc}")
     p_dev.add_argument("--console", action="store_true", help="Launch in independent console windows per service")
 
-    # 3. changeset <subcommand>
+    # 4. changeset <subcommand>
     p_cs = top_sub.add_parser("changeset", help="Manage changesets, versioning, and the _changelog/ files")
     cs_sub = p_cs.add_subparsers(dest="changeset_action")
     build_changeset_parser(cs_sub)
 
-    # 4. staff <subcommand>
+    # 5. staff <subcommand>
     p_staff = top_sub.add_parser("staff", help="Platform staff: add someone (the admin app adds nobody)")
     staff_sub = p_staff.add_subparsers(dest="staff_action")
     build_staff_parser(staff_sub)
@@ -109,9 +118,9 @@ def main(custom_args: Optional[List[str]] = None) -> int:
     raw_args = custom_args if custom_args is not None else sys.argv[1:]
 
     # Early check for typo in top-level command
-    known_top = ["start", "run", "changeset", "staff", "--help", "-h"]
+    known_top = ["sync", "start", "run", "changeset", "staff", "--help", "-h"]
     if raw_args and not raw_args[0].startswith("-") and raw_args[0] not in known_top:
-        suggestion = suggest_correction(raw_args[0], ["start", "run", "changeset", "staff"])
+        suggestion = suggest_correction(raw_args[0], ["sync", "start", "run", "changeset", "staff"])
         sys.stderr.write(f"[ERROR] Unknown command '{raw_args[0]}'.{suggestion}\n")
         return 2
 
@@ -122,9 +131,9 @@ def main(custom_args: Optional[List[str]] = None) -> int:
             sys.stderr.write(f"[ERROR] Unknown run action '{raw_args[1]}'.{suggestion}\n")
             return 2
 
-    # Early check for typo in service name when running 'syruss start <service>' or 'syruss run dev <service>'
+    # Early check for typo in service name when running 'syruss start <service>', 'syruss run dev <service>', or 'syruss sync <service>'
     all_service_names = get_service_names()
-    if len(raw_args) >= 2 and raw_args[0] == "start" and not raw_args[1].startswith("-"):
+    if len(raw_args) >= 2 and raw_args[0] in ("start", "sync") and not raw_args[1].startswith("-"):
         if raw_args[1] not in all_service_names:
             suggestion = suggest_correction(raw_args[1], all_service_names, "service")
             sys.stderr.write(f"[ERROR] Unknown service '{raw_args[1]}'.{suggestion}\n")
@@ -143,7 +152,9 @@ def main(custom_args: Optional[List[str]] = None) -> int:
 
     args = parser.parse_args(raw_args)
 
-    if args.top_command == "start":
+    if args.top_command == "sync":
+        return cmd_sync(args)
+    elif args.top_command == "start":
         return handle_start(args)
     elif args.top_command == "run":
         if getattr(args, "run_action", None) == "dev":
