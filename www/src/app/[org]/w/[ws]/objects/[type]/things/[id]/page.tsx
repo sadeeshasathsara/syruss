@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ObjectIcon } from "@/components/objects/ObjectIcon";
 import { ProfileHeader, Stats, value, WeekBars } from "@/components/objects/Profile";
-import { RecordsTable } from "@/components/objects/Records";
+import { RecordsTable, ReferencedRecordsTable } from "@/components/objects/Records";
 import { Bar, ErrorNote, Panel } from "@/components/ui/Blocks";
 import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
@@ -116,6 +116,15 @@ export default function ThingProfilePage() {
       </div>
 
       <RecordsTable type={p.object.type} thing={p.thing.id} title="Its records" />
+      {p.referenced_by?.map((ref) => (
+        <ReferencedRecordsTable
+          key={`${ref.type}.${ref.field}`}
+          objType={p.object.type}
+          thingId={p.thing.id}
+          refType={ref.type}
+          refField={ref.field}
+        />
+      ))}
     </div>
   );
 }

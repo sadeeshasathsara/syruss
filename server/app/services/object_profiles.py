@@ -22,6 +22,7 @@ from sqlalchemy import String, cast, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document
+from app.models.extraction import ExtractionResult
 from app.models.graph import RecordObject
 from app.models.knowledge import Entity
 from app.models.screen import WorkspaceScreen
@@ -249,6 +250,95 @@ async def thing_profile(db: AsyncSession, template: DocumentTemplate, obj_type: 
         "knowledge": {"id": entity.id, "name": entity.name, "aliases": [a.alias for a in entity.aliases], "attributes": entity.attributes or {},
                       "created_by": entity.created_by} if entity else None,
         "documents": await _documents(db, *where, page=page),
+        # Objects whose fields point to this object type (e.g. DutyRow.employee -> Employee)
+        "referenced_by": [{"type": t, "field": fname} for t, s in _objects(template).items()
+                          for fname, f in s["fields"].items() if f.get("resolves_to") == obj_type],
+    }
+
+
+async def referenced_records(db: AsyncSession, template: DocumentTemplate, obj_type: str, thing_raw_id: str,
+                             ref_type: str, ref_field: str, *, q: str = "", since_days: Optional[int] = None,
+                             sort: str = "seen", direction: str = "desc", page: int = 0) -> Dict[str, Any]:
+    """
+    Records of `ref_type` (e.g. DutyRow, AttendanceEntry) that reference a specific thing of `obj_type` (e.g. Employee)
+    via `ref_field` (e.g. "employee"). Extracted from documents that mention this thing.
+    """
+    spec = _object(template, obj_type)
+    ref_spec = _object(template, ref_type)
+    key = thing_key(obj_type, thing_raw_id)
+    if not key:
+        raise HTTPException(status_code=404, detail={"code": "no_such_thing", "message": "No such thing."})
+    nid = thing_id(key)
+    norm_nid = normalize_id(nid)
+
+    matching_doc_ids = select(RecordObject.document_id).where(
+        RecordObject.template_id == template.id,
+        RecordObject.thing_key == key,
+    )
+    doc_where = [
+        Document.template_id == template.id,
+        Document.id.in_(matching_doc_ids),
+    ]
+    if since_days in SINCE_DAYS:
+        doc_where.append(Document.created_at >= datetime.now(timezone.utc) - timedelta(days=since_days))
+
+    stmt = (
+        select(Document.id, Document.original_filename, Document.identified_key, Document.status, Document.created_at, ExtractionResult.extracted_data)
+        .join(ExtractionResult, ExtractionResult.document_id == Document.id)
+        .where(*doc_where)
+        .order_by(Document.created_at.desc())
+    )
+    doc_rows = (await db.execute(stmt)).all()
+
+    text_q = q.strip().lower()[:120]
+    matched_items = []
+    for doc_id, filename, ikey, status, created_at, data in doc_rows:
+        doc_name = ikey or filename
+        for idx, row in enumerate(rows_of(data or {}, ref_type)):
+            ref_val = row.get(ref_field)
+            if ref_val is None or normalize_id(ref_val) != norm_nid:
+                continue
+
+            if text_q:
+                row_str = " ".join(str(v) for v in row.values() if v is not None).lower()
+                doc_str = f"{filename} {ikey or ''}".lower()
+                if text_q not in row_str and text_q not in doc_str:
+                    continue
+
+            status_str = status.value if hasattr(status, "value") else str(status)
+            matched_items.append({
+                "id": f"{doc_id}_{idx}",
+                "document_id": doc_id,
+                "document_name": doc_name,
+                "file_name": filename,
+                "status": status_str,
+                "seen_at": created_at,
+                "thing": None,
+                "values": dict(row),
+            })
+
+    rev = direction == "desc"
+    if sort == "seen":
+        matched_items.sort(key=lambda x: x["seen_at"] or datetime.min.replace(tzinfo=timezone.utc), reverse=rev)
+    elif sort == "doc":
+        matched_items.sort(key=lambda x: (x["document_name"] or "").lower(), reverse=rev)
+    elif sort.startswith("f:"):
+        field = sort[2:]
+        matched_items.sort(key=lambda x: str(x["values"].get(field) or "").lower(), reverse=rev)
+
+    total = len(matched_items)
+    paged_items = matched_items[page * RECORD_PAGE : (page + 1) * RECORD_PAGE]
+
+    columns = [{"name": n, "type": f.get("type") or "string", "identity": False}
+               for n, f in ref_spec["fields"].items() if n != ref_field]
+
+    return {
+        "columns": columns,
+        "items": paged_items,
+        "total": total,
+        "page": page,
+        "page_size": RECORD_PAGE,
+        "facets": [],
     }
 
 

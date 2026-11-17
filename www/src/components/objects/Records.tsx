@@ -146,3 +146,148 @@ export function RecordsTable({ type, thing, title = "Records" }: { type: string;
     </Panel>
   );
 }
+
+
+/**
+ * Rows of a referencing object (e.g. DutyRow, AttendanceEntry) that link to this specific thing (e.g. Employee 68631).
+ */
+export function ReferencedRecordsTable({
+  objType,
+  thingId,
+  refType,
+  refField,
+  title,
+}: {
+  objType: string;
+  thingId: string;
+  refType: string;
+  refField: string;
+  title?: string;
+}) {
+  const { workspace, href } = useWorkspace();
+  const router = useRouter();
+  const [text, setText] = useState("");
+  const [q, setQ] = useState("");
+  const [since, setSince] = useState("all");
+  const [sort, setSort] = useState<{ by: string; dir: "asc" | "desc" }>({ by: "seen", dir: "desc" });
+  const [page, setPage] = useState(0);
+
+  useEffect(() => {
+    const t = setTimeout(() => { setQ(text); setPage(0); }, 300);
+    return () => clearTimeout(t);
+  }, [text]);
+
+  const records = useQuery({
+    queryKey: ["referenced-records", workspace.id, objType, thingId, refType, refField, q, since, sort, page],
+    queryFn: () =>
+      api.objects.referencedRecords(workspace.id, objType, thingId, refType, refField, {
+        q,
+        sinceDays: since === "all" ? null : Number(since),
+        sort: sort.by,
+        direction: sort.dir,
+        page,
+      }),
+    placeholderData: keepPreviousData,
+  });
+
+  const filtered = !!q.trim() || since !== "all";
+  const clear = () => { setText(""); setQ(""); setSince("all"); setPage(0); };
+  const sortBy = (by: string) => { setSort((s) => (s.by === by ? { by, dir: s.dir === "asc" ? "desc" : "asc" } : { by, dir: by === "seen" ? "desc" : "asc" })); setPage(0); };
+  const d = records.data;
+
+  const head = (by: string, label: React.ReactNode) => (
+    <th key={by} scope="col" aria-sort={sort.by === by ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} className="whitespace-nowrap px-3 py-2 text-left font-normal">
+      <button type="button" onClick={() => sortBy(by)} className="inline-flex items-center gap-1 text-meta text-muted hover:text-ink">
+        {label}
+        {sort.by === by && (sort.dir === "asc" ? <ArrowUp className="size-3.5" aria-hidden /> : <ArrowDown className="size-3.5" aria-hidden />)}
+      </button>
+    </th>
+  );
+
+  return (
+    <Panel
+      title={title ?? `${humanize(refType)} records`}
+      aside={d ? <span className="num">{d.total}</span> : undefined}
+      bodyClassName="flex flex-col gap-3"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex h-9 min-w-48 flex-1 items-center gap-2 rounded-control border border-control bg-sheet px-2.5 focus-within:border-ink">
+          <Search className="size-4 flex-none text-muted" aria-hidden />
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Search names, values and documents"
+            aria-label={`Search ${refType} records`}
+            className="min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-faint"
+          />
+        </label>
+        <Select label="When" value={since} onChange={(v) => { setSince(v); setPage(0); }} options={SINCE} className="w-40" />
+        {filtered && <Button variant="ghost" size="sm" onClick={clear}><X /> Clear</Button>}
+      </div>
+
+      {records.isError ? (
+        <ErrorNote message={(records.error as Error).message} onRetry={() => records.refetch()} />
+      ) : !d ? (
+        <Bar className="h-48 w-full" />
+      ) : d.items.length === 0 ? (
+        <p className="py-6 text-center text-body text-muted">
+          {filtered ? "No record matches. Try fewer filters." : `No ${humanize(refType).toLowerCase()} records found for this ${humanize(objType).toLowerCase()}.`}
+        </p>
+      ) : (
+        <div className={cn("overflow-x-auto scrollbar-thin rounded-control border border-rule", records.isPlaceholderData && "opacity-60")}>
+          <table className="w-full border-collapse text-body">
+            <thead className="bg-raised">
+              <tr>
+                {head("seen", "Received")}
+                {head("doc", "Document")}
+                {d.columns.map((c) => head(`f:${c.name}`, humanize(c.name)))}
+                <th scope="col" className="px-3 py-2 text-left text-meta font-normal text-muted">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.items.map((r) => (
+                <tr
+                  key={r.id}
+                  onClick={() => router.push(href(`documents/${r.document_id}`))}
+                  className="cursor-pointer border-t border-rule align-top hover:bg-raised"
+                >
+                  <td className="whitespace-nowrap px-3 py-2 text-muted" title={dateTime(r.seen_at)}>{ago(r.seen_at)}</td>
+                  <td className="max-w-64 px-3 py-2">
+                    <Link
+                      href={href(`documents/${r.document_id}`)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="block truncate text-ink underline-offset-2 hover:underline"
+                      title={r.file_name}
+                    >
+                      {r.document_name}
+                    </Link>
+                  </td>
+                  {d.columns.map((c) => (
+                    <td key={c.name} className="max-w-56 px-3 py-2 text-ink [overflow-wrap:anywhere]">
+                      {r.values[c.name] == null || r.values[c.name] === "" ? (
+                        <span className="text-faint">—</span>
+                      ) : (
+                        display(r.values[c.name])
+                      )}
+                    </td>
+                  ))}
+                  <td className="px-3 py-2"><StatusPill status={r.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {d && d.total > d.page_size && (
+        <div className="flex items-center justify-between gap-3 text-meta text-muted">
+          <span className="num">{d.page * d.page_size + 1}–{Math.min(d.total, (d.page + 1) * d.page_size)} of {d.total}</span>
+          <span className="flex gap-1">
+            <IconButton aria-label="Previous page" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}><ChevronLeft /></IconButton>
+            <IconButton aria-label="Next page" disabled={(page + 1) * d.page_size >= d.total} onClick={() => setPage((p) => p + 1)}><ChevronRight /></IconButton>
+          </span>
+        </div>
+      )}
+    </Panel>
+  );
+}

@@ -62,6 +62,21 @@ async def thing_records(obj_type: str, thing_id: str, q: str = Query("", max_len
                                          direction=direction, page=page)
 
 
+@router.get("/{obj_type}/things/{thing_id}/referenced/{ref_type}")
+async def thing_referenced_records(obj_type: str, thing_id: str, ref_type: str,
+                                   ref_field: str = Query(..., max_length=120),
+                                   q: str = Query("", max_length=120),
+                                   since_days: Optional[int] = Query(None),
+                                   sort: str = Query("seen", max_length=120),
+                                   direction: str = Query("desc", pattern="^(asc|desc)$"),
+                                   page: int = Query(0, ge=0, le=2000),
+                                   db: AsyncSession = Depends(get_db_session),
+                                   scope: TemplateScope = Depends(get_template_scope)) -> Dict[str, Any]:
+    """Records of a referencing object type (e.g. DutyRow) that point to a specific thing (e.g. Employee 68631)."""
+    return await object_profiles.referenced_records(db, scope.template, obj_type, thing_id, ref_type, ref_field,
+                                                    q=q, since_days=since_days, sort=sort, direction=direction, page=page)
+
+
 @router.get("/{obj_type}/things/{thing_id}")
 async def thing_profile(obj_type: str, thing_id: str, page: int = Query(0, ge=0, le=500), db: AsyncSession = Depends(get_db_session),
                         scope: TemplateScope = Depends(get_template_scope)) -> Dict[str, Any]:

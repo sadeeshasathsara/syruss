@@ -88,6 +88,7 @@ export interface ThingProfile {
   appears_with: { key: string; type: string; label: string; count: number; icon: string; path: string }[];
   knowledge: { id: string; name: string; aliases: string[]; attributes: Record<string, unknown>; created_by: string } | null;
   documents: Paged<ProfileDocument>;
+  referenced_by: { type: string; field: string }[];
 }
 
 /** One row of an object with an identity as a document read it: the thing's attributes in that document. */
