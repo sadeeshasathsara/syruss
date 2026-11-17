@@ -19,6 +19,7 @@ concurrency:
 permissions:
   contents: write
   packages: write
+  pull-requests: write
 
 jobs:
   # ----------------------------------------------------------------------------
@@ -74,6 +75,62 @@ jobs:
           git add _changelog/ .changeset/
           git commit -m "chore(release): update _changelog and apply changesets" || echo "No changes to commit"
           git push origin "${{ github.ref_name }}"
+
+  # ----------------------------------------------------------------------------
+  # Downstream Sync PRs (main -> test, main -> dev)
+  # ----------------------------------------------------------------------------
+  sync-downstream:
+    name: Sync Changelog to Test & Dev
+    needs: prepare-release
+    if: github.ref_name == 'main' && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: Open sync PRs from main to test and dev
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+        run: |
+          git fetch origin test dev main
+
+          # 1. Sync main -> test
+          echo "Checking differences between main and test..."
+          if [ -z "$(git log origin/test..origin/main --oneline)" ]; then
+            echo "test is already up to date with main."
+          else
+            EXISTING=$(gh pr list --repo "${{ github.repository }}" --head main --base test --state open --json number -q '.[0].number')
+            if [ -n "$EXISTING" ]; then
+              echo "Pull request from main to test already open (#$EXISTING)."
+            else
+              echo "Creating pull request from main to test..."
+              gh pr create --repo "${{ github.repository }}" \
+                --head main \
+                --base test \
+                --title "chore(release): sync main into test" \
+                --body "Automated pull request to sync \`main\` into \`test\` to update changelog and version status following release on \`main\`."
+            fi
+          fi
+
+          # 2. Sync main -> dev
+          echo "Checking differences between main and dev..."
+          if [ -z "$(git log origin/dev..origin/main --oneline)" ]; then
+            echo "dev is already up to date with main."
+          else
+            EXISTING=$(gh pr list --repo "${{ github.repository }}" --head main --base dev --state open --json number -q '.[0].number')
+            if [ -n "$EXISTING" ]; then
+              echo "Pull request from main to dev already open (#$EXISTING)."
+            else
+              echo "Creating pull request from main to dev..."
+              gh pr create --repo "${{ github.repository }}" \
+                --head main \
+                --base dev \
+                --title "chore(release): sync main into dev" \
+                --body "Automated pull request to sync \`main\` into \`dev\` to update changelog and version status following release on \`main\`."
+            fi
+          fi
 
   # ----------------------------------------------------------------------------
   # API Server (FastAPI Core)
