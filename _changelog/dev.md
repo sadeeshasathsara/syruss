@@ -15,11 +15,16 @@
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
 | **admin** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#admin-100-dev1) |
-| **agent** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#agent-100-dev1) |
+| **agent** | `1.1.0-dev.1` | 2026-11-17 | [What changed](#agent-110-dev1) |
 | **mail** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#mail-100-dev1) |
 | **server** | `1.0.1-dev.1` | 2026-11-16 | [What changed](#server-101-dev1) |
 | **site** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#site-100-dev1) |
 | **www** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#www-100-dev1) |
+
+## [2026-11-17] - Release via dev
+
+### agent (1.1.0-dev.1)
+- Smart Gemini multi-key rotation, LRU selection, and automatic 429 failover
 
 ## [2026-11-16] - Release via dev
 
