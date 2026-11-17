@@ -1,5 +1,7 @@
+import json
+import re
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,6 +48,8 @@ class AgentSettings(BaseSettings):
     LLM_PROVIDER: str = "gemini"  # gemini | anthropic | openai
     GEMINI_API_KEY: Optional[str] = None
     GOOGLE_API_KEY: Optional[str] = None
+    GEMINI_API_KEYS: Optional[str] = None
+    GEMINI_COOLDOWN_SECONDS: float = 60.0
     GEMINI_MODEL: str = "gemini-3.5-flash-lite"
     ANTHROPIC_API_KEY: Optional[str] = None
     ANTHROPIC_MODEL: str = "claude-sonnet-5-5"
@@ -82,6 +86,31 @@ class AgentSettings(BaseSettings):
     # Delivery
     MAX_ATTEMPTS: int = 3            # per event, then dead-letter
     MAX_PARALLEL_WORKSPACES: int = 4
+
+    @property
+    def gemini_api_keys(self) -> List[str]:
+        """All configured Gemini API keys in priority order, deduplicated."""
+        keys: List[str] = []
+        if self.GEMINI_API_KEYS:
+            raw = self.GEMINI_API_KEYS.strip()
+            if raw.startswith("[") and raw.endswith("]"):
+                try:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, list):
+                        keys.extend(str(k).strip() for k in parsed if str(k).strip())
+                except Exception:
+                    pass
+            if not keys:
+                for part in re.split(r"[,;\n\r]+", raw):
+                    k = part.strip().strip("\"'")
+                    if k:
+                        keys.append(k)
+        for single in (self.GEMINI_API_KEY, self.GOOGLE_API_KEY):
+            if single and single.strip():
+                k = single.strip()
+                if k not in keys:
+                    keys.append(k)
+        return keys
 
     model_config = SettingsConfigDict(
         env_file=str(Path(__file__).resolve().parent / ".env"),
