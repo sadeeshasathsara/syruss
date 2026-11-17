@@ -212,3 +212,69 @@ gantt
 3. **Identity Protection:** A document with an ID that collides with a different entity in the master data source **cannot** exceed $0.50$ confidence.
 4. **Agent Correction:** The agent detects math mismatches from `validate_record` and corrects readings before `submit_record`.
 5. **Transparency:** Every `ExtractionResult` persists the full 4-part scorecard in `validation.confidence_details`.
+
+
+---
+
+## 7. Enterprise Hardening Safeguards (The Final 20% to Mission-Critical)
+
+To move from standard commercial-grade IDP to mission-critical enterprise certainty (zero silent failure tolerance), the engine appends 4 definitive safeguards to the 4 fixed pillars:
+
+### Safeguard A: Spatial Grounding & Bounding-Box Sanity
+* **The Vulnerability:** An LLM can extract a valid number that balances mathematically, but it accidentally read the Purchase Order Number or Customer Account Number instead of the Invoice Number, or it extracted the Guard Name from the row above.
+* **The Grounding Implementation:**
+  - In `submit_record` evidence records (`evidence_json`), each critical field requires bounding box coordinates:
+    `"box_2d": [ymin, xmin, ymax, xmax], "page": int` (normalized 0–1000 scale from Gemini vision).
+  - **Heuristic Geometry Checks:**
+    1. *Region Sanity:* Vendor/Company headers must reside in the upper region of Page 1 ($ymin < 400$). Grand totals, signatures, and payment instructions must not reside in the top 10% header ($ymin > 100$).
+    2. *Table Row Progression:* For repeating tabular items, vertical coordinates must follow monotonic progression ($ymin_{i+1} > ymin_{i}$). Non-monotonic jumps indicate row-skipping or column misalignment.
+  - **Penalty:** If a spatial region contradiction occurs, deduct 15 points from $S_{\text{visual}}$ and flag for human review.
+
+---
+
+### Safeguard B: Table Row Completeness Audit (Visual vs. Extracted)
+* **The Vulnerability:** LLMs reading dense tables (e.g. 40-row attendance rosters or multi-item invoices) frequently experience attention fatigue and silently skip 2–3 rows in the middle or bottom of a page without reporting an error.
+* **The Completeness Implementation:**
+  - The extraction briefing requires the vision model to explicitly report:
+    `"visual_row_count_detected": int` alongside the extracted row array `"items": [...]`.
+  - **Completeness Formula:**
+    $$\Delta_{\text{rows}} = |\text{visual_row_count_detected} - \text{len(extracted_items)}|$$
+  - **Hard-Cap Veto:** If $\Delta_{\text{rows}} > 0$, the document is **hard-capped at $\le 0.50$**, forcing human review with the specific reason:
+    *"Possible row omission: vision detected {N} rows on the sheet, but only {M} were extracted."*
+
+---
+
+### Safeguard C: Multi-Page Bleed & Document Collision Detection
+* **The Vulnerability:** Multi-page uploads frequently contain accidental human collation errors—e.g., Page 1 belongs to Vendor A, while Page 2 was accidentally stapled from Vendor B. A naive model will blend both into a single phantom record.
+* **The Isolation Implementation:**
+  - On documents with $> 1$ page:
+    1. Extracted identities (e.g. Vendor Name, Document Number, Client ID) are tracked per page index.
+    2. Header continuity is verified: the primary identity from Page 1 must match or reference the primary identity on subsequent pages.
+    3. Pagination footer check: extracts and verifies `Page X of Y` sequence continuity.
+  - **Collision Veto:** If an identity shift is detected mid-document without an explicit continuation label, confidence is **hard-capped at $\le 0.40$** with status `MULTI_DOCUMENT_COLLISION`.
+
+---
+
+### Safeguard D: Token-Level Statistical Perplexity & Logprobs
+* **The Vulnerability:** When handwriting is ambiguous (e.g. a handwritten digit that could be a `3` or an `8`), the model internally knows it is guessing with low statistical probability, but outputs `3` and arbitrarily writes `confidence: 0.85` in the text JSON.
+* **The Statistical Implementation:**
+  - When calling Gemini (`RotatingChatGoogleGenerativeAI`), enable `response_logprobs=True` with `top_logprobs=5` on numeric and alphanumeric fields.
+  - Calculate the linear token probability $P(t) = \exp(\log P(t))$ for each character in critical identifiers, dates, and total amounts.
+  - **Perplexity Threshold:**
+    - If any digit in a critical financial total or entity ID has token probability $P(t) < 0.65$ (meaning the model was nearly split between two characters):
+    - Automatically dock $S_{\text{visual}}$ by 10 points and highlight that specific character in amber/red on the frontend review screen.
+
+---
+
+## 8. Master Summary: The Complete Multi-Layer Defense
+
+```
+Layer 1: Deterministic Math Reconciler   -> 20 pts  [HARD VETO on Mismatch]
+Layer 2: Standard Format/Checksum Rules -> In Layer 1 (IBAN, Luhn, ISO Dates)
+Layer 3: Workspace Domain Rules (lang.py) -> 20 pts  [HARD VETO on Error Rule]
+Layer 4: Master Data Sources (Knowledge)  -> 20 pts  [HARD VETO on ID Collision]
+Layer 5: Spatial BBox & Row Completeness -> In Layer 6 [HARD VETO on Skipped Rows]
+Layer 6: Visual Clarity & Token Logprobs -> 40 pts  [Perplexity penalty on ambiguous digits]
+─────────────────────────────────────────────────────────────────────────────
+TOTAL SCORE                               = 100 pts (Fixed scale, never shifts)
+```
