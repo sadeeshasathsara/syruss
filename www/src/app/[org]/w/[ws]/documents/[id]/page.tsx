@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useAgentChat } from "@/components/chat/ChatProvider";
 import { PageViewer, pagesToShow } from "@/components/documents/PageViewer";
 import { RecordView } from "@/components/documents/RecordView";
+import { ConfidenceScorecard } from "@/components/documents/ConfidenceScorecard";
 import { useShell } from "@/components/shell/ShellContext";
 import { Bar, ErrorNote, PageHeader, Panel } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
@@ -120,12 +121,17 @@ export default function DocumentDetail() {
           )}
           {e ? (
             <>
+              <ConfidenceScorecard
+                confidenceDetails={e.validation?.confidence_details}
+                overallConfidence={e.overall_confidence ?? 0}
+              />
               <RecordView
                 cards
                 data={e.extracted_data}
                 schema={template.data?.schema_definition}
                 evidence={e.evidence_records}
                 uncertain={review?.uncertain_fields}
+                fieldConfidences={e.validation?.confidence_details?.field_confidences}
                 onCorrect={d.status === "COMPLETED" && canCorrect ? correct : undefined}
               />
               {errors.length > 0 && (

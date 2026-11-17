@@ -126,6 +126,46 @@ export interface FieldEvidence {
   note?: string;
 }
 
+export interface ConfidenceDimensionBreakdown {
+  score: number;
+  max: number;
+  [key: string]: unknown;
+}
+
+export interface ConfidenceDetails {
+  total_confidence: number;
+  total_pts: number;
+  hard_cap_applied: string | null;
+  veto_messages: string[];
+  breakdown: {
+    visual: ConfidenceDimensionBreakdown & {
+      raw_model_confidence: number;
+      missing_critical_fields: string[];
+    };
+    math_format: ConfidenceDimensionBreakdown & {
+      arithmetic_checks: number;
+      arithmetic_passed: number;
+      has_discrepancy: boolean;
+      format_violations: string[];
+    };
+    rules: ConfidenceDimensionBreakdown & {
+      configured: boolean;
+      total_active: number;
+      passed: number;
+      warning_failures: number;
+      error_failures: number;
+    };
+    data_sources: ConfidenceDimensionBreakdown & {
+      connected: boolean;
+      exact_matches: number;
+      alias_matches: number;
+      unknown_entities: number;
+      identity_collisions: number;
+    };
+  };
+  field_confidences: Record<string, number>;
+}
+
 export interface Extraction {
   id: string;
   document_id: string;
@@ -140,6 +180,8 @@ export interface Extraction {
     warnings?: { code: string; message: string; path?: string; rule?: string }[];
     /** The workspace graph's identity checks: likely misreads and first-time appearances. */
     signals?: { id: string; code: string; path: string; message: string; blocking: boolean; acknowledged?: boolean; reason?: string }[];
+    /** Full 100-point audited confidence breakdown (Phase 2 confidence engine). */
+    confidence_details?: ConfidenceDetails;
   };
   agent_notes: string | null;
   updated_at: string;

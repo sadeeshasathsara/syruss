@@ -8,6 +8,7 @@ import { Suspense, useState } from "react";
 import { QuestionCard } from "@/components/chat/cards";
 import { DocumentViewer } from "@/components/documents/PageViewer";
 import { RecordView } from "@/components/documents/RecordView";
+import { ConfidenceScorecard } from "@/components/documents/ConfidenceScorecard";
 import { useShell } from "@/components/shell/ShellContext";
 import { Bar, Empty, ErrorNote, PageHeader, PickOne } from "@/components/ui/Blocks";
 import { Button } from "@/components/ui/Button";
@@ -53,6 +54,10 @@ function ReviewItem({ task, onDone }: { task: ReviewTask; onDone: () => void }) 
         </h2>
         <p className="mt-1 text-body text-ink">{task.reason}</p>
       </div>
+      <ConfidenceScorecard
+        confidenceDetails={extraction.data?.validation?.confidence_details}
+        overallConfidence={extraction.data?.overall_confidence ?? 0}
+      />
       <WhatHappened documentId={task.document_id} />
       <div className="grid grid-cols-1 items-start gap-5 @5xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <DocumentViewer documentId={task.document_id} className="h-[50dvh] @5xl:h-[calc(100dvh-180px)]" />
@@ -62,6 +67,7 @@ function ReviewItem({ task, onDone }: { task: ReviewTask; onDone: () => void }) 
             schema={template.data?.schema_definition}
             evidence={extraction.data?.evidence_records}
             uncertain={task.uncertain_fields}
+            fieldConfidences={extraction.data?.validation?.confidence_details?.field_confidences}
             editable
             onChange={setData}
           />
