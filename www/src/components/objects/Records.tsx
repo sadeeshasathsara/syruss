@@ -95,7 +95,7 @@ export function RecordsTable({ type, thing, title = "Records" }: { type: string;
               </thead>
               <tbody>
                 {d.items.map((r) => (
-                  <tr key={r.id} onClick={() => router.push(href(`documents/${r.document_id}`))}
+                  <tr key={r.id} onClick={() => router.push(r.thing ? href(r.thing.path) : href(`documents/${r.document_id}`))}
                     className="cursor-pointer border-t border-rule align-top hover:bg-raised">
                     <td className="whitespace-nowrap px-3 py-2 text-muted" title={dateTime(r.seen_at)}>{ago(r.seen_at)}</td>
                     <td className="max-w-64 px-3 py-2">
