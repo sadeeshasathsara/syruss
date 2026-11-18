@@ -83,9 +83,15 @@ async def remember(body: RememberBody, ws: Workspace = Depends(get_workspace)):
         source={"type": "conversation" if actor.get("source") == "chat" else "run", "event_id": ws.event_id,
                 "conversation_id": actor.get("conversation_id"), "document_ids": body.document_ids},
     )
-    audit(ws, "MEMORY_SAVED" if created else "MEMORY_REINFORCED", "Memory", memory.id, {"scope": body.scope, "kind": body.kind})
+    superseded = (memory.data or {}).get("supersedes", [])
+    if superseded:
+        audit(ws, "MEMORY_SUPERSEDED", "Memory", memory.id, {
+            "scope": body.scope, "kind": body.kind, "superseded_ids": superseded,
+        })
+    else:
+        audit(ws, "MEMORY_SAVED" if created else "MEMORY_REINFORCED", "Memory", memory.id, {"scope": body.scope, "kind": body.kind})
     await ws.db.commit()
-    return {**memory_service.memory_dict(memory), "created": created}
+    return {**memory_service.memory_dict(memory), "created": created, "superseded": superseded}
 
 
 class RecallBody(BaseModel):

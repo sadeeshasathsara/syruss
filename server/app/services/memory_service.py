@@ -23,6 +23,13 @@ KINDS = ("lesson", "observation", "preference", "fact", "summary")
 HALF_LIFE_DAYS = 60
 _vector_column: Optional[bool] = None
 
+# Pillar 2: Semantic Conflict Resolution thresholds
+# >= REINFORCE_SIMILARITY  → same meaning, strengthen existing (no new row)
+# >= CONFLICT_SIMILARITY   → contradictory update, archive old and insert new (supersede)
+# < CONFLICT_SIMILARITY    → genuinely new information, plain insert
+REINFORCE_SIMILARITY = 0.95   # same as DUPLICATE_SIMILARITY used in consolidate()
+CONFLICT_SIMILARITY  = 0.82   # semantic clash threshold from the upgrade plan
+
 
 async def has_vectors(db: AsyncSession) -> bool:
     """Whether this database stores embeddings (pgvector installed when migration 0003 ran)."""
@@ -78,26 +85,95 @@ async def add(
     source: Optional[Dict[str, Any]] = None,
     embedding: Optional[Sequence[float]] = None,
 ) -> Tuple[Memory, bool]:
-    """Remembers something; the same thing said again strengthens the existing memory. Returns (memory, created)."""
+    """
+    Remembers something; returns (memory, created).
+
+    Pillar 2 — Semantic Conflict Resolution:
+      1. Exact text match  → reinforce (boost importance, no new row)
+      2. Embedding similarity >= REINFORCE_SIMILARITY  → reinforce
+      3. Embedding similarity >= CONFLICT_SIMILARITY   → semantic clash:
+           archive the old memory (mark superseded_by=new_id), insert new
+      4. Otherwise → plain insert
+
+    Conversation summaries always replace their existing one (upsert).
+    """
     if scope not in SCOPES or kind not in KINDS:
         raise ValueError(f"scope must be one of {SCOPES} and kind one of {KINDS}")
-    existing = [m for m in (await db.execute(select(Memory).where(
+
+    now = datetime.now(timezone.utc)
+
+    # ── 1. Exact text deduplication (fast path, no DB round-trip for embeddings) ──
+    scope_filter = Memory.user_id.is_(None) if user_id is None else Memory.user_id == user_id
+    existing_all = (await db.execute(select(Memory).where(
         Memory.template_id == template_id, Memory.scope == scope, Memory.kind == kind,
-        Memory.user_id.is_(None) if user_id is None else Memory.user_id == user_id, Memory.archived.is_(False),
-    ))).scalars().all() if _normalize(m.content) == _normalize(content)]
-    if existing:
-        m = existing[0]
+        scope_filter, Memory.archived.is_(False),
+    ))).scalars().all()
+
+    exact = [m for m in existing_all if _normalize(m.content) == _normalize(content)]
+    if exact:
+        m = exact[0]
         m.importance = min(1.0, max(m.importance, importance) + 0.05)
-        m.updated_at = datetime.now(timezone.utc)
+        m.updated_at = now
         return m, False
+
+    # ── 2. Semantic similarity check (requires pgvector + embedding on new memory) ──
+    superseded_ids: List[str] = []          # old memories this new one replaces
+    reinforced: Optional[Memory] = None     # existing memory we strengthen instead of inserting
+
+    if embedding and await has_vectors(db) and len(embedding) == settings.EMBEDDING_DIM:
+        # Only compare within the same scope/kind/user partition
+        vec_rows = await db.execute(text(
+            "SELECT id, 1 - (embedding <=> CAST(:q AS vector)) AS sim "
+            "FROM memories "
+            "WHERE template_id = :t AND scope = :s AND kind = :k "
+            "  AND COALESCE(user_id, '') = :u "
+            "  AND archived = false AND embedding IS NOT NULL "
+            "ORDER BY embedding <=> CAST(:q AS vector) LIMIT 20"
+        ), {
+            "q": _vector_literal(embedding),
+            "t": template_id, "s": scope, "k": kind,
+            "u": user_id or "",
+        })
+        sim_rows: List[Tuple[str, float]] = [(row[0], float(row[1])) for row in vec_rows.all()]
+
+        for mem_id, sim in sim_rows:
+            if sim >= REINFORCE_SIMILARITY:
+                # Same meaning — strengthen the existing memory, skip insert
+                existing = await db.get(Memory, mem_id)
+                if existing and not existing.archived:
+                    existing.importance = min(1.0, max(existing.importance, importance) + 0.05)
+                    existing.updated_at = now
+                    reinforced = existing
+                    break  # only one reinforcement per call
+            elif sim >= CONFLICT_SIMILARITY:
+                # Semantic clash: this new memory supersedes the old one
+                superseded_ids.append(mem_id)
+
+        if reinforced is not None:
+            return reinforced, False
+
+    # ── 3. Insert the new memory ──
     m = Memory(
-        tenant_id=tenant_id, template_id=template_id, scope=scope, kind=kind, content=content.strip(),
-        user_id=user_id, conversation_id=conversation_id, importance=max(0.0, min(1.0, importance)),
+        tenant_id=tenant_id, template_id=template_id, scope=scope, kind=kind,
+        content=content.strip(), user_id=user_id, conversation_id=conversation_id,
+        importance=max(0.0, min(1.0, importance)),
         data=data or {}, source=source or {}, created_by=created_by,
     )
     db.add(m)
-    await db.flush()
+    await db.flush()   # get m.id before we reference it in superseded memories
     await set_embedding(db, m.id, embedding)
+
+    # ── 4. Archive semantically-superseded memories ──
+    for old_id in superseded_ids:
+        old = await db.get(Memory, old_id)
+        if old and not old.archived:
+            old.archived = True
+            old.updated_at = now
+            old.data = {**(old.data or {}), "superseded_by": m.id,
+                        "superseded_at": now.isoformat()}
+    if superseded_ids:
+        m.data = {**(m.data or {}), "supersedes": superseded_ids}
+
     return m, True
 
 
