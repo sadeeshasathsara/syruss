@@ -45,6 +45,9 @@ class RunContext:
     actions: List[str] = field(default_factory=list)
     # In a thread Syruss opened: the note it left there last time (where it left off)
     working_note: str = ""
+    # Confidence and veto state of the most recent record submission in this run
+    last_record_confidence: Optional[float] = None
+    last_record_veto_reasons: List[str] = field(default_factory=list)
 
     @property
     def tenant_id(self) -> str:

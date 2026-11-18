@@ -91,6 +91,10 @@ async def submit_record(ctx: RunContext, a: SubmitArgs) -> ToolOutcome:
         "dual_pass_verified": a.dual_pass_verified if a.dual_pass_verified else None,
     }
     result = await ctx.api.post(f"/documents/{a.document_id}/record", body)
+    if isinstance(result, dict):
+        conf_details = result.get("confidence_details") or result.get("validation", {}).get("confidence_details") or {}
+        ctx.last_record_confidence = result.get("confidence") if result.get("confidence") is not None else conf_details.get("total_confidence", a.confidence)
+        ctx.last_record_veto_reasons = conf_details.get("veto_reasons") or []
     if result.get("new_identities"):
         ctx.unregistered = list(result["new_identities"])
         ctx.registration = result.get("registration", "")

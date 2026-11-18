@@ -192,7 +192,12 @@ class RecordService:
         if decision == "COMMIT":
             # Written in this same transaction, so an approved record is never lost on its way out to the destinations.
             await delivery_service.enqueue(db, template=template, document=document, result=result, actor=actor)
-        return {"status": document.status.value, "validation": validation}
+        return {
+            "status": document.status.value,
+            "validation": result.validation,
+            "confidence": authoritative_confidence,
+            "confidence_details": confidence_report.to_dict(),
+        }
 
 
 record_service = RecordService()

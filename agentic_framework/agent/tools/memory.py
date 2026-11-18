@@ -8,10 +8,34 @@ from agentic_framework.agent.tools.base import RunContext, ToolOutcome, dump, js
 async def save_memory(ctx: RunContext, scope: str, kind: str, content: str, *, importance: float = 0.5,
                       document_ids: Optional[List[str]] = None, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Remembers in the core server, with an embedding when one can be made."""
+    mem_data = dict(data or {})
+    target_kind = kind
+
+    # Pillar 1: Confidence Gating & Hallucination Guard for lessons
+    if kind == "lesson" and scope == "workspace":
+        is_human_driven = getattr(ctx.event, "type", "") == "human.message"
+        last_conf = getattr(ctx, "last_record_confidence", None)
+        vetoes = getattr(ctx, "last_record_veto_reasons", []) or []
+
+        if is_human_driven:
+            mem_data.setdefault("status", "verified")
+        elif last_conf is not None and last_conf >= 0.90 and not vetoes:
+            mem_data["status"] = "verified"
+            mem_data["source_run_confidence"] = last_conf
+        else:
+            # Downgrade unverified lesson to observation to prevent briefing contamination
+            target_kind = "observation"
+            mem_data["status"] = "unverified"
+            mem_data["downgraded_from"] = "lesson"
+            if last_conf is not None:
+                mem_data["source_run_confidence"] = last_conf
+            if vetoes:
+                mem_data["veto_reasons"] = vetoes
+
     [vector] = await embed_documents([content])
     return await ctx.api.post("/memories", {
-        "scope": scope, "kind": kind, "content": content, "importance": importance,
-        "document_ids": document_ids or [], "data": data or {}, "embedding": vector,
+        "scope": scope, "kind": target_kind, "content": content, "importance": importance,
+        "document_ids": document_ids or [], "data": mem_data, "embedding": vector,
     })
 
 

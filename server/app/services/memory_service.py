@@ -282,3 +282,41 @@ async def consolidate(db: AsyncSession, template_id: str, now: Optional[datetime
         merged.append({"kept": keep.content[:200], "merged": drop.content[:200], "similarity": round(similarity, 3)})
     await db.flush()
     return {"retired": len(retired), "merged": len(merged), "retired_items": retired[:20], "merged_items": merged[:20]}
+
+
+async def promote_memories_for_document(
+    db: AsyncSession,
+    *,
+    template_id: str,
+    document_id: str,
+    promoted_by: str,
+) -> List[Memory]:
+    """
+    Pillar 1: Promotes any unverified memories associated with document_id to authoritative workspace lessons
+    once a human reviewer approves or corrects the document extraction or answers a related question.
+    """
+    all_memories = (await db.execute(
+        select(Memory).where(
+            Memory.template_id == template_id,
+            Memory.archived.is_(False),
+        )
+    )).scalars().all()
+
+    promoted: List[Memory] = []
+    now = datetime.now(timezone.utc)
+    for m in all_memories:
+        docs = list((m.source or {}).get("document_ids") or []) + list((m.data or {}).get("document_ids") or [])
+        if document_id in docs:
+            is_unverified = (m.data or {}).get("status") == "unverified" or (m.data or {}).get("downgraded_from") == "lesson"
+            if is_unverified:
+                m.kind = "lesson"
+                data = dict(m.data or {})
+                data["status"] = "verified"
+                data["promoted_by"] = promoted_by
+                data["promoted_at"] = now.isoformat()
+                m.data = data
+                m.importance = min(1.0, m.importance + 0.20)
+                m.updated_at = now
+                promoted.append(m)
+    await db.flush()
+    return promoted

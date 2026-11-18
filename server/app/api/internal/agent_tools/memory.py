@@ -59,9 +59,27 @@ async def remember(body: RememberBody, ws: Workspace = Depends(get_workspace)):
         raise HTTPException(status_code=422, detail="Preferences belong to a person: use scope personal.")
     else:
         await _may_change_workspace_memory(ws, actor)
+
+    mem_kind = body.kind
+    mem_data = dict(body.data or {})
+    # Pillar 1: Confidence Gating & Hallucination Guard
+    if mem_kind == "lesson" and body.scope == "workspace":
+        is_human = actor.get("type") == "user"
+        if not is_human:
+            conf = mem_data.get("source_run_confidence")
+            vetoes = mem_data.get("veto_reasons", [])
+            if mem_data.get("status") == "unverified" or (conf is not None and conf < 0.90) or vetoes:
+                mem_kind = "observation"
+                mem_data["status"] = "unverified"
+                mem_data["downgraded_from"] = "lesson"
+            else:
+                mem_data.setdefault("status", "verified")
+        else:
+            mem_data.setdefault("status", "verified")
+
     memory, created = await memory_service.add(
-        ws.db, tenant_id=ws.tenant_id, template_id=ws.template_id, scope=body.scope, kind=body.kind, content=body.content,
-        created_by="agent", user_id=user_id, importance=body.importance, data=body.data, embedding=body.embedding,
+        ws.db, tenant_id=ws.tenant_id, template_id=ws.template_id, scope=body.scope, kind=mem_kind, content=body.content,
+        created_by="agent", user_id=user_id, importance=body.importance, data=mem_data, embedding=body.embedding,
         source={"type": "conversation" if actor.get("source") == "chat" else "run", "event_id": ws.event_id,
                 "conversation_id": actor.get("conversation_id"), "document_ids": body.document_ids},
     )
