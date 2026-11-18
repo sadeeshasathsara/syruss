@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.document import Document, DocumentStatus
 from app.models.extraction import ExtractionResult
 from app.models.knowledge import Entity
+from app.models.question import AgentQuestion, AgentQuestionStatus
+from app.services import settings_service
 
 SAME_NAME_THRESHOLD = 0.75
 
@@ -38,6 +40,20 @@ def _similar(a: str, b: str) -> bool:
     if a in b or b in a:
         return True
     return difflib.SequenceMatcher(None, a, b).ratio() >= SAME_NAME_THRESHOLD
+
+
+def is_name_variation(a: str, b: str) -> bool:
+    """Checks if a and b are variations of the same name (e.g. 'Silva K.G.' vs 'K.G. Silva', or minor spelling difference)."""
+    na, nb = normalize_label(a), normalize_label(b)
+    if _similar(na, nb):
+        return True
+    tokens_a = set(re.findall(r'[a-z0-9]+', str(a).lower()))
+    tokens_b = set(re.findall(r'[a-z0-9]+', str(b).lower()))
+    if tokens_a and tokens_b:
+        overlap = len(tokens_a & tokens_b) / max(len(tokens_a), len(tokens_b))
+        if overlap >= 0.5:
+            return True
+    return False
 
 
 def _identities(schema: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
@@ -62,6 +78,19 @@ async def find_identity_conflicts(
     identities = {t: i for t, i in _identities(schema).items() if t in data}
     if not identities:
         return []
+
+    # Check autonomy settings and past human answers
+    agent_prefs = (await settings_service.get_settings(db, template_id)).agent
+    may_register = agent_prefs.may_register_entities
+    may_learn_aliases = agent_prefs.may_learn_aliases
+    answered_rows = (await db.execute(
+        select(AgentQuestion.question, AgentQuestion.context, AgentQuestion.answer).where(
+            AgentQuestion.template_id == template_id, AgentQuestion.status == AgentQuestionStatus.ANSWERED
+        )
+    )).all()
+    answered_text = " ".join(" ".join(filter(None, r)) for r in answered_rows)
+    norm_answered = normalize_label(answered_text)
+    norm_answered_id = normalize_id(answered_text)
 
     labels_by_id: Dict[str, Set[str]] = defaultdict(set)   # normalized id -> normalized labels
     ids_by_label: Dict[str, Set[str]] = defaultdict(set)   # normalized label -> normalized ids
@@ -99,18 +128,24 @@ async def find_identity_conflicts(
                 continue
             known_labels = labels_by_id.get(nid, set())
             if known_labels and not any(_similar(nlabel, k) for k in known_labels):
-                names = ", ".join(sorted(shown.get(k, k) for k in known_labels))
-                conflicts.append({
-                    "code": "identity_conflict", "path": f"{obj_type}[{i}]",
-                    "message": f"{ident['id_field']} {raw_id} is already known as {names}, not '{raw_label}'.",
-                })
+                is_alias_variation = may_learn_aliases and any(is_name_variation(raw_label, shown.get(k, k)) for k in known_labels)
+                is_approved = (nid in norm_answered_id) and any(_similar(nlabel, normalize_label(word)) for word in answered_text.split() if len(word) >= 3)
+                if not is_approved and not is_alias_variation:
+                    names = ", ".join(sorted(shown.get(k, k) for k in known_labels))
+                    conflicts.append({
+                        "code": "identity_conflict", "path": f"{obj_type}[{i}]",
+                        "message": f"{ident['id_field']} {raw_id} is already known as {names}, not '{raw_label}'.",
+                    })
             other_ids = {k for l, ids in ids_by_label.items() if l == nlabel for k in ids} - {nid}
             if other_ids:
-                ids = ", ".join(sorted(shown.get(k, k) for k in other_ids))
-                conflicts.append({
-                    "code": "identity_conflict", "path": f"{obj_type}[{i}]",
-                    "message": f"'{raw_label}' is already known with {ident['id_field']} {ids}, not {raw_id}.",
-                })
+                is_approved = (nid in norm_answered_id)
+                is_new_and_may_register = may_register and (nid not in labels_by_id)
+                if not is_approved and not is_new_and_may_register:
+                    ids = ", ".join(sorted(shown.get(k, k) for k in other_ids))
+                    conflicts.append({
+                        "code": "identity_conflict", "path": f"{obj_type}[{i}]",
+                        "message": f"'{raw_label}' is already known with {ident['id_field']} {ids}, not {raw_id}.",
+                    })
     return conflicts
 
 
@@ -129,6 +164,7 @@ async def find_unsupported_identities(
     identities = {t: i for t, i in _identities(schema).items() if t in data}
     if not identities:
         return []
+    may_register = (await settings_service.get_settings(db, template_id)).agent.may_register_entities
     by_key = {}
     for ev in evidence or []:
         if isinstance(ev, dict):
@@ -143,6 +179,8 @@ async def find_unsupported_identities(
             path = f"{obj_type}[{i}].{ident['label_field']}"
             ev = by_key.get((obj_type, i, ident["label_field"]))
             if not ev or not str(ev.get("raw_text") or "").strip():
+                if may_register:
+                    continue
                 problems.append({"code": "identity_evidence_missing", "path": path, "message":
                                  f"Give evidence with raw_text (exactly what is written) for {path}."})
                 continue

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, cast, String
 from app.models.document import Document, DocumentStatus, DocumentRole
 from app.models.extraction import ExtractionResult
-from app.models.knowledge import Entity
+from app.models.knowledge import Entity, EntityAlias
 from app.models.question import AgentQuestion, AgentQuestionStatus
 from app.models.review import ReviewTask, ReviewStatus
 from app.services import (
@@ -23,7 +23,7 @@ from app.services.confidence_service import evaluate_confidence
 from app.services.identity_check import find_identity_conflicts, resolve_entity_matches
 from app.services.live.ui_events import publish_ui_event
 from app.api.internal.agent_tools.scope import Workspace, get_workspace
-from app.api.internal.agent_tools.common import document_in
+from app.api.internal.agent_tools.common import audit, document_in
 
 
 router = APIRouter()
@@ -102,6 +102,109 @@ async def _refuse_unapproved_identities(ws: Workspace, doc: Document, data: Dict
     })
 
 
+async def _auto_register_entities(ws: Workspace, doc: Document, data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Register new people and things is ON: automatically save unknown people and things
+    identified in this committed record into the Entity table.
+    """
+    objects = normalize_schema(ws.template.schema_definition)
+    identified = {o["type"]: o["identity"] for o in (ws.template.schema_definition or {}).get("objects", [])
+                  if isinstance(o, dict) and isinstance(o.get("identity"), dict)}
+    prefs = await settings_service.get_settings(ws.db, ws.template_id)
+
+    unknown = await _unknown_identities(ws, data)
+    registered = []
+
+    for item in unknown:
+        entity_type = item["type"]
+        raw_id = item["id"]
+        raw_name = item.get("name") or raw_id
+        if not raw_id:
+            continue
+
+        existing = (await ws.db.execute(
+            select(Entity).where(
+                Entity.template_id == ws.template_id,
+                Entity.entity_type == entity_type,
+                Entity.identifier_value == raw_id,
+            )
+        )).scalar_one_or_none()
+
+        id_field = identified.get(entity_type, {}).get("id_field")
+        label_field = identified.get(entity_type, {}).get("label_field")
+
+        attributes = {}
+        for row in graph_service.rows_of(data, entity_type):
+            if normalize_id(row.get(id_field)) == normalize_id(raw_id):
+                attributes = {k: v for k, v in row.items() if k not in (id_field, label_field) and v is not None}
+                break
+
+        if not existing:
+            entity = Entity(
+                tenant_id=ws.tenant_id,
+                template_id=ws.template_id,
+                entity_type=entity_type,
+                name=raw_name,
+                identifier_key=id_field,
+                identifier_value=raw_id,
+                attributes=attributes,
+                confidence=1.0,
+                created_by="agent",
+                source_document_id=doc.id,
+            )
+            ws.db.add(entity)
+            await ws.db.flush()
+            audit(ws, "ENTITY_CREATED", "Entity", entity.id, {
+                "name": raw_name,
+                "reason": f"Auto-registered from committed record of document {doc.id}",
+                "identifier_key": id_field,
+                "identifier_value": raw_id,
+            })
+            registered.append({"type": entity_type, "id": raw_id, "name": raw_name})
+        elif prefs.agent.may_learn_aliases and raw_name and raw_name != existing.name:
+            alias_str = raw_name.strip()
+            existing_aliases = {a.alias.lower() for a in existing.aliases}
+            if alias_str.lower() != existing.name.lower() and alias_str.lower() not in existing_aliases:
+                ws.db.add(EntityAlias(entity_id=existing.id, template_id=ws.template_id, alias=alias_str,
+                                      source=f"committed document {doc.id}"))
+
+    if registered:
+        await ws.db.commit()
+
+    # Learn aliases for existing entities when may_learn_aliases is True
+    if prefs.agent.may_learn_aliases:
+        for obj_type, ident in identified.items():
+            id_field = ident.get("id_field")
+            label_field = ident.get("label_field")
+            if not id_field or not label_field:
+                continue
+            for row in graph_service.rows_of(data, obj_type):
+                raw_id = row.get(id_field)
+                raw_label = row.get(label_field)
+                if not raw_id or not raw_label:
+                    continue
+                ent = (await ws.db.execute(
+                    select(Entity).where(
+                        Entity.template_id == ws.template_id,
+                        Entity.entity_type == obj_type,
+                        Entity.identifier_value == str(raw_id).strip(),
+                    )
+                )).scalar_one_or_none()
+                if ent and str(raw_label).strip().lower() != ent.name.lower():
+                    alias_str = str(raw_label).strip()
+                    existing_aliases = {a.alias.lower() for a in ent.aliases}
+                    if alias_str.lower() not in existing_aliases:
+                        ws.db.add(EntityAlias(
+                            entity_id=ent.id,
+                            template_id=ws.template_id,
+                            alias=alias_str,
+                            source=f"committed document {doc.id}",
+                        ))
+        await ws.db.commit()
+
+    return registered
+
+
 async def _new_identities(ws: Workspace, data: Dict[str, Any]) -> List[Dict[str, str]]:
     """Registration on: who and what a committed record names that isn't registered yet."""
     return await _unknown_identities(ws, data)
@@ -157,12 +260,11 @@ async def submit_record(document_id: str, body: RecordSubmission, ws: Workspace 
             tenant_id=ws.tenant_id, template_id=ws.template_id, stage="saved", level="success", actor="Agent", document_id=doc.id,
             document_name=name, message="Read and saved.", details={"confidence": body.confidence}, event_id=ws.event_id)
     if outcome["status"] == "COMPLETED" and may_register:
-        new = await _new_identities(ws, body.data)
-        if new:
-            outcome["new_identities"] = new
-            outcome["registration"] = "you_may_register"
-            outcome["next"] = ("These aren't registered yet. Register each one you are sure of with create_entity "
-                               f"(source_document_id {doc.id}) so you recognize them on later documents.")
+        registered = await _auto_register_entities(ws, doc, body.data)
+        if registered:
+            outcome["registered_identities"] = registered
+            outcome["registration"] = "registered_from_committed_record"
+            outcome["message"] = f"Committed and auto-registered {len(registered)} new people and things: {_listed(registered)}."
     return outcome
 
 

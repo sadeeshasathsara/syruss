@@ -98,6 +98,9 @@ async def submit_record(ctx: RunContext, a: SubmitArgs) -> ToolOutcome:
     if result.get("new_identities"):
         ctx.unregistered = list(result["new_identities"])
         ctx.registration = result.get("registration", "")
+    elif result.get("registered_identities"):
+        ctx.unregistered = []
+        ctx.registration = result.get("registration", "")
     if ctx.evaluating:  # scored, not stored: nothing to remember or close
         ctx.resolved_documents.add(a.document_id)
         return ToolOutcome(dump(result), touched_document_ids=[a.document_id])
