@@ -137,6 +137,7 @@ class RecordService:
             entity_match_result=entity_match_result,
             identity_conflicts=identity_conflict_list if identity_conflict_list else None,
             dual_pass_verified=dual_pass_verified,
+            evidence=evidence,
         )
         # Authoritative score overrides agent-reported confidence if a veto applies
         authoritative_confidence = confidence_report.total_confidence

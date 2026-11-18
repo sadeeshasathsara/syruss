@@ -49,6 +49,8 @@ class VetoReason(str, Enum):
     IDENTITY_COLLISION = "identity_collision"
     CRITICAL_FIELD_MISSING = "critical_field_missing"
     ERROR_RULE_FAILED = "error_rule_failed"
+    ROW_OMISSION = "row_omission"
+    MULTI_DOCUMENT_COLLISION = "multi_document_collision"
 
 
 @dataclass
@@ -428,6 +430,131 @@ def _score_data_sources(
     )
 
 
+
+
+# ---------------------------------------------------------------------------
+# Enterprise Hardening Safeguards (Section 7 of Master Plan)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class EnterpriseSafeguardsAudit:
+    spatial_contradiction: bool = False
+    spatial_messages: List[str] = field(default_factory=list)
+    spatial_penalty: float = 0.0
+
+    row_omission_detected: bool = False
+    row_omission_message: Optional[str] = None
+
+    multi_page_collision_detected: bool = False
+    multi_page_collision_message: Optional[str] = None
+
+    perplexity_penalty_applied: bool = False
+    perplexity_penalty: float = 0.0
+
+
+def _audit_enterprise_safeguards(
+    *,
+    schema: Optional[Dict[str, Any]],
+    data: Dict[str, Any],
+    evidence: Optional[List[Dict[str, Any]]] = None,
+    visual_row_count_detected: Optional[int] = None,
+    multi_page_collision: bool = False,
+    has_low_probability_tokens: bool = False,
+) -> EnterpriseSafeguardsAudit:
+    """
+    Evaluates the 4 definitive enterprise hardening safeguards:
+      Safeguard A: Spatial Grounding & Bounding-Box Sanity (-15 pts on contradiction)
+      Safeguard B: Table Row Completeness Audit (<= 0.50 Hard-Cap Veto on delta)
+      Safeguard C: Multi-Page Bleed & Document Collision (<= 0.40 Hard-Cap Veto)
+      Safeguard D: Token-Level Statistical Perplexity (-10 pts on low prob digit)
+    """
+    audit = EnterpriseSafeguardsAudit()
+
+    # --- Safeguard A: Spatial Grounding ---
+    if evidence:
+        row_y_coords: Dict[str, List[tuple]] = {}  # object_type -> [(index, ymin)]
+        for ev in evidence:
+            if not isinstance(ev, dict):
+                continue
+            box = ev.get("box_2d")
+            page = ev.get("page", 1)
+            field_name = str(ev.get("field", "")).lower()
+            obj_name = str(ev.get("object", ""))
+            idx = ev.get("index")
+
+            if isinstance(box, (list, tuple)) and len(box) >= 4:
+                ymin, xmin, ymax, xmax = box[:4]
+                # Region sanity on Page 1
+                if page == 1:
+                    # Header fields (vendor, company) should reside in upper region (ymin < 400)
+                    if any(h in field_name for h in ("vendor", "company", "supplier", "header")) and ymin > 400:
+                        audit.spatial_contradiction = True
+                        audit.spatial_messages.append(
+                            f"Spatial region contradiction: header field '{field_name}' located at ymin={ymin} (> 400)."
+                        )
+                    # Grand totals and signatures should not reside in top 10% header (ymin > 100)
+                    if any(t in field_name for t in ("grand_total", "total_amount", "amount_due", "signature")) and ymin < 100:
+                        audit.spatial_contradiction = True
+                        audit.spatial_messages.append(
+                            f"Spatial region contradiction: total/signature field '{field_name}' located in top 10% header (ymin={ymin} < 100)."
+                        )
+
+                # Track table row progression for monotonic ordering
+                if idx is not None and isinstance(idx, int):
+                    row_y_coords.setdefault(obj_name, []).append((idx, ymin))
+
+        for obj_name, coords in row_y_coords.items():
+            sorted_coords = sorted(coords, key=lambda x: x[0])
+            for i in range(len(sorted_coords) - 1):
+                cur_idx, cur_ymin = sorted_coords[i]
+                next_idx, next_ymin = sorted_coords[i + 1]
+                # If subsequent row jumps backwards significantly (> 20 units) on same page
+                if next_ymin < cur_ymin - 20:
+                    audit.spatial_contradiction = True
+                    audit.spatial_messages.append(
+                        f"Table row non-monotonic progression in '{obj_name}': row {next_idx} (ymin={next_ymin}) "
+                        f"appears above row {cur_idx} (ymin={cur_ymin})."
+                    )
+                    break
+
+        if audit.spatial_contradiction:
+            audit.spatial_penalty = 15.0
+
+    # --- Safeguard B: Table Row Completeness Audit ---
+    if visual_row_count_detected is not None:
+        # Determine extracted items count across multiple-item tables in data
+        extracted_row_count = 0
+        objects = normalize_schema(schema)
+        for otype, ospec in objects.items():
+            if ospec["multiple"]:
+                rows = data.get(otype)
+                if isinstance(rows, list):
+                    extracted_row_count = max(extracted_row_count, len(rows))
+        
+        delta_rows = abs(visual_row_count_detected - extracted_row_count)
+        if delta_rows > 0:
+            audit.row_omission_detected = True
+            audit.row_omission_message = (
+                f"Possible row omission: vision detected {visual_row_count_detected} rows on the sheet, "
+                f"but only {extracted_row_count} were extracted."
+            )
+
+    # --- Safeguard C: Multi-Page Bleed & Collision ---
+    if multi_page_collision:
+        audit.multi_page_collision_detected = True
+        audit.multi_page_collision_message = (
+            "Multi-page collision detected: primary identity shifted mid-document without continuation label. "
+            "Confidence capped at 0.40."
+        )
+
+    # --- Safeguard D: Token Perplexity ---
+    if has_low_probability_tokens:
+        audit.perplexity_penalty_applied = True
+        audit.perplexity_penalty = 10.0
+
+    return audit
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -442,6 +569,10 @@ def evaluate_confidence(
     field_confidences: Optional[Dict[str, float]] = None,
     identity_conflicts: Optional[List[Dict[str, Any]]] = None,
     dual_pass_verified: Optional[bool] = None,
+    evidence: Optional[List[Dict[str, Any]]] = None,
+    visual_row_count_detected: Optional[int] = None,
+    multi_page_collision: bool = False,
+    has_low_probability_tokens: bool = False,
 ) -> ConfidenceReport:
     """
     Compute the full 100-point audited confidence score for a document extraction.
@@ -459,7 +590,21 @@ def evaluate_confidence(
         ConfidenceReport with full breakdown and final confidence (0.0–1.0).
     """
     # --- Score each dimension ---
+    # Run Enterprise Hardening Safeguards audit
+    safeguards = _audit_enterprise_safeguards(
+        schema=schema,
+        data=data,
+        evidence=evidence,
+        visual_row_count_detected=visual_row_count_detected,
+        multi_page_collision=multi_page_collision,
+        has_low_probability_tokens=has_low_probability_tokens,
+    )
+
     v_score = _score_visual(schema, data, raw_model_confidence, dual_pass_verified=dual_pass_verified)
+    # Apply Safeguard A & D visual deductions
+    if safeguards.spatial_penalty > 0 or safeguards.perplexity_penalty > 0:
+        total_safeguard_deductions = safeguards.spatial_penalty + safeguards.perplexity_penalty
+        v_score.final_pts = max(0.0, v_score.final_pts - total_safeguard_deductions)
     mf_score = _score_math_format(schema, data)
     r_score = _score_rules(schema, data, active_workspace_rules)
     ds_score = _score_data_sources(entity_match_result)
@@ -511,13 +656,26 @@ def evaluate_confidence(
             "Score capped at 0.50."
         )
 
+    # Veto 5 (Safeguard B): Table Row Completeness Omission
+    if safeguards.row_omission_detected:
+        if veto is None:
+            veto = VetoReason.ROW_OMISSION
+        veto_messages.append(safeguards.row_omission_message or "Row omission detected: score capped at 0.50.")
+
+    # Veto 6 (Safeguard C): Multi-Page Document Collision
+    if safeguards.multi_page_collision_detected:
+        if veto is None:
+            veto = VetoReason.MULTI_DOCUMENT_COLLISION
+        veto_messages.append(safeguards.multi_page_collision_message or "Multi-page collision detected: score capped at 0.40.")
+
     # --- Compute raw total ---
     raw_pts = v_score.final_pts + mf_score.final_pts + r_score.final_pts + ds_score.final_pts
     raw_confidence = raw_pts / 100.0
 
     # --- Apply hard cap ---
     if veto is not None:
-        final_confidence = min(HARD_CAP, raw_confidence)
+        effective_cap = 0.40 if veto == VetoReason.MULTI_DOCUMENT_COLLISION else HARD_CAP
+        final_confidence = min(effective_cap, raw_confidence)
         final_pts = final_confidence * 100.0
     else:
         final_confidence = min(1.0, raw_confidence)

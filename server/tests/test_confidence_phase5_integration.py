@@ -487,3 +487,130 @@ class TestQualityAnalyticsIntegration:
             assert conf["average_dimension_scores"]["data_sources"] == 20.0
             assert conf["coverage"]["rules_active_rate"] == 1.0
             assert conf["coverage"]["sources_connected_rate"] == 1.0
+
+
+
+# ---------------------------------------------------------------------------
+# Test Suite 5: Enterprise Hardening Safeguards (Section 7 of Master Plan)
+# ---------------------------------------------------------------------------
+
+class TestEnterpriseSafeguards:
+    def test_safeguard_a_spatial_contradiction_vendor_header_in_lower_region(self):
+        """Safeguard A: Vendor header located at ymin > 400 incurs 15-pt spatial penalty."""
+        data = {
+            "InvoiceHeader": {
+                "invoice_number": "INV-100",
+                "vendor_name": "Bottom Header Corp",
+                "subtotal": 100.0,
+                "tax_amount": 10.0,
+                "grand_total": 110.0,
+            },
+            "LineItem": [{"quantity": 1, "unit_price": 100.0, "line_total": 100.0}],
+        }
+        evidence = [
+            {"object": "InvoiceHeader", "field": "vendor_name", "box_2d": [650, 100, 700, 300], "page": 1},
+        ]
+        # Raw confidence 1.0 -> 40.0 pts. Spatial contradiction deducts 15.0 -> 25.0 pts.
+        rep = evaluate_confidence(
+            schema=INVOICE_SCHEMA,
+            data=data,
+            raw_model_confidence=1.0,
+            evidence=evidence,
+        )
+        assert rep.visual.final_pts == 25.0
+
+    def test_safeguard_a_spatial_table_row_non_monotonic_jump(self):
+        """Safeguard A: Non-monotonic row jump (row 1 higher than row 0) incurs 15-pt spatial penalty."""
+        data = {
+            "InvoiceHeader": {
+                "invoice_number": "INV-100",
+                "vendor_name": "Acme",
+                "subtotal": 100.0,
+                "tax_amount": 10.0,
+                "grand_total": 110.0,
+            },
+            "LineItem": [
+                {"quantity": 1, "unit_price": 50.0, "line_total": 50.0},
+                {"quantity": 1, "unit_price": 50.0, "line_total": 50.0},
+            ],
+        }
+        evidence = [
+            {"object": "LineItem", "index": 0, "field": "line_total", "box_2d": [500, 100, 520, 200], "page": 1},
+            {"object": "LineItem", "index": 1, "field": "line_total", "box_2d": [300, 100, 320, 200], "page": 1},  # jumps backwards
+        ]
+        rep = evaluate_confidence(
+            schema=INVOICE_SCHEMA,
+            data=data,
+            raw_model_confidence=1.0,
+            evidence=evidence,
+        )
+        assert rep.visual.final_pts == 25.0
+
+    def test_safeguard_b_table_row_omission_triggers_veto(self):
+        """Safeguard B: Vision reports 5 rows but only 3 were extracted -> <= 0.50 Hard-Cap Veto."""
+        data = {
+            "InvoiceHeader": {
+                "invoice_number": "INV-100",
+                "vendor_name": "Acme",
+                "subtotal": 100.0,
+                "tax_amount": 10.0,
+                "grand_total": 110.0,
+            },
+            "LineItem": [
+                {"quantity": 1, "unit_price": 30.0, "line_total": 30.0},
+                {"quantity": 1, "unit_price": 30.0, "line_total": 30.0},
+                {"quantity": 1, "unit_price": 40.0, "line_total": 40.0},
+            ],
+        }
+        rep = evaluate_confidence(
+            schema=INVOICE_SCHEMA,
+            data=data,
+            raw_model_confidence=1.0,
+            visual_row_count_detected=5,  # 5 rows detected visually, 3 extracted
+        )
+        assert rep.hard_cap_applied == VetoReason.ROW_OMISSION
+        assert rep.total_confidence <= HARD_CAP
+        assert any("Possible row omission" in msg for msg in rep.veto_messages)
+
+    def test_safeguard_c_multi_page_collision_triggers_0_40_cap(self):
+        """Safeguard C: Multi-page document collision triggers <= 0.40 Hard-Cap Veto."""
+        data = {
+            "InvoiceHeader": {
+                "invoice_number": "INV-100",
+                "vendor_name": "Acme",
+                "subtotal": 100.0,
+                "tax_amount": 10.0,
+                "grand_total": 110.0,
+            },
+            "LineItem": [{"quantity": 1, "unit_price": 100.0, "line_total": 100.0}],
+        }
+        rep = evaluate_confidence(
+            schema=INVOICE_SCHEMA,
+            data=data,
+            raw_model_confidence=1.0,
+            multi_page_collision=True,
+        )
+        assert rep.hard_cap_applied == VetoReason.MULTI_DOCUMENT_COLLISION
+        assert rep.total_confidence <= 0.40
+        assert any("Multi-page collision detected" in msg for msg in rep.veto_messages)
+
+    def test_safeguard_d_token_perplexity_deduction(self):
+        """Safeguard D: Low token probability on critical digits docks S_visual by 10 points."""
+        data = {
+            "InvoiceHeader": {
+                "invoice_number": "INV-100",
+                "vendor_name": "Acme",
+                "subtotal": 100.0,
+                "tax_amount": 10.0,
+                "grand_total": 110.0,
+            },
+            "LineItem": [{"quantity": 1, "unit_price": 100.0, "line_total": 100.0}],
+        }
+        rep = evaluate_confidence(
+            schema=INVOICE_SCHEMA,
+            data=data,
+            raw_model_confidence=1.0,
+            has_low_probability_tokens=True,
+        )
+        # 40.0 base - 10.0 perplexity = 30.0 pts
+        assert rep.visual.final_pts == 30.0
