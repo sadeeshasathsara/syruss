@@ -17,6 +17,7 @@ from app.models.review import ReviewStatus, ReviewTask
 from app.schemas.review import ReviewDecisionRequest
 from app.services.agent_events import enqueue_agent_event, agent_event_relay
 from app.services import extraction_log
+from app.services import memory_service
 from app.services.document_key import label_for
 from app.services.record_service import record_service
 
@@ -72,6 +73,17 @@ class ReviewService:
             )
             task.status = ReviewStatus.APPROVED if action == "APPROVE" else ReviewStatus.CORRECTED
             task.corrected_data = decision.corrected_data if action == "CORRECT" else None
+
+            # Phase 1: Promote unverified memories for this human-confirmed document
+            promoted = await memory_service.promote_memories_for_document(
+                db, template_id=scope.template_id, document_id=doc.id, promoted_by=scope.username or scope.user_id,
+            )
+            for pm in promoted:
+                db.add(AuditLog(
+                    tenant_id=scope.tenant_id, template_id=scope.template_id,
+                    event_type="MEMORY_PROMOTED", entity_type="Memory", entity_id=pm.id,
+                    actor=scope.user_id, details={"document_id": doc.id, "action": action, "new_kind": pm.kind},
+                ))
         else:
             task.status = ReviewStatus.REJECTED
             doc.status = DocumentStatus.FAILED

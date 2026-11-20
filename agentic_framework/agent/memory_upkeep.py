@@ -36,6 +36,19 @@ async def before_run(ctx: RunContext) -> None:
 
 
 async def _move_older_notes(ctx: RunContext) -> None:
+    """
+    Pillar 4 — Single Store Unification (migration bridge, now effectively a no-op).
+
+    Before Phase 4, lessons and observations were written to the agent service's local
+    memory_notes table, and this function migrated them to the core /memories store on
+    the agent's first run after the upgrade.
+
+    After Phase 4, MemoryStore.list() returns [] for 'lesson' and 'observation' kinds,
+    so `notes` below is always empty and the API call / mark-moved loop never runs.
+    The function is kept to avoid breaking callers but does nothing for new workspaces.
+    Old workspaces that still have un-migrated rows in memory_notes (pre-Phase-4) will
+    still be migrated correctly on their first run because the DB rows are still there.
+    """
     notes = [
         *await ctx.memory.list(ctx.tenant_id, ctx.template_id, "lesson", limit=500),
         *await ctx.memory.list(ctx.tenant_id, ctx.template_id, "observation", limit=500),

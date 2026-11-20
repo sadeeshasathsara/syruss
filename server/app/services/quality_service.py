@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.audit import AuditLog
 from app.models.evaluation import EvalRun
 from app.models.review import ReviewStatus, ReviewTask
+from app.models.extraction import ExtractionResult
 from app.services.benchmark_service import _flatten
 
 BUCKETS = [(0.0, 0.5), (0.5, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.01)]
@@ -80,6 +81,46 @@ async def live(db: AsyncSession, template_id: str, days: int = 30) -> Dict[str, 
                     buckets[b]["reviewed"] += 1
                     buckets[b]["changed"] += int(changed)
 
+    # Confidence engine analytics (Phase 4)
+    extractions = (await db.execute(select(ExtractionResult).where(
+        ExtractionResult.template_id == template_id, ExtractionResult.updated_at >= since,
+    ))).scalars().all()
+    total_ext = len(extractions)
+    veto_count = 0
+    veto_reasons = Counter()
+    dimension_totals = {"visual": 0.0, "math_format": 0.0, "rules": 0.0, "data_sources": 0.0}
+    with_rules_count = 0
+    with_sources_count = 0
+
+    for ext in extractions:
+        cd = (ext.validation or {}).get("confidence_details")
+        if cd:
+            if cd.get("hard_cap_applied"):
+                veto_count += 1
+                veto_reasons[cd["hard_cap_applied"]] += 1
+            bd = cd.get("breakdown") or {}
+            for dim in ("visual", "math_format", "rules", "data_sources"):
+                if dim in bd:
+                    dimension_totals[dim] += bd[dim].get("score", 0.0)
+            if bd.get("rules", {}).get("configured"):
+                with_rules_count += 1
+            if bd.get("data_sources", {}).get("connected"):
+                with_sources_count += 1
+
+    confidence_analytics = {
+        "evaluated_extractions": total_ext,
+        "veto_rate": _rate(veto_count, total_ext),
+        "vetos_by_reason": dict(veto_reasons),
+        "average_dimension_scores": {
+            dim: round(dimension_totals[dim] / total_ext, 2) if total_ext else 0.0
+            for dim in ("visual", "math_format", "rules", "data_sources")
+        },
+        "coverage": {
+            "rules_active_rate": _rate(with_rules_count, total_ext),
+            "sources_connected_rate": _rate(with_sources_count, total_ext),
+        },
+    }
+
     last_eval = (await db.execute(select(EvalRun).where(
         EvalRun.template_id == template_id, EvalRun.status == "COMPLETED",
     ).order_by(EvalRun.completed_at.desc()).limit(1))).scalar_one_or_none()
@@ -111,4 +152,5 @@ async def live(db: AsyncSession, template_id: str, days: int = 30) -> Dict[str, 
                 k: last_eval.metrics.get(k) for k in ("field_accuracy", "exact_match_rate", "confidently_wrong_rate", "answered")
             },
         } if last_eval else None,
+        "confidence": confidence_analytics,
     }

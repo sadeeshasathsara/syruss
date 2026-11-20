@@ -75,6 +75,8 @@ class SubmitArgs(BaseModel):
     uncertain_fields_json: str = Field("[]", description='For REVIEW: JSON list of {"field", "value", "why"}')
     acknowledged_signals_json: str = Field("[]", description='JSON list of {"id", "reason"}: identity signals you looked '
                                            "into on the page and stand by, with what you saw")
+    dual_pass_verified: bool = Field(
+        False, description="Set to true if you performed a targeted second-pass re-read of critical fields and confirmed them identical")
 
 
 @tool("submit_record", "Store the document's record and its outcome: COMMIT (complete and certain, must pass the "
@@ -86,10 +88,18 @@ async def submit_record(ctx: RunContext, a: SubmitArgs) -> ToolOutcome:
         "review_reason": a.review_reason or None,
         "uncertain_fields": json_arg(a.uncertain_fields_json, "uncertain_fields_json", []),
         "acknowledged_signals": json_arg(a.acknowledged_signals_json, "acknowledged_signals_json", []),
+        "dual_pass_verified": a.dual_pass_verified if a.dual_pass_verified else None,
     }
     result = await ctx.api.post(f"/documents/{a.document_id}/record", body)
+    if isinstance(result, dict):
+        conf_details = result.get("confidence_details") or result.get("validation", {}).get("confidence_details") or {}
+        ctx.last_record_confidence = result.get("confidence") if result.get("confidence") is not None else conf_details.get("total_confidence", a.confidence)
+        ctx.last_record_veto_reasons = conf_details.get("veto_reasons") or []
     if result.get("new_identities"):
         ctx.unregistered = list(result["new_identities"])
+        ctx.registration = result.get("registration", "")
+    elif result.get("registered_identities"):
+        ctx.unregistered = []
         ctx.registration = result.get("registration", "")
     if ctx.evaluating:  # scored, not stored: nothing to remember or close
         ctx.resolved_documents.add(a.document_id)

@@ -330,6 +330,33 @@ export const api = {
       const base = `/objects/${encodeURIComponent(type)}${o.thing ? `/things/${encodeURIComponent(o.thing)}` : ""}/records`;
       return request<ObjectRecords>(`${base}?${params}`, { workspaceId });
     },
+    referencedRecords: (workspaceId: string, type: string, id: string, refType: string, refField: string, o: Omit<RecordQuery, "thing" | "filters"> = {}) => {
+      const params = new URLSearchParams({
+        ref_field: refField,
+        page: String(o.page ?? 0),
+        sort: o.sort ?? "seen",
+        direction: o.direction ?? "desc",
+      });
+      if (o.q?.trim()) params.set("q", o.q.trim());
+      if (o.sinceDays) params.set("since_days", String(o.sinceDays));
+      return request<ObjectRecords>(
+        `/objects/${encodeURIComponent(type)}/things/${encodeURIComponent(id)}/referenced/${encodeURIComponent(refType)}?${params}`,
+        { workspaceId },
+      );
+    },
+    thingFullRecords: (workspaceId: string, type: string, id: string, o: Omit<RecordQuery, "thing" | "filters"> = {}) => {
+      const params = new URLSearchParams({
+        page: String(o.page ?? 0),
+        sort: o.sort ?? "seen",
+        direction: o.direction ?? "desc",
+      });
+      if (o.q?.trim()) params.set("q", o.q.trim());
+      if (o.sinceDays) params.set("since_days", String(o.sinceDays));
+      return request<ObjectRecords>(
+        `/objects/${encodeURIComponent(type)}/things/${encodeURIComponent(id)}/full-records?${params}`,
+        { workspaceId },
+      );
+    },
     thing: (workspaceId: string, type: string, id: string, page = 0) =>
       request<ThingProfile>(`/objects/${encodeURIComponent(type)}/things/${encodeURIComponent(id)}?page=${page}`, { workspaceId }),
   },

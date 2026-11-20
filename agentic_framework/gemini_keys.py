@@ -5,9 +5,11 @@ Features:
 - Maintains a pool of Gemini API keys.
 - Smart selection: uses available keys (cooldown expired), prioritizing least-recently-used (LRU)
   and round-robin so it never always starts from key #1.
-- Automatic rate-limit detection (HTTP 429, RESOURCE_EXHAUSTED, QuotaExceeded):
-  puts the exhausted key into cooldown (respecting provider retry-after delay or default)
-  and immediately falls back to the next available key in the stack without failing the request.
+- Automatic rotation on HTTP 429 (RESOURCE_EXHAUSTED / rate limit) and HTTP 403
+  (PERMISSION_DENIED / billing not enabled on that project key): puts the exhausted key into
+  cooldown and immediately falls back to the next available key without failing the request.
+- Raises AllKeysExhaustedError when every key in the pool has been tried and failed, so the
+  outer agent loop does not add a redundant sleep on top of the pool's own cooldown management.
 """
 from __future__ import annotations
 
@@ -28,6 +30,14 @@ from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmb
 from agentic_framework.config import settings
 
 logger = logging.getLogger("agent.gemini_keys")
+
+class AllKeysExhaustedError(Exception):
+    """
+    Raised by RotatingChatGoogleGenerativeAI when every key in the pool has been tried
+    and all failed with either a rate-limit or permission error.  The pool has already
+    recorded cooldowns internally; callers must NOT add an extra sleep on this error.
+    """
+
 
 _DEFAULT_COOLDOWN_SECONDS = 60.0
 
@@ -167,13 +177,17 @@ class GeminiKeyPool:
         """
         text = f"{type(exc).__name__} {exc}"
 
-        # Check for 429 status code on exception attributes if present
+        # Check for 429 / 403 status code on exception attributes if present
         code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-        if code in (429, "429"):
+        if code in (429, "429", 403, "403"):
             is_rl = True
         else:
             is_rl = bool(re.search(
-                r"\b429\b|RESOURCE_EXHAUSTED|RateLimit|rate_limit|rate limit|quota|QuotaExceeded|TooManyRequests",
+                # 429 rate-limits, quota exhaustion, AND 403 permission / billing issues:
+                # a 403 on a specific key means that key's GCP project has billing not enabled
+                # or the Gemini API is not activated — rotating to another key is correct.
+                r"\b429\b|RESOURCE_EXHAUSTED|RateLimit|rate_limit|rate limit|quota|QuotaExceeded|TooManyRequests"
+                r"|\b403\b|PERMISSION_DENIED",
                 text, re.IGNORECASE
             ))
 
@@ -267,12 +281,20 @@ class RotatingChatGoogleGenerativeAI(ChatGoogleGenerativeAI):
                     if len(tried_keys) < len(self._pool):
                         logger.info("Retrying with another Gemini key from pool (attempt %d/%d)...",
                                     attempt + 1, max_attempts)
-                        continue
+                    # Whether or not there are more keys to try, continue the for-loop so
+                    # AllKeysExhaustedError is raised below instead of the raw API error.
+                    continue
+                # Non-rotatable error (e.g. invalid prompt, server error): propagate immediately.
                 self._pool.record_error(key_status.key)
                 raise
 
-        # If we exhausted attempts, do a final direct call or raise
-        return await super()._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
+        # All keys have been tried (or the pool returned no key); raising AllKeysExhaustedError
+        # tells the outer agent loop not to add an extra sleep — the pool already tracked
+        # cooldowns internally.
+        raise AllKeysExhaustedError(
+            f"All {len(self._pool)} Gemini keys in the pool have been tried and failed "
+            "(rate-limited or permission-denied). The pool will recover as keys cool down."
+        )
 
     def _generate(
         self,
@@ -310,12 +332,16 @@ class RotatingChatGoogleGenerativeAI(ChatGoogleGenerativeAI):
                 is_rl, delay = self._pool.is_rate_limit_error(exc)
                 if is_rl:
                     self._pool.record_rate_limit(key_status.key, delay)
-                    if len(tried_keys) < len(self._pool):
-                        continue
+                    # Continue so AllKeysExhaustedError is raised below, not the raw API error.
+                    continue
+                # Non-rotatable error: propagate immediately.
                 self._pool.record_error(key_status.key)
                 raise
 
-        return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+        raise AllKeysExhaustedError(
+            f"All {len(self._pool)} Gemini keys in the pool have been tried and failed "
+            "(rate-limited or permission-denied). The pool will recover as keys cool down."
+        )
 
 
 class RotatingGoogleGenerativeAIEmbeddings(GoogleGenerativeAIEmbeddings):

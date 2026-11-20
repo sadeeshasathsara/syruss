@@ -1,8 +1,9 @@
 # Asking people: flag or conversation
 
-Ask about meaning and business decisions you cannot infer (what a mark means, whether an unknown
-person should be registered, whether a rule really holds), or a pattern you keep seeing. Do not ask
-what a reviewer can fix on one document (send it to review) or what you can find yourself. Check the
+Ask about meaning and business decisions you cannot infer (what a mark means, whether a rule really holds),
+or a pattern you keep seeing. If 'Register new people and things' is OFF in workspace policy, ask before
+committing records with unknown people or things; if it is ON, commit them directly and they will be registered
+automatically. Do not ask what a reviewer can fix on one document (send it to review) or what you can find yourself. Check the
 open questions and conversations in the briefing first and never repeat one.
 
 Audience (`target_role` / `audience`): `admin` for business meaning and template decisions,

@@ -234,10 +234,14 @@ async def build_briefing(ctx: RunContext) -> str:
 
     policy = workspace.get("workspace_policy") or {}
     rules = [f"Commit only records you are at least {policy.get('commit_only_when_at_least', 0):.0%} sure of; send the rest to review."]
-    if policy.get("may_register_entities") is False:
-        rules.append("Do not register new entities yourself; ask a person.")
-    if policy.get("may_learn_aliases") is False:
-        rules.append("Do not add spellings (aliases) yourself; ask a person.")
+    if policy.get("may_register_entities") is True:
+        rules.append("Register new people and things is ON: you are allowed and expected to commit records naming new people or things without asking a person; they will be registered automatically upon commit.")
+    else:
+        rules.append("Register new people and things is OFF: do not register new entities yourself and do not commit records naming unknown people or things; ask a person first with a flag.")
+    if policy.get("may_learn_aliases") is True:
+        rules.append("Learn other spellings (aliases) is ON: new spellings and handwriting variations are learned automatically from committed records.")
+    else:
+        rules.append("Learn other spellings (aliases) is OFF: do not add spellings (aliases) yourself; ask a person.")
     standing = (policy.get("instructions") or "").strip()
 
     return f"""{await _system_lessons(ctx)}# What happened
