@@ -87,7 +87,7 @@ export function RecordsTable({ type, thing, title = "Records" }: { type: string;
           <p className="py-6 text-center text-body text-muted">{filtered ? "No record matches. Try fewer filters." : "No document has a row of it yet: they appear here once documents that have one are saved."}</p>
         ) : (
           <div className={cn("overflow-x-auto scrollbar-thin rounded-control border border-rule", records.isPlaceholderData && "opacity-60")}>
-            <table className="w-full border-collapse text-body">
+            <table className="w-full min-w-max border-collapse text-body table-auto">
               <thead className="bg-raised">
                 <tr>
                   {head("seen", "Received")}
@@ -110,23 +110,23 @@ export function RecordsTable({ type, thing, title = "Records" }: { type: string;
                   <tr key={r.id} onClick={() => router.push(r.thing ? href(r.thing.path) : href(`documents/${r.document_id}`))}
                     className="cursor-pointer border-t border-rule align-top hover:bg-raised">
                     <td className="whitespace-nowrap px-3 py-2 text-muted" title={dateTime(r.seen_at)}>{ago(r.seen_at)}</td>
-                    <td className="max-w-64 px-3 py-2">
+                    <td className="min-w-56 max-w-64 px-3 py-2">
                       <Link href={href(`documents/${r.document_id}`)} onClick={(e) => e.stopPropagation()} className="block truncate text-ink underline-offset-2 hover:underline" title={r.file_name}>{r.document_name}</Link>
                     </td>
                     {!thing && (
-                      <td className="max-w-56 px-3 py-2">
+                      <td className="min-w-48 max-w-56 px-3 py-2">
                         {r.thing ? <Link href={href(r.thing.path)} onClick={(e) => e.stopPropagation()} className="block truncate font-medium text-ink underline-offset-2 hover:underline">{r.thing.label}</Link> : "—"}
                       </td>
                     )}
                     {ownCols.filter((c) => thing || !c.identity).map((c) => (
-                      <td key={c.name} className="max-w-56 px-3 py-2 text-ink [overflow-wrap:anywhere]">{r.values[c.name] == null || r.values[c.name] === "" ? <span className="text-faint">—</span> : display(r.values[c.name])}</td>
+                      <td key={c.name} className="min-w-44 whitespace-nowrap px-3 py-2 text-ink">{r.values[c.name] == null || r.values[c.name] === "" ? <span className="text-faint">—</span> : display(r.values[c.name])}</td>
                     ))}
                     {connectedCols.map((c) => (
-                      <td key={c.name} className="max-w-56 px-3 py-2 text-muted [overflow-wrap:anywhere]">
+                      <td key={c.name} className="min-w-44 whitespace-nowrap px-3 py-2 text-muted">
                         {r.values[c.name] == null || r.values[c.name] === "" ? <span className="text-faint">—</span> : display(r.values[c.name])}
                       </td>
                     ))}
-                    <td className="px-3 py-2"><StatusPill status={r.status} /></td>
+                    <td className="min-w-24 whitespace-nowrap px-3 py-2"><StatusPill status={r.status} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -240,7 +240,7 @@ export function ThingRecordsTable({ type, thingId, title = "Records" }: { type: 
         </p>
       ) : (
         <div className={cn("overflow-x-auto scrollbar-thin rounded-control border border-rule", records.isPlaceholderData && "opacity-60")}>
-          <table className="w-full border-collapse text-body">
+          <table className="w-full min-w-max border-collapse text-body table-auto">
             <thead className="bg-raised">
               {/* Group header row — only shown when referencing types exist */}
               {hasGroupHeaders && (
@@ -306,14 +306,14 @@ export function ThingRecordsTable({ type, thingId, title = "Records" }: { type: 
                   onClick={() => router.push(href(`documents/${r.document_id}`))}
                   className="cursor-pointer border-t border-rule align-top hover:bg-raised">
                   <td className="whitespace-nowrap px-3 py-2 text-muted" title={dateTime(r.seen_at)}>{ago(r.seen_at)}</td>
-                  <td className="max-w-64 px-3 py-2">
+                  <td className="min-w-56 max-w-64 px-3 py-2">
                     <Link href={href(`documents/${r.document_id}`)} onClick={(e) => e.stopPropagation()}
                       className="block truncate text-ink underline-offset-2 hover:underline" title={r.file_name}>
                       {r.document_name}
                     </Link>
                   </td>
                   {ownCols.map((c) => (
-                    <td key={c.name} className="max-w-56 px-3 py-2 text-ink [overflow-wrap:anywhere]">
+                    <td key={c.name} className="min-w-44 whitespace-nowrap px-3 py-2 text-ink">
                       {r.values[c.name] == null || r.values[c.name] === "" ? <span className="text-faint">—</span> : display(r.values[c.name])}
                     </td>
                   ))}
@@ -322,12 +322,12 @@ export function ThingRecordsTable({ type, thingId, title = "Records" }: { type: 
                     const isFirstOfType = c.source_type !== prevType;
                     return (
                       <td key={c.name}
-                        className={cn("max-w-56 px-3 py-2 text-ink [overflow-wrap:anywhere]", hasGroupHeaders && isFirstOfType && "border-l border-rule")}>
+                        className={cn("min-w-44 whitespace-nowrap px-3 py-2 text-ink", hasGroupHeaders && isFirstOfType && "border-l border-rule")}>
                         {r.values[c.name] == null || r.values[c.name] === "" ? <span className="text-faint">—</span> : display(r.values[c.name])}
                       </td>
                     );
                   })}
-                  <td className="px-3 py-2"><StatusPill status={r.status} /></td>
+                  <td className="min-w-24 whitespace-nowrap px-3 py-2"><StatusPill status={r.status} /></td>
                 </tr>
               ))}
             </tbody>
