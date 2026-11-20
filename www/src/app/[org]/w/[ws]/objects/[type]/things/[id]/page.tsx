@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ObjectIcon } from "@/components/objects/ObjectIcon";
 import { ProfileHeader, Stats, value, WeekBars } from "@/components/objects/Profile";
-import { RecordsTable } from "@/components/objects/Records";
+import { ThingRecordsTable } from "@/components/objects/Records";
 import { Bar, ErrorNote, Panel } from "@/components/ui/Blocks";
 import { Pill } from "@/components/ui/Pill";
 import { api } from "@/lib/api";
@@ -115,7 +115,7 @@ export default function ThingProfilePage() {
         </div>
       </div>
 
-      <RecordsTable type={p.object.type} thing={p.thing.id} title="Its records" />
+      <ThingRecordsTable type={p.object.type} thingId={p.thing.id} title="Records" />
     </div>
   );
 }

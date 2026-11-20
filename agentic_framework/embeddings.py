@@ -22,11 +22,11 @@ def _model():
     name = settings.EMBEDDING_MODEL or DEFAULT_MODELS.get(provider)
     try:
         if provider in ("gemini", "google"):
-            api_key = settings.GEMINI_API_KEY or settings.GOOGLE_API_KEY
-            if not api_key or not name:
+            from agentic_framework.gemini_keys import create_embeddings_gemini, get_gemini_key_pool
+            pool = get_gemini_key_pool()
+            if not pool or not pool.keys or not name:
                 return None
-            from langchain_google_genai import GoogleGenerativeAIEmbeddings
-            return ("gemini", GoogleGenerativeAIEmbeddings(model=name, google_api_key=api_key))
+            return ("gemini", create_embeddings_gemini(model=name, pool=pool))
         if provider == "openai":
             if not settings.OPENAI_API_KEY or not name:
                 return None

@@ -62,8 +62,14 @@ class WorkspaceSettingsData(BaseModel):
 
 
 async def get_settings(db: AsyncSession, template_id: str) -> WorkspaceSettingsData:
-    row = await db.get(WorkspaceSettings, template_id)
-    return WorkspaceSettingsData.model_validate(row.data if row else {})
+    try:
+        row = await db.get(WorkspaceSettings, template_id)
+        data = getattr(row, "data", {}) if row else {}
+        if not isinstance(data, dict):
+            data = {}
+        return WorkspaceSettingsData.model_validate(data)
+    except Exception:
+        return WorkspaceSettingsData()
 
 
 async def update_settings(db: AsyncSession, template_id: str, patch: Dict[str, Any], user_id: str) -> WorkspaceSettingsData:

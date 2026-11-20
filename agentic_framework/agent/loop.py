@@ -18,6 +18,7 @@ from agentic_framework.agent import guides
 from agentic_framework.agent.charter import ANALYST_CHARTER, ASSISTANT_CHARTER, CHARTER
 from agentic_framework.agent.tools import CHAT_TOOLS, EVAL_TOOLS, RunContext, execute, tool_schemas, work_tools
 from agentic_framework.config import settings
+from agentic_framework.gemini_keys import AllKeysExhaustedError
 from agentic_framework.telemetry import Telemetry
 
 logger = logging.getLogger("agent.loop")
@@ -119,9 +120,18 @@ def _prune_images(messages: List[BaseMessage], keep: int) -> None:
 
 
 def _rate_limit_delay(exc: Exception) -> float | None:
-    """Seconds to wait if the provider rate-limited us, else None."""
+    """Seconds to wait if the provider rate-limited us, else None.
+
+    Returns None for AllKeysExhaustedError — the rotating pool already managed its own
+    cooldown internally, so we must NOT add a redundant sleep on top.
+    """
+    if isinstance(exc, AllKeysExhaustedError):
+        return None
     text = f"{type(exc).__name__} {exc}"
-    if not re.search(r"RateLimit|RESOURCE_EXHAUSTED|\b429\b|rate limit", text, re.IGNORECASE):
+    if not re.search(
+        r"RateLimit|RESOURCE_EXHAUSTED|\b429\b|\b403\b|PERMISSION_DENIED|rate limit",
+        text, re.IGNORECASE,
+    ):
         return None
     hint = re.search(r"retry in ([\d.]+)s", text) or re.search(r"retryDelay'?:\s*'?(\d+)s", text)
     return min(90.0, float(hint.group(1)) + 1) if hint else 30.0

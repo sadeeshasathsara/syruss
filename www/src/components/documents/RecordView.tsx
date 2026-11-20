@@ -42,17 +42,26 @@ function referenceIndex(data: Data, schema?: TemplateSchema) {
 }
 
 /** A value, with what was literally written when the agent interpreted it. */
-function Value({ value, ev, uncertain, refers, editable, onEdit, to }: {
+function Value({ value, ev, fieldConfidence, uncertain, refers, editable, onEdit, to }: {
   value: unknown;
   /** Where the thing this value names has its page (an identity, or a reference to one) */
   to?: string;
   ev?: FieldEvidence;
+  fieldConfidence?: number;
   uncertain?: string;
   refers?: string;
   editable?: boolean;
   onEdit?: (v: string) => void;
 }) {
+  const conf = fieldConfidence ?? ev?.confidence;
   const raw = ev?.raw_text && !sameWriting(String(ev.raw_text), String(value ?? "")) ? String(ev.raw_text) : null;
+  
+  // Field-level color coding per Phase 4 spec:
+  // >= 90%: green (verified by math, format, or master data)
+  // 70-89%: amber (visual reading only)
+  // < 70%: red (discrepancy or unverified)
+  const confTone = conf !== undefined ? (conf >= 0.9 ? "positive" : conf >= 0.7 ? "warning" : "negative") : null;
+
   const body = editable ? (
     <input
       value={value === null || value === undefined ? "" : String(value)}
@@ -60,7 +69,11 @@ function Value({ value, ev, uncertain, refers, editable, onEdit, to }: {
       aria-label="Value"
       className={cn(
         "h-8 w-full min-w-24 rounded-control border bg-sheet px-2 text-body pointer-coarse:h-10",
-        uncertain ? "border-[var(--pill-warning-ink)]" : "border-control",
+        uncertain
+          ? "border-[var(--pill-warning-ink)]"
+          : confTone === "negative"
+          ? "border-[var(--pill-negative-ink)]/50 focus:border-[var(--pill-negative-ink)]"
+          : "border-control",
       )}
     />
   ) : (
@@ -70,17 +83,41 @@ function Value({ value, ev, uncertain, refers, editable, onEdit, to }: {
       <span className={cn("break-words", value === null || value === undefined || value === "" ? "text-faint" : "text-ink")}>{display(value)}</span>
     )
   );
+
+  const confBadge = conf !== undefined ? (
+    conf >= 0.9 ? (
+      <Tooltip label={`Verified by rules, format, or master data (${percent(conf)})`}>
+        <span className="inline-flex items-center gap-1 text-[11px] text-[var(--pill-positive-ink)]">
+          <span className="h-1.5 w-1.5 rounded-full bg-[var(--pill-positive-ink)]" />
+          {percent(conf)}
+        </span>
+      </Tooltip>
+    ) : conf >= 0.7 ? (
+      <Tooltip label={`Visual model reading only (${percent(conf)})`}>
+        <span className="inline-flex items-center gap-1 text-[11px] text-[var(--pill-warning-ink)]">
+          <span className="h-1.5 w-1.5 rounded-full bg-[var(--pill-warning-ink)]" />
+          {percent(conf)}
+        </span>
+      </Tooltip>
+    ) : (
+      <Tooltip label={`Low confidence (${percent(conf)}) — verify against document`}>
+        <span className="inline-flex items-center gap-1 text-[11px] text-[var(--pill-negative-ink)] font-semibold">
+          <span className="h-1.5 w-1.5 rounded-full bg-[var(--pill-negative-ink)]" />
+          {percent(conf)}
+        </span>
+      </Tooltip>
+    )
+  ) : null;
+
   return (
     <span className="flex min-w-0 flex-col gap-0.5">
-      {body}
+      <span className="flex items-center gap-2">
+        {body}
+        {confBadge}
+      </span>
       {refers && <span className="text-meta text-muted">{refers}</span>}
       {raw && <span className="text-meta text-muted">Written as “{raw}”</span>}
       {uncertain && <span className="text-meta text-[var(--pill-warning-ink)]">{uncertain}</span>}
-      {ev?.confidence !== undefined && ev.confidence < 0.9 && !uncertain && (
-        <Tooltip label="How sure the agent was about this field">
-          <span className="w-fit text-meta text-muted">{percent(ev.confidence)} sure</span>
-        </Tooltip>
-      )}
     </span>
   );
 }
@@ -106,6 +143,7 @@ export function RecordView({
   onChange,
   onCorrect,
   cards,
+  fieldConfidences,
 }: {
   data: Data;
   schema?: TemplateSchema;
@@ -116,6 +154,7 @@ export function RecordView({
   onCorrect?: (object: string, next: Data, reason: string) => Promise<void>;
   /** Each object in a card of its own (on a page, where it would otherwise blend into the background) */
   cards?: boolean;
+  fieldConfidences?: Record<string, number>;
 }) {
   const { href } = useWorkspace();
   const [correcting, setCorrecting] = useState<{ object: string; draft: Data; reason: string } | null>(null);
@@ -216,7 +255,7 @@ export function RecordView({
                   <div key={f} className="contents">
                     <dt className="pt-2 text-body text-muted @md:border-t @md:border-rule @md:py-2">{humanize(f)}</dt>
                     <dd className="border-b border-rule pb-2 text-body @md:border-b-0 @md:border-t @md:py-2">
-                      <Value value={rows[0][f]} ev={findEv(object, 0, f)} uncertain={uncertainFor(object, 0, f)} refers={refers(rows[0], f)} to={link(rows[0], f)} editable={editable_} onEdit={(v) => edit(object, 0, f, v)} />
+                      <Value value={rows[0][f]} ev={findEv(object, 0, f)} fieldConfidence={fieldConfidences?.[`${object}.${f}`] ?? fieldConfidences?.[`${object}[0].${f}`]} uncertain={uncertainFor(object, 0, f)} refers={refers(rows[0], f)} to={link(rows[0], f)} editable={editable_} onEdit={(v) => edit(object, 0, f, v)} />
                     </dd>
                   </div>
                 ))}
@@ -236,7 +275,7 @@ export function RecordView({
                         <tr key={i} className="border-t border-rule align-top">
                           {fields.map((f) => (
                             <td key={f} className="py-2 pr-4">
-                              <Value value={r[f]} ev={findEv(object, i, f)} uncertain={uncertainFor(object, i, f)} refers={refers(r, f)} to={link(r, f)} editable={editable_} onEdit={(v) => edit(object, i, f, v)} />
+                              <Value value={r[f]} ev={findEv(object, i, f)} fieldConfidence={fieldConfidences?.[`${object}[${i}].${f}`] ?? fieldConfidences?.[`${object}.${f}`]} uncertain={uncertainFor(object, i, f)} refers={refers(r, f)} to={link(r, f)} editable={editable_} onEdit={(v) => edit(object, i, f, v)} />
                             </td>
                           ))}
                         </tr>
@@ -253,7 +292,7 @@ export function RecordView({
                           <div key={f} className="contents">
                             <dt className="text-body text-muted">{humanize(f)}</dt>
                             <dd className="text-body">
-                              <Value value={r[f]} ev={findEv(object, i, f)} uncertain={uncertainFor(object, i, f)} refers={refers(r, f)} to={link(r, f)} editable={editable_} onEdit={(v) => edit(object, i, f, v)} />
+                              <Value value={r[f]} ev={findEv(object, i, f)} fieldConfidence={fieldConfidences?.[`${object}[${i}].${f}`] ?? fieldConfidences?.[`${object}.${f}`]} uncertain={uncertainFor(object, i, f)} refers={refers(r, f)} to={link(r, f)} editable={editable_} onEdit={(v) => edit(object, i, f, v)} />
                             </dd>
                           </div>
                         ))}

@@ -15,11 +15,33 @@
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
 | **admin** | `1.0.0-rc.1` | 2026-11-16 | [What changed](#admin-100-rc1) |
-| **agent** | `1.0.0-rc.1` | 2026-11-16 | [What changed](#agent-100-rc1) |
+| **agent** | `1.1.1-rc.1` | 2026-11-20 | [What changed](#agent-111-rc1) |
 | **mail** | `1.0.0-rc.1` | 2026-11-16 | [What changed](#mail-100-rc1) |
-| **server** | `1.0.1-rc.1` | 2026-11-16 | [What changed](#server-101-rc1) |
+| **server** | `1.1.0-rc.1` | 2026-11-20 | [What changed](#server-110-rc1) |
 | **site** | `1.0.0-rc.1` | 2026-11-16 | [What changed](#site-100-rc1) |
-| **www** | `1.0.0-rc.1` | 2026-11-16 | [What changed](#www-100-rc1) |
+| **www** | `1.1.0-rc.1` | 2026-11-20 | [What changed](#www-110-rc1) |
+
+## [2026-11-20] - Release Candidate (test)
+
+### agent (1.1.1-rc.1)
+- Fix multi-key rotation: rotate on 403/PERMISSION_DENIED (billing not enabled), raise `AllKeysExhaustedError` when pool is fully exhausted, and eliminate double-sleep in `loop.py` when the pool already handled cooldowns internally
+- Smart Gemini multi-key rotation, LRU selection, and automatic 429 failover
+
+### server (1.1.0-rc.1)
+- Remove Objects tab and subtabs from workspace navigation
+- Show referencing object records on thing profile page (read from extracted_data)
+- Show connected object attributes in thing records table
+- Automatically resolve www app version from _changelog in local development
+- Unified thing records table displaying all connected object attributes
+
+### www (1.1.0-rc.1)
+- Remove Objects tab and subtabs from workspace navigation
+- Show referencing object records on thing profile page (read from extracted_data)
+- Show connected object attributes in thing records table
+- Automatically resolve www app version from _changelog in local development
+- Enable Turbopack in dev mode (`next dev --turbopack`) and add `optimizePackageImports` for UI primitives, Lucide icons, and Recharts to eliminate slow page-to-page compilation
+- Unified thing records table displaying all connected object attributes
+- Remove met so far panel, attributes in figures and analytics cards from object profile; rename stat to object count; row click navigates to thing profile
 
 ## [2026-11-16] - Release Candidate (test)
 
