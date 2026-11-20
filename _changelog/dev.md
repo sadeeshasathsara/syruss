@@ -15,11 +15,32 @@
 | Service | Version | Released | Notes |
 | :--- | :--- | :--- | :--- |
 | **admin** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#admin-100-dev1) |
-| **agent** | `1.1.0-dev.1` | 2026-11-17 | [What changed](#agent-110-dev1) |
+| **agent** | `1.1.1-dev.1` | 2026-11-20 | [What changed](#agent-111-dev1) |
 | **mail** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#mail-100-dev1) |
-| **server** | `1.0.1-dev.1` | 2026-11-16 | [What changed](#server-101-dev1) |
+| **server** | `1.1.0-dev.1` | 2026-11-20 | [What changed](#server-110-dev1) |
 | **site** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#site-100-dev1) |
-| **www** | `1.0.0-dev.1` | 2026-11-16 | [What changed](#www-100-dev1) |
+| **www** | `1.1.0-dev.1` | 2026-11-20 | [What changed](#www-110-dev1) |
+
+## [2026-11-20] - Release via dev
+
+### agent (1.1.1-dev.1)
+- Fix multi-key rotation: rotate on 403/PERMISSION_DENIED (billing not enabled), raise `AllKeysExhaustedError` when pool is fully exhausted, and eliminate double-sleep in `loop.py` when the pool already handled cooldowns internally
+
+### server (1.1.0-dev.1)
+- Remove Objects tab and subtabs from workspace navigation
+- Show referencing object records on thing profile page (read from extracted_data)
+- Show connected object attributes in thing records table
+- Automatically resolve www app version from _changelog in local development
+- Unified thing records table displaying all connected object attributes
+
+### www (1.1.0-dev.1)
+- Remove Objects tab and subtabs from workspace navigation
+- Show referencing object records on thing profile page (read from extracted_data)
+- Show connected object attributes in thing records table
+- Automatically resolve www app version from _changelog in local development
+- Enable Turbopack in dev mode (`next dev --turbopack`) and add `optimizePackageImports` for UI primitives, Lucide icons, and Recharts to eliminate slow page-to-page compilation
+- Unified thing records table displaying all connected object attributes
+- Remove met so far panel, attributes in figures and analytics cards from object profile; rename stat to object count; row click navigates to thing profile
 
 ## [2026-11-17] - Release via dev
 
