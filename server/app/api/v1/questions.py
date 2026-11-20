@@ -11,6 +11,7 @@ from app.models.audit import AuditLog
 from app.models.conversation import ChatMessage, Conversation
 from app.models.question import AgentQuestion, AgentQuestionStatus
 from app.services.agent_events import enqueue_agent_event, agent_event_relay
+from app.services import memory_service
 from app.core.permissions import Access, require
 
 router = APIRouter(prefix="/questions", tags=["Agent Questions"], dependencies=[Depends(require("documents.view"))])
@@ -120,6 +121,16 @@ async def _close(db: AsyncSession, scope: TemplateScope, q: AgentQuestion, statu
         tenant_id=scope.tenant_id, template_id=scope.template_id, event_type=f"AGENT_QUESTION_{status.value}",
         entity_type="AgentQuestion", entity_id=q.id, actor=scope.user_id, details={"answer": answer},
     ))
+    if status == AgentQuestionStatus.ANSWERED and q.related_document_id:
+        promoted = await memory_service.promote_memories_for_document(
+            db, template_id=scope.template_id, document_id=q.related_document_id, promoted_by=scope.username or scope.user_id,
+        )
+        for pm in promoted:
+            db.add(AuditLog(
+                tenant_id=scope.tenant_id, template_id=scope.template_id,
+                event_type="MEMORY_PROMOTED", entity_type="Memory", entity_id=pm.id,
+                actor=scope.user_id, details={"question_id": q.id, "document_id": q.related_document_id, "new_kind": pm.kind},
+            ))
     payload: Dict[str, Any] = {
         "question_id": q.id, "question": q.question, "context": q.context, "answer": answer,
         "answer_type": q.answer_type, "choices": choices or [], "other": other,

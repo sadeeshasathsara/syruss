@@ -1,24 +1,38 @@
 """
-The agent's own memory, kept in the agent service's database (never the core server's).
+The agent's own memory store.
 
-Notes are partitioned by workspace (tenant + template) and come in three kinds:
-  observation  something noticed while working, e.g. "an unlabelled code written next to a column on some pages"
-  lesson       how this business works, learned from answers and corrections,
-               e.g. "that code means X (answer from admin)"
-  work_item    work parked until something happens, e.g. waiting for a human's answer
+Pillar 4 — Single Store Unification:
+  As of this release, lessons and observations live in the core server's /memories store (the
+  unified single source of truth). This module retains the MemoryStore class and the Note ORM
+  model for two reasons:
+    1. The `work_item` kind is an agent-internal TODO list (things parked waiting for a human
+       answer). It is intentionally NOT memory — it has no importance, no embeddings, no decay.
+       It stays local to the agent service and continues to use the memory_notes table.
+    2. Backward compatibility: callers that ask `memory.list(…, "lesson")` or
+       `memory.list(…, "observation")` now receive an empty list, which makes the old
+       `_move_older_notes()` migration bridge a no-op (there is nothing to migrate).
 
-The agent decides what to write. Lessons are always loaded when it wakes up; observations
-and work items are loaded by recency and relevance.
+The database schema (memory_notes table) is NOT dropped: existing rows are preserved for
+auditability and may be inspected on the memory admin page. Only new writes are redirected.
+
+NOTE_KINDS accepted by add() now only includes work_item; lesson/observation calls raise
+ValueError so callers notice and switch to `save_memory()` in agent/tools/memory.py.
 """
+import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Coroutine, Dict, List, Optional
 from sqlalchemy import JSON, DateTime, Integer, String, Text, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from agentic_framework.config import settings
 
-NOTE_KINDS = ("observation", "lesson", "work_item")
+logger = logging.getLogger("agent.memory_store")
+
+# work_item is the only local kind now; lesson & observation live in the core server
+NOTE_KINDS = ("work_item",)
+# kept for external code that may import this symbol (briefing.py, tests)
+_LEGACY_NOTE_KINDS = ("observation", "lesson", "work_item")
 
 
 class Base(DeclarativeBase):
@@ -98,12 +112,23 @@ class MemoryStore:
             await s.merge(ProcessedEvent(event_id=event_id, event_type=event_type, template_id=template_id, status=status))
             await s.commit()
 
-    # --- notes -------------------------------------------------------------
+    # --- work items (the only local notes kind) ----------------------------
 
     async def add(self, tenant_id: str, template_id: str, kind: str, content: str,
                   tags: Optional[List[str]] = None, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Adds a work_item to the local store.
+
+        Pillar 4: lesson and observation are now rejected here — they must be written
+        through save_memory() in agentic_framework/agent/tools/memory.py, which routes
+        them to the core server's /memories endpoint.
+        """
         if kind not in NOTE_KINDS:
-            raise ValueError(f"kind must be one of {NOTE_KINDS}")
+            raise ValueError(
+                f"kind must be one of {NOTE_KINDS}. "
+                f"Lessons and observations now live in the core /memories store; "
+                f"use save_memory() in agent/tools/memory.py instead."
+            )
         async with self._session() as s:
             note = Note(tenant_id=tenant_id, template_id=template_id, kind=kind, content=content.strip(),
                         tags=[t.lower() for t in (tags or [])], data=data or {})
@@ -129,6 +154,18 @@ class MemoryStore:
 
     async def list(self, tenant_id: str, template_id: str, kind: str, *, status: str = "active",
                    limit: int = 30) -> List[Dict[str, Any]]:
+        """
+        Returns active notes of the given kind.
+
+        Pillar 4: asking for 'lesson' or 'observation' returns [] — these kinds now live
+        in the core server and are retrieved via /memories/search. This makes the legacy
+        _move_older_notes() migration bridge a no-op (nothing to migrate).
+        """
+        if kind not in NOTE_KINDS:
+            # Silently return empty rather than raise, so existing callers like briefing.py
+            # and _move_older_notes() degrade gracefully without code changes.
+            logger.debug("MemoryStore.list(%s) → empty: kind '%s' now lives in core /memories", template_id, kind)
+            return []
         async with self._session() as s:
             stmt = (
                 select(Note)
@@ -140,11 +177,16 @@ class MemoryStore:
 
     async def search(self, tenant_id: str, template_id: str, query: str, *, kind: Optional[str] = None,
                      limit: int = 15) -> List[Dict[str, Any]]:
+        """Full-text search over local work items only (lessons/observations live in core)."""
+        if kind and kind not in NOTE_KINDS:
+            return []  # lesson/observation search → empty; use /memories/search instead
         words = [w for w in query.lower().split() if len(w) > 2][:8] or [query.lower()]
         async with self._session() as s:
             stmt = select(Note).where(Note.tenant_id == tenant_id, Note.template_id == template_id, Note.status == "active")
-            if kind:
+            if kind and kind in NOTE_KINDS:
                 stmt = stmt.where(Note.kind == kind)
+            else:
+                stmt = stmt.where(Note.kind.in_(list(NOTE_KINDS)))
             stmt = stmt.where(or_(*[func.lower(Note.content).contains(w) for w in words]))
             notes = (await s.execute(stmt.order_by(Note.updated_at.desc()).limit(limit * 3))).scalars().all()
             ranked = sorted(notes, key=lambda n: sum(w in n.content.lower() for w in words), reverse=True)[:limit]

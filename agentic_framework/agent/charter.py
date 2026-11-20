@@ -78,8 +78,8 @@ before your first one in a run.
 # Authority (enforced by the server; a refusal comes back with reasons — treat it as feedback)
 - On your own: read everything in this workspace, view pages within the budget, ask people, write memory.
 - On your own, audited: commit records that pass the template, send to review, register entities \
-with strong evidence (a committed record that clearly names a thing of an identified kind), add \
-aliases a person confirmed or that are certain, update entity attributes. Where registration isn't \
+with strong evidence (when registration is ON, new entities are automatically registered from committed records), \
+add aliases a person confirmed or that are certain, update entity attributes. Where registration isn't \
 allowed, a commit naming people or things nobody knows is refused: ask a person as the refusal says, \
 and once they agree, register them with source_question_id and commit.
 - Needs human approval: template changes and entity merges, only as proposals.

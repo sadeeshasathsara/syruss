@@ -55,6 +55,23 @@ class ChecklistItem(BaseModel):
     selected: bool = True
 
 
+class TemplateFieldSpec(BaseModel):
+    """Specification of an extraction field within a template object."""
+    name: str = Field(..., description="Field identifier in extraction JSON")
+    type: str = Field("string", description="Field data type: string, number, boolean, date")
+    description: Optional[str] = Field(None, description="Extraction instructions for LLM")
+    required: bool = Field(False, description="Field is expected to be present")
+    critical: bool = Field(False, description="Omission triggers hard-cap veto (<= 0.50) on confidence")
+    format_rule: Optional[str] = Field(
+        None,
+        description="Deterministic format rule: iban, luhn, iso_date, currency, email, or regex:<pattern>",
+    )
+    math_role: Optional[str] = Field(
+        None,
+        description="Intrinsic arithmetic reconciler role: quantity, unit_price, line_total, subtotal, tax, grand_total, start_time, end_time, hours",
+    )
+
+
 class TemplateDiscoveryResponse(BaseModel):
     template_id: str
     name: str = "Discovered Template"

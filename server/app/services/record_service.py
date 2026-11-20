@@ -25,7 +25,8 @@ from app.models.review import ReviewTask, ReviewStatus
 from app.models.template import DocumentTemplate
 from app.services import delivery_service, duplicate_check, graph_service, object_index
 from app.services.rules import service as rule_service
-from app.services.identity_check import find_identity_conflicts, find_unsupported_identities
+from app.services.identity_check import find_identity_conflicts, find_unsupported_identities, resolve_entity_matches
+from app.services.confidence_service import evaluate_confidence
 from app.services.rules.engine import validate_record
 
 
@@ -47,6 +48,7 @@ class RecordService:
         discard_pending_review: bool = True,
         check_identities: bool = True,
         acknowledged_signals: Optional[List[Dict[str, Any]]] = None,
+        dual_pass_verified: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         `discard_pending_review`: when the agent commits a document it had sent to review
@@ -108,10 +110,43 @@ class RecordService:
             db.add(result)
         result.extracted_data = data
         result.template_version_id = template.active_version_id
-        result.overall_confidence = max(0.0, min(1.0, float(confidence)))
         result.evidence_records = evidence or []
-        result.validation = validation
         result.agent_notes = notes
+
+        # --- Authoritative confidence scoring (Phase 2 & 5 engine) ---
+        identity_conflict_list = await find_identity_conflicts(
+            db, template_id=template.id, schema=template.schema_definition,
+            data=data, document_id=document.id,
+        ) if check_identities else []
+        entity_match_result = await resolve_entity_matches(
+            db, template_id=template.id, schema=template.schema_definition,
+            data=data, document_id=document.id,
+        ) if check_identities else {
+            "sources_connected": False,
+            "exact_matches": 0,
+            "alias_matches": 0,
+            "unknown_entities": 0,
+            "identity_collisions": 0,
+            "total_identity_fields": 0,
+        }
+        confidence_report = evaluate_confidence(
+            schema=template.schema_definition,
+            data=data,
+            raw_model_confidence=float(confidence),
+            active_workspace_rules=rules,
+            entity_match_result=entity_match_result,
+            identity_conflicts=identity_conflict_list if identity_conflict_list else None,
+            dual_pass_verified=dual_pass_verified,
+            evidence=evidence,
+        )
+        # Authoritative score overrides agent-reported confidence if a veto applies
+        authoritative_confidence = (
+            confidence_report.total_confidence
+            if confidence_report.hard_cap_applied is not None
+            else float(confidence)
+        )
+        result.overall_confidence = authoritative_confidence
+        result.validation = {**validation, "confidence_details": confidence_report.to_dict()}
         document.template_version_id = template.active_version_id
         document.error_message = None
 
@@ -161,7 +196,12 @@ class RecordService:
         if decision == "COMMIT":
             # Written in this same transaction, so an approved record is never lost on its way out to the destinations.
             await delivery_service.enqueue(db, template=template, document=document, result=result, actor=actor)
-        return {"status": document.status.value, "validation": validation}
+        return {
+            "status": document.status.value,
+            "validation": result.validation,
+            "confidence": authoritative_confidence,
+            "confidence_details": confidence_report.to_dict(),
+        }
 
 
 record_service = RecordService()

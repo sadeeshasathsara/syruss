@@ -90,7 +90,7 @@ async def create_entity(body: EntityCreateBody, ws: Workspace = Depends(get_work
             Entity.identifier_value == body.identifier_value,
         ))).scalar_one_or_none()
         if existing:
-            raise HTTPException(status_code=409, detail={"message": "Entity already exists", "entity": entity_dict(existing)})
+            return entity_dict(existing)
     # Entities come from confirmed facts only, so the agent cannot create its own confirmation.
     if body.source_document_id:
         source = await document_in(ws, body.source_document_id)
