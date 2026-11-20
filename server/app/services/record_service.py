@@ -140,7 +140,11 @@ class RecordService:
             evidence=evidence,
         )
         # Authoritative score overrides agent-reported confidence if a veto applies
-        authoritative_confidence = confidence_report.total_confidence
+        authoritative_confidence = (
+            confidence_report.total_confidence
+            if confidence_report.hard_cap_applied is not None
+            else float(confidence)
+        )
         result.overall_confidence = authoritative_confidence
         result.validation = {**validation, "confidence_details": confidence_report.to_dict()}
         document.template_version_id = template.active_version_id

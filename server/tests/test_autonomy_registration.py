@@ -112,22 +112,24 @@ async def test_shared_surname_new_employee_does_not_block_commit_when_may_regist
     """
     tpl = await create_template(client, schema=IDENTIFIED)
 
-    # First document registers employee 10179 named "Dissanayaka"
+    # First document registers employee 10179 named "D.M. Dissanayaka"
     doc1 = await upload(client, tpl)
     res1 = await client.post(f"/internal/agent/v1/documents/{doc1}/record", headers=agent(tpl), json={
-        "data": record("10179", "Dissanayaka", "2026-07-20"),
+        "data": record("10179", "D.M. Dissanayaka", "2026-07-20"),
         "decision": "COMMIT",
         "confidence": 0.95,
+        "evidence": [{"object": "Guard", "index": 0, "field": "name", "value": "D.M. Dissanayaka", "raw_text": "D.M. Dissanayaka"}],
     })
     assert res1.status_code == 200
     assert res1.json()["status"] == "COMPLETED"
 
-    # Second document has new employee 76150 also named "Dissanayaka"
+    # Second document has new employee 76150 also named "K.G. Dissanayaka" (sharing surname Dissanayaka)
     doc2 = await upload(client, tpl)
     res2 = await client.post(f"/internal/agent/v1/documents/{doc2}/record", headers=agent(tpl), json={
-        "data": record("76150", "Dissanayaka", "2026-07-21"),
+        "data": record("76150", "K.G. Dissanayaka", "2026-07-21"),
         "decision": "COMMIT",
         "confidence": 0.95,
+        "evidence": [{"object": "Guard", "index": 0, "field": "name", "value": "K.G. Dissanayaka", "raw_text": "K.G. Dissanayaka"}],
     })
     assert res2.status_code == 200
     assert res2.json()["status"] == "COMPLETED"
@@ -155,6 +157,7 @@ async def test_may_learn_aliases_auto_registers_alias_on_commit(client, memory):
         "data": record("55555", "K.G. Silva", "2026-07-20"),
         "decision": "COMMIT",
         "confidence": 0.95,
+        "evidence": [{"object": "Guard", "index": 0, "field": "name", "value": "K.G. Silva", "raw_text": "K.G. Silva"}],
     })
     assert res1.status_code == 200
 
@@ -164,6 +167,7 @@ async def test_may_learn_aliases_auto_registers_alias_on_commit(client, memory):
         "data": record("55555", "Silva K.G.", "2026-07-21"),
         "decision": "COMMIT",
         "confidence": 0.95,
+        "evidence": [{"object": "Guard", "index": 0, "field": "name", "value": "Silva K.G.", "raw_text": "Silva K.G."}],
     })
     assert res2.status_code == 200
 

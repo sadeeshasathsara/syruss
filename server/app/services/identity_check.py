@@ -139,8 +139,7 @@ async def find_identity_conflicts(
             other_ids = {k for l, ids in ids_by_label.items() if l == nlabel for k in ids} - {nid}
             if other_ids:
                 is_approved = (nid in norm_answered_id)
-                is_new_and_may_register = may_register and (nid not in labels_by_id)
-                if not is_approved and not is_new_and_may_register:
+                if not is_approved:
                     ids = ", ".join(sorted(shown.get(k, k) for k in other_ids))
                     conflicts.append({
                         "code": "identity_conflict", "path": f"{obj_type}[{i}]",
@@ -164,7 +163,6 @@ async def find_unsupported_identities(
     identities = {t: i for t, i in _identities(schema).items() if t in data}
     if not identities:
         return []
-    may_register = (await settings_service.get_settings(db, template_id)).agent.may_register_entities
     by_key = {}
     for ev in evidence or []:
         if isinstance(ev, dict):
@@ -179,8 +177,6 @@ async def find_unsupported_identities(
             path = f"{obj_type}[{i}].{ident['label_field']}"
             ev = by_key.get((obj_type, i, ident["label_field"]))
             if not ev or not str(ev.get("raw_text") or "").strip():
-                if may_register:
-                    continue
                 problems.append({"code": "identity_evidence_missing", "path": path, "message":
                                  f"Give evidence with raw_text (exactly what is written) for {path}."})
                 continue
