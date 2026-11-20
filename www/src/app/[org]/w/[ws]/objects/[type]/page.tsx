@@ -1,9 +1,11 @@
 "use client";
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { Search } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ProfileHeader, Stats, TYPE_LABEL, WeekBars } from "@/components/objects/Profile";
+import { useState } from "react";
+import { Figures, ProfileHeader, Stats, ThingList, TYPE_LABEL, WeekBars } from "@/components/objects/Profile";
 import { RecordsTable } from "@/components/objects/Records";
 import { Bar, ErrorNote, Panel } from "@/components/ui/Blocks";
 import { Pill } from "@/components/ui/Pill";
@@ -16,9 +18,16 @@ export default function ObjectProfilePage() {
   const { type: raw } = useParams<{ type: string }>();
   const type = decodeURIComponent(raw);
   const { workspace, href } = useWorkspace();
+  const [q, setQ] = useState("");
   const profile = useQuery({
     queryKey: ["object", workspace.id, type],
     queryFn: () => api.objects.get(workspace.id, type),
+    placeholderData: keepPreviousData,
+  });
+  const found = useQuery({
+    queryKey: ["object-things", workspace.id, type, q],
+    queryFn: () => api.objects.things(workspace.id, type, q),
+    enabled: !!profile.data?.object.identity && q.trim().length > 0,
     placeholderData: keepPreviousData,
   });
   const objectHref = (t: string) => href(`objects/${encodeURIComponent(t)}`);
@@ -27,6 +36,7 @@ export default function ObjectProfilePage() {
   const p = profile.data;
   if (!p) return <div className="flex flex-col gap-4"><Bar className="h-20 w-full" /><Bar className="h-20 w-full" /><Bar className="h-64 w-full" /></div>;
   const o = p.object;
+  const shown = q.trim() ? found.data?.items : p.things?.items;
 
   return (
     <div className="flex flex-col gap-6">
@@ -47,7 +57,7 @@ export default function ObjectProfilePage() {
       <Stats
         items={[
           { label: "Documents", value: p.stats.documents },
-          o.identity ? { label: `${o.type} count`, value: p.stats.things } : { label: "Rows read", value: p.stats.rows },
+          o.identity ? { label: "Met so far", value: p.stats.things } : { label: "Rows read", value: p.stats.rows },
           { label: "Last seen", value: p.stats.last_seen ? ago(p.stats.last_seen) : "—" },
           { label: "Attributes", value: o.fields.length },
         ]}
@@ -55,8 +65,26 @@ export default function ObjectProfilePage() {
 
       <div className="grid grid-cols-1 gap-4 @5xl:grid-cols-[3fr_2fr]">
         <div className="flex min-w-0 flex-col gap-4">
+          {o.identity && p.things && (
+            <Panel title={`${o.type} met so far`} aside={<span className="num">{p.stats.things}</span>}>
+              <label className="mb-2 flex h-8 items-center gap-2 rounded-control border border-control bg-card px-2.5 focus-within:border-ink">
+                <Search className="size-4 flex-none text-muted" aria-hidden />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Find one by name or identifier"
+                  aria-label={`Find a ${o.type}`}
+                  className="min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-faint"
+                />
+              </label>
+              {shown ? <ThingList things={shown} icon={o.icon} href={(t) => href(t.path)} /> : <Bar className="h-24 w-full" />}
+            </Panel>
+          )}
           <Panel title="Documents per week">
             <WeekBars weeks={p.weeks} what="documents with it" />
+          </Panel>
+          <Panel title="Its attributes in figures" aside={p.stats.records_capped ? `From the newest ${p.stats.records_read} records` : `${p.stats.rows} rows`}>
+            <Figures figures={p.figures} />
           </Panel>
         </div>
 
@@ -85,6 +113,7 @@ export default function ObjectProfilePage() {
             </dl>
           </Panel>
 
+
           {(p.referenced_by.length > 0 || Object.keys(p.links).length > 0) && (
             <Panel title="Connected objects">
               <ul className="flex flex-col gap-2 text-body text-muted">
@@ -98,6 +127,18 @@ export default function ObjectProfilePage() {
                   <li key={`${r.type}.${r.field}`}>
                     <Link href={objectHref(r.type)} className="font-medium text-ink underline-offset-2 hover:underline">{r.type}</Link> points here with its{" "}
                     {humanize(r.field)}
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
+
+          {p.screens.length > 0 && (
+            <Panel title="Analytics on it">
+              <ul className="flex flex-col gap-1.5">
+                {p.screens.map((s) => (
+                  <li key={s.slug}>
+                    <Link href={href(`analytics/${s.slug}`)} className="text-body text-ink underline-offset-2 hover:underline">{s.name}</Link>
                   </li>
                 ))}
               </ul>
